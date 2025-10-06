@@ -1,14 +1,33 @@
 {
-    "name": "",
-    "description": "",
-    "category": "",
+    "name": "Renown",
+    "description": "All document models, editors, processors and subgraphs related to renown.",
+    "category": "People & Culture",
     "publisher": {
-        "name": "",
-        "url": ""
+        "name": "Powerhouse Inc.",
+        "url": "https://www.powerhouse.inc"
     },
-    "documentModels": [],
-    "editors": [],
+    "documentModels": [
+        {
+            "id": "powerhouse/renown-user",
+            "name": "RenownUser"
+        }
+    ],
+    "editors": [
+        {
+            "id": "renown-user-editor",
+            "name": "Renown User Editor",
+            "documentTypes": [
+                "powerhouse/renown-user"
+            ]
+        }
+    ],
     "apps": [],
-    "subgraphs": [],
+    "subgraphs": [
+        {
+            "id": "renown-read-model",
+            "name": "Renown Read Model",
+            "documentTypes": []
+        }
+    ],
     "importScripts": []
 }
