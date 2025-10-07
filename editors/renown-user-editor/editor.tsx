@@ -9,7 +9,7 @@ import { Form, StringField, UrlField, Button } from "@powerhousedao/document-eng
 
 export type IProps = EditorProps;
 
-export default function Editor(props: IProps) {
+export function Editor(props: IProps) {
   const [document, dispatch] = useSelectedDocument()
   
   if (!document) {
