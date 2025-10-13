@@ -63,6 +63,7 @@
     "graphql": "^16.10.0",
     "graphql-tag": "^2.12.6",
     "kysely": "^0.28.7",
+    "scalars": "link:../powerhouse/packages/scalars",
     "uuid": "^11.1.0",
     "zod": "^3.24.2"
   },
@@ -75,7 +76,7 @@
     "@powerhousedao/reactor-api": "staging",
     "@powerhousedao/reactor-browser": "staging",
     "@powerhousedao/reactor-local": "staging",
-    "@powerhousedao/scalars": "2.0.1",
+    "@powerhousedao/scalars": "staging",
     "@powerhousedao/switchboard": "staging",
     "@tailwindcss/cli": "^4.0.15",
     "@testing-library/react": "^16.3.0",
