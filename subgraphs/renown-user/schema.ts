@@ -5,8 +5,41 @@ export const schema: DocumentNode = gql`
   """
   Subgraph definition for RenownUser (powerhouse/renown-user)
   """
+  type Authorization {
+    id: OID!
+    jwt: String!
+    issuer: String
+    subject: String
+    audience: String
+    payload: String
+    revoked: Boolean
+    createdAt: DateTime
+    revokedAt: DateTime
+  }
+
   type RenownUserState {
     "Add your global state fields here"
+    username: String
+    ethAddress: EthereumAddress
+    userImage: String
+    authorizations: [Authorization!]!
+  }
+
+  type AuthorizationWithUser {
+    id: OID!
+    jwt: String!
+    issuer: String
+    subject: String
+    audience: String
+    payload: String
+    revoked: Boolean
+    createdAt: DateTime
+    revokedAt: DateTime
+    user: RenownUserInfo!
+  }
+
+  type RenownUserInfo {
+    documentId: String!
     username: String
     ethAddress: EthereumAddress
     userImage: String
@@ -18,6 +51,11 @@ export const schema: DocumentNode = gql`
   type RenownUserQueries {
     getDocument(docId: PHID!, driveId: PHID): RenownUser
     getDocuments(driveId: String!): [RenownUser!]
+    getAuthorizationsByEthAddress(
+      ethAddress: EthereumAddress!
+      subject: String
+      includeRevoked: Boolean
+    ): [AuthorizationWithUser!]!
   }
 
   type Query {
@@ -45,6 +83,21 @@ export const schema: DocumentNode = gql`
       docId: PHID
       input: RenownUser_SetUserImageInput
     ): Int
+    RenownUser_addAuthorization(
+      driveId: String
+      docId: PHID
+      input: RenownUser_AddAuthorizationInput
+    ): Int
+    RenownUser_revokeAuthorization(
+      driveId: String
+      docId: PHID
+      input: RenownUser_RevokeAuthorizationInput
+    ): Int
+    RenownUser_removeAuthorization(
+      driveId: String
+      docId: PHID
+      input: RenownUser_RemoveAuthorizationInput
+    ): Int
   }
 
   """
@@ -61,5 +114,25 @@ export const schema: DocumentNode = gql`
   input RenownUser_SetUserImageInput {
     "Add your inputs here"
     userImage: String!
+  }
+
+  """
+  Module: Authorization
+  """
+  input RenownUser_AddAuthorizationInput {
+    id: OID!
+    jwt: String!
+    issuer: String
+    subject: String
+    audience: String
+    payload: String
+    createdAt: DateTime!
+  }
+  input RenownUser_RevokeAuthorizationInput {
+    id: OID!
+    revokedAt: DateTime!
+  }
+  input RenownUser_RemoveAuthorizationInput {
+    id: OID!
   }
 `;

@@ -56,11 +56,43 @@ export type Scalars = {
   Upload: { input: File; output: File };
 };
 
+export type AddAuthorizationInput = {
+  audience?: InputMaybe<Scalars["String"]["input"]>;
+  createdAt: Scalars["DateTime"]["input"];
+  id: Scalars["OID"]["input"];
+  issuer?: InputMaybe<Scalars["String"]["input"]>;
+  jwt: Scalars["String"]["input"];
+  payload?: InputMaybe<Scalars["String"]["input"]>;
+  subject?: InputMaybe<Scalars["String"]["input"]>;
+};
+
+export type Authorization = {
+  audience: Maybe<Scalars["String"]["output"]>;
+  createdAt: Maybe<Scalars["DateTime"]["output"]>;
+  id: Scalars["OID"]["output"];
+  issuer: Maybe<Scalars["String"]["output"]>;
+  jwt: Scalars["String"]["output"];
+  payload: Maybe<Scalars["String"]["output"]>;
+  revoked: Maybe<Scalars["Boolean"]["output"]>;
+  revokedAt: Maybe<Scalars["DateTime"]["output"]>;
+  subject: Maybe<Scalars["String"]["output"]>;
+};
+
+export type RemoveAuthorizationInput = {
+  id: Scalars["OID"]["input"];
+};
+
 export type RenownUserState = {
+  authorizations: Array<Authorization>;
   ethAddress: Maybe<Scalars["EthereumAddress"]["output"]>;
   userImage: Maybe<Scalars["String"]["output"]>;
   /** Add your global state fields here */
   username: Maybe<Scalars["String"]["output"]>;
+};
+
+export type RevokeAuthorizationInput = {
+  id: Scalars["OID"]["input"];
+  revokedAt: Scalars["DateTime"]["input"];
 };
 
 export type SetEthAddressInput = {

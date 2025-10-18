@@ -10,8 +10,8 @@ export const schema: DocumentNode = gql`
     username: String
     ethAddress: String
     userImage: String
-    createdAt: String
-    updatedAt: String
+    createdAt: DateTime
+    updatedAt: DateTime
   }
 
   input GetProfileInput {
@@ -30,8 +30,29 @@ export const schema: DocumentNode = gql`
     searchString: String
   }
 
+  type Authorization {
+    id: OID!
+    jwt: String!
+    issuer: String
+    subject: String
+    audience: String
+    payload: String
+    revoked: Boolean!
+    createdAt: DateTime
+    revokedAt: DateTime
+    user: RenownProfile!
+  }
+
+  input GetAuthorizationsInput {
+    driveId: String!
+    ethAddress: String!
+    subject: String
+    includeRevoked: Boolean
+  }
+
   type Query {
     getProfile(input: GetProfileInput!): RenownProfile
     getProfiles(input: GetProfilesInput!): [RenownProfile!]!
+    getAuthorizations(input: GetAuthorizationsInput!): [Authorization!]!
   }
 `;

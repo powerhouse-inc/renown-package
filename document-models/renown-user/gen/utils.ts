@@ -19,6 +19,7 @@ export const initialGlobalState: RenownUserState = {
   username: null,
   ethAddress: null,
   userImage: null,
+  authorizations: [],
 };
 export const initialLocalState: RenownUserLocalState = {};
 

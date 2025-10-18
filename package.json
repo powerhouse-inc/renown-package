@@ -101,5 +101,12 @@
   "peerDependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "viem": "2.21.40",
+      "@wagmi/core": "2.13.5",
+      "wagmi": "2.12.19"
+    }
   }
 }

@@ -8,11 +8,13 @@ import { type RenownUserAction } from "./actions.js";
 import { reducer } from "./reducer.js";
 import { createDocument } from "./utils.js";
 import RenownUser_Profile from "./profile/object.js";
+import RenownUser_Authorization from "./authorization/object.js";
 
 export * from "./profile/object.js";
+export * from "./authorization/object.js";
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
-interface RenownUser extends RenownUser_Profile {}
+interface RenownUser extends RenownUser_Profile, RenownUser_Authorization {}
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 class RenownUser extends BaseDocumentClass<RenownUserPHState> {
@@ -40,6 +42,6 @@ class RenownUser extends BaseDocumentClass<RenownUserPHState> {
   }
 }
 
-applyMixins(RenownUser, [RenownUser_Profile]);
+applyMixins(RenownUser, [RenownUser_Profile, RenownUser_Authorization]);
 
 export { RenownUser };

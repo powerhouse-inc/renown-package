@@ -4,6 +4,7 @@ import {
 } from "@powerhousedao/reactor-browser";
 import type { EditorProps } from "document-model";
 import { useCallback, useState } from "react";
+import { generateId } from "document-model";
 import {
   type RenownUserDocument,
   actions,
@@ -14,6 +15,8 @@ import {
   UrlField,
   Button,
 } from "@powerhousedao/document-engineering";
+import { AuthorizationList } from "./components/AuthorizationList.js";
+import { AddAuthorizationForm } from "./components/AddAuthorizationForm.js";
 
 export type IProps = EditorProps;
 
@@ -28,11 +31,12 @@ export function Editor(props: IProps) {
 
   // Local form state
   const [isEditingUser, setIsEditingUser] = useState(false);
+  const [isAddingAuthorization, setIsAddingAuthorization] = useState(false);
 
   const {
     state: { global },
   } = typedDocument;
-  const { username, ethAddress, userImage } = global;
+  const { username, ethAddress, userImage, authorizations } = global;
 
   // User handlers
   const handleSetUsername = useCallback(
@@ -60,6 +64,43 @@ export function Editor(props: IProps) {
       }
     },
     [userImage, dispatch]
+  );
+
+  // Authorization handlers
+  const handleAddAuthorization = useCallback(
+    (data: {
+      jwt: string;
+      issuer?: string;
+      subject?: string;
+      audience?: string;
+      payload?: string;
+    }) => {
+      dispatch(
+        actions.addAuthorization({
+          id: generateId(),
+          jwt: data.jwt,
+          issuer: data.issuer || null,
+          subject: data.subject || null,
+          audience: data.audience || null,
+          payload: data.payload || null,
+          createdAt: new Date().toISOString(),
+        })
+      );
+      setIsAddingAuthorization(false);
+    },
+    [dispatch]
+  );
+
+  const handleRevokeAuthorization = useCallback(
+    (id: string) => {
+      dispatch(
+        actions.revokeAuthorization({
+          id,
+          revokedAt: new Date().toISOString(),
+        })
+      );
+    },
+    [dispatch]
   );
 
   return (
@@ -361,6 +402,70 @@ export function Editor(props: IProps) {
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Authorizations Section */}
+          <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+            <div className="px-6 py-5 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg
+                    className="w-6 h-6 text-gray-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                    />
+                  </svg>
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900">
+                      Authorizations
+                    </h2>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Manage user authorization tokens and credentials
+                    </p>
+                  </div>
+                </div>
+                {!isAddingAuthorization && (
+                  <Button onClick={() => setIsAddingAuthorization(true)}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                      Add Authorization
+                    </span>
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="p-6">
+              {isAddingAuthorization ? (
+                <AddAuthorizationForm
+                  onAdd={handleAddAuthorization}
+                  onCancel={() => setIsAddingAuthorization(false)}
+                />
+              ) : (
+                <AuthorizationList
+                  authorizations={authorizations}
+                  onRevoke={handleRevokeAuthorization}
+                />
+              )}
             </div>
           </div>
         </div>

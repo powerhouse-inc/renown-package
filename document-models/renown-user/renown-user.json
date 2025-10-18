@@ -50,13 +50,69 @@
                             "template": ""
                         }
                     ]
+                },
+                {
+                    "description": "Manages user authorizations",
+                    "id": "authorization-module-001",
+                    "name": "authorization",
+                    "operations": [
+                        {
+                            "description": "Adds a new authorization to the user",
+                            "errors": [],
+                            "examples": [],
+                            "id": "add-authorization-op-001",
+                            "name": "ADD_AUTHORIZATION",
+                            "reducer": "const newAuthorization = {\n  id: action.input.id,\n  jwt: action.input.jwt,\n  issuer: action.input.issuer || null,\n  subject: action.input.subject || null,\n  audience: action.input.audience || null,\n  payload: action.input.payload || null,\n  revoked: false,\n  createdAt: action.input.createdAt,\n  revokedAt: null\n};\n\nstate.authorizations.push(newAuthorization);",
+                            "schema": "input AddAuthorizationInput {\n  id: OID!\n  jwt: String!\n  issuer: String\n  subject: String\n  audience: String\n  payload: String\n  createdAt: DateTime!\n}",
+                            "scope": "global",
+                            "template": "Adds a new authorization to the user"
+                        },
+                        {
+                            "description": "Marks an authorization as revoked",
+                            "errors": [
+                                {
+                                    "code": "AUTHORIZATION_NOT_FOUND",
+                                    "description": "The specified authorization ID does not exist",
+                                    "id": "auth-not-found-error-001",
+                                    "name": "AuthorizationNotFoundError",
+                                    "template": ""
+                                }
+                            ],
+                            "examples": [],
+                            "id": "revoke-authorization-op-001",
+                            "name": "REVOKE_AUTHORIZATION",
+                            "reducer": "const authIndex = state.authorizations.findIndex(auth => auth.id === action.input.id);\n\nif (authIndex === -1) {\n  throw new AuthorizationNotFoundError(`Authorization with ID ${action.input.id} not found`);\n}\n\nstate.authorizations[authIndex].revoked = true;\nstate.authorizations[authIndex].revokedAt = action.input.revokedAt;",
+                            "schema": "input RevokeAuthorizationInput {\n  id: OID!\n  revokedAt: DateTime!\n}",
+                            "scope": "global",
+                            "template": "Marks an authorization as revoked"
+                        },
+                        {
+                            "id": "remove-authorization-op-001",
+                            "name": "REMOVE_AUTHORIZATION",
+                            "description": "Removes an authorization from the user",
+                            "schema": "input RemoveAuthorizationInput {\n  id: OID!\n}",
+                            "template": "Removes an authorization from the user",
+                            "reducer": "const authIndex = state.authorizations.findIndex(auth => auth.id === action.input.id);\n\nif (authIndex === -1) {\n  throw new AuthorizationNotFoundError(`Authorization with ID ${action.input.id} not found`);\n}\n\nstate.authorizations.splice(authIndex, 1);",
+                            "errors": [
+                                {
+                                    "id": "auth-not-found-error-002",
+                                    "name": "AuthorizationNotFoundError",
+                                    "code": "AUTHORIZATION_NOT_FOUND",
+                                    "description": "The specified authorization ID does not exist",
+                                    "template": ""
+                                }
+                            ],
+                            "examples": [],
+                            "scope": "global"
+                        }
+                    ]
                 }
             ],
             "state": {
                 "global": {
                     "examples": [],
-                    "initialValue": "{\n  \"username\": null,\n  \"ethAddress\": null,\n  \"userImage\": null\n}",
-                    "schema": "type RenownUserState {\n  \"Add your global state fields here\"\n  username: String\n  ethAddress: EthereumAddress\n  userImage: String\n}"
+                    "initialValue": "{\n  \"username\": null,\n  \"ethAddress\": null,\n  \"userImage\": null,\n  \"authorizations\": []\n}",
+                    "schema": "type Authorization {\n  id: OID!\n  jwt: String!\n  issuer: String\n  subject: String\n  audience: String\n  payload: String\n  revoked: Boolean\n  createdAt: DateTime\n  revokedAt: DateTime\n}\n\ntype RenownUserState {\n  \"Add your global state fields here\"\n  username: String\n  ethAddress: EthereumAddress\n  userImage: String\n  authorizations: [Authorization!]!\n}"
                 },
                 "local": {
                     "examples": [],

@@ -18,6 +18,13 @@ interface GetProfilesInput {
   searchString?: string;
 }
 
+interface GetAuthorizationsInput {
+  driveId: string;
+  ethAddress: string;
+  subject?: string;
+  includeRevoked?: boolean;
+}
+
 interface RenownProfile {
   documentId: string;
   username: string | null;
@@ -25,6 +32,19 @@ interface RenownProfile {
   userImage: string | null;
   createdAt: Date | string | null;
   updatedAt: Date | string | null;
+}
+
+interface Authorization {
+  id: string;
+  jwt: string;
+  issuer: string | null;
+  subject: string | null;
+  audience: string | null;
+  payload: string | null;
+  revoked: boolean;
+  createdAt: Date | string | null;
+  revokedAt: Date | string | null;
+  user: RenownProfile;
 }
 
 const mapToProfile = (user: {
@@ -175,6 +195,76 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
         const results = await query.selectAll().execute();
 
         return results.map(mapToProfile);
+      },
+
+      getAuthorizations: async (
+        parent: unknown,
+        args: { input: GetAuthorizationsInput }
+      ): Promise<Authorization[]> => {
+        const { driveId, ethAddress, subject, includeRevoked = true } =
+          args.input;
+
+        if (!ethAddress) {
+          throw new Error("Ethereum address is required");
+        }
+
+        let query = RenownUserProcessor.query<DB>(driveId, db)
+          .selectFrom("authorization")
+          .innerJoin(
+            "renown_user",
+            "authorization.document_id",
+            "renown_user.document_id"
+          )
+          .select([
+            "authorization.id",
+            "authorization.jwt",
+            "authorization.issuer",
+            "authorization.subject",
+            "authorization.audience",
+            "authorization.payload",
+            "authorization.revoked",
+            "authorization.created_at",
+            "authorization.revoked_at",
+            "renown_user.document_id as user_document_id",
+            "renown_user.username",
+            "renown_user.eth_address",
+            "renown_user.user_image",
+            "renown_user.created_at as user_created_at",
+            "renown_user.updated_at as user_updated_at",
+          ])
+          .where("renown_user.eth_address", "=", ethAddress);
+
+        // Filter by subject if provided
+        if (subject) {
+          query = query.where("authorization.subject", "=", subject);
+        }
+
+        // Filter by revoked status if specified
+        if (!includeRevoked) {
+          query = query.where("authorization.revoked", "=", false);
+        }
+
+        const results = await query.execute();
+
+        return results.map((row) => ({
+          id: row.id,
+          jwt: row.jwt,
+          issuer: row.issuer,
+          subject: row.subject,
+          audience: row.audience,
+          payload: row.payload,
+          revoked: row.revoked,
+          createdAt: row.created_at,
+          revokedAt: row.revoked_at,
+          user: {
+            documentId: row.user_document_id,
+            username: row.username,
+            ethAddress: row.eth_address,
+            userImage: row.user_image,
+            createdAt: row.user_created_at,
+            updatedAt: row.user_updated_at,
+          },
+        }));
       },
     },
   };
