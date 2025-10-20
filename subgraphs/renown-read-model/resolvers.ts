@@ -26,7 +26,7 @@ interface RenownCredentialsInput {
   includeRevoked?: boolean;
 }
 
-interface RenownUser {
+interface ReadRenownUser {
   documentId: string;
   username: string | null;
   ethAddress: string | null;
@@ -35,7 +35,7 @@ interface RenownUser {
   updatedAt: Date | string | null;
 }
 
-interface CredentialStatus {
+interface ReadCredentialStatus {
   id: string;
   type: string;
   statusPurpose: string;
@@ -43,7 +43,7 @@ interface CredentialStatus {
   statusListCredential: string;
 }
 
-interface RenownCredential {
+interface ReadRenownCredential {
   documentId: string;
   credentialId: string | null;
   context: string[];
@@ -52,7 +52,7 @@ interface RenownCredential {
   issuanceDate: Date | string;
   credentialSubject: string;
   expirationDate: Date | string | null;
-  credentialStatus: CredentialStatus | null;
+  credentialStatus: ReadCredentialStatus | null;
   jwt: string | null;
   revoked: boolean;
   revokedAt: Date | string | null;
@@ -68,7 +68,7 @@ const mapToUser = (user: {
   user_image: string | null;
   created_at: Date | null;
   updated_at: Date | null;
-}): RenownUser => ({
+}): ReadRenownUser => ({
   documentId: user.document_id,
   username: user.username,
   ethAddress: user.eth_address,
@@ -97,7 +97,7 @@ const mapToCredential = (credential: {
   revocation_reason: string | null;
   created_at: Date | null;
   updated_at: Date | null;
-}): RenownCredential => ({
+}): ReadRenownCredential => ({
   documentId: credential.document_id,
   credentialId: credential.credential_id,
   context: JSON.parse(credential.context) as string[],
@@ -146,7 +146,7 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
       renownUser: async (
         parent: unknown,
         args: { input: RenownUserInput }
-      ): Promise<RenownUser | null> => {
+      ): Promise<ReadRenownUser | null> => {
         const { driveId, phid, ethAddress, username } = args.input;
         const resolvedDriveId = getDriveId(driveId);
 
@@ -175,7 +175,7 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
       renownUsers: async (
         parent: unknown,
         args: { input: RenownUsersInput }
-      ): Promise<RenownUser[]> => {
+      ): Promise<ReadRenownUser[]> => {
         const { driveId, phids, ethAddresses, usernames } = args.input;
         const resolvedDriveId = getDriveId(driveId);
 
@@ -219,7 +219,7 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
       renownCredentials: async (
         parent: unknown,
         args: { input: RenownCredentialsInput }
-      ): Promise<RenownCredential[]> => {
+      ): Promise<ReadRenownCredential[]> => {
         const { driveId, ethAddress, did, issuer, includeRevoked = true } =
           args.input;
         const resolvedDriveId = getDriveId(driveId);

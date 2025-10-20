@@ -80,6 +80,6 @@ export async function down(db: IRelationalDb<any>): Promise<void> {
     .ifExists()
     .execute();
 
-  // Drop renown_credential table
-  await db.schema.dropTable("renown_credential").ifExists().execute();
+  // Drop renown_credential table with CASCADE to drop dependent objects
+  await db.schema.dropTable("renown_credential").ifExists().cascade().execute();
 }

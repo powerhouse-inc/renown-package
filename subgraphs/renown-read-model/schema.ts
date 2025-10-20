@@ -5,7 +5,7 @@ export const schema: DocumentNode = gql`
   """
   Subgraph definition for Renown Read Model
   """
-  type RenownUser {
+  type ReadRenownUser {
     documentId: String!
     username: String
     ethAddress: String
@@ -28,7 +28,7 @@ export const schema: DocumentNode = gql`
     usernames: [String!]
   }
 
-  type RenownCredential {
+  type ReadRenownCredential {
     documentId: String!
     credentialId: String
     context: [String!]!
@@ -37,7 +37,7 @@ export const schema: DocumentNode = gql`
     issuanceDate: DateTime!
     credentialSubject: String!
     expirationDate: DateTime
-    credentialStatus: CredentialStatus
+    credentialStatus: ReadCredentialStatus
     jwt: String
     revoked: Boolean!
     revokedAt: DateTime
@@ -46,7 +46,7 @@ export const schema: DocumentNode = gql`
     updatedAt: DateTime
   }
 
-  type CredentialStatus {
+  type ReadCredentialStatus {
     id: String!
     type: String!
     statusPurpose: String!
@@ -63,8 +63,8 @@ export const schema: DocumentNode = gql`
   }
 
   type Query {
-    renownUser(input: RenownUserInput!): RenownUser
-    renownUsers(input: RenownUsersInput!): [RenownUser!]!
-    renownCredentials(input: RenownCredentialsInput!): [RenownCredential!]!
+    renownUser(input: RenownUserInput!): ReadRenownUser
+    renownUsers(input: RenownUsersInput!): [ReadRenownUser!]!
+    renownCredentials(input: RenownCredentialsInput!): [ReadRenownCredential!]!
   }
 `;
