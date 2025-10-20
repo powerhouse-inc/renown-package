@@ -7,6 +7,33 @@
   "files": [
     "/dist"
   ],
+  "release": {
+    "branches": [
+      "main",
+      {
+        "name": "staging",
+        "prerelease": "staging"
+      },
+      {
+        "name": "dev",
+        "prerelease": "dev"
+      }
+    ],
+    "plugins": [
+      "@semantic-release/changelog",
+      "@semantic-release/git",
+      "@semantic-release/commit-analyzer",
+      "@semantic-release/release-notes-generator",
+      [
+        "@semantic-release/npm",
+        {
+          "npmPublish": true,
+          "tarballDir": "dist"
+        }
+      ],
+      "@semantic-release/github"
+    ]
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -78,6 +105,8 @@
     "@powerhousedao/reactor-local": "staging",
     "@powerhousedao/scalars": "staging",
     "@powerhousedao/switchboard": "staging",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
     "@tailwindcss/cli": "^4.0.15",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.13.11",
@@ -92,6 +121,7 @@
     "pm2": "^5.4.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "semantic-release": "^24.2.8",
     "tailwindcss": "^4.1.4",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.30.1",
