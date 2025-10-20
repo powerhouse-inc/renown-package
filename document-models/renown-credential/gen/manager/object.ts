@@ -1,5 +1,5 @@
 import { BaseDocumentClass } from "document-model";
-import { type RenownCredentialPHState } from "../ph-factories.js";
+import { RenownCredentialPHState } from "../ph-factories.js";
 import {
   type InitInput,
   type RevokeInput,

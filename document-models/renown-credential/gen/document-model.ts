@@ -7,7 +7,7 @@ export const documentModel: DocumentModelState = {
   },
   description: "A Renown Credential",
   extension: "phrc",
-  id: "renown/credential",
+  id: "powerhouse/renown-credential",
   name: "RenownCredential",
   specifications: [
     {

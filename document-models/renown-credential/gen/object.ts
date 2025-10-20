@@ -3,7 +3,7 @@ import {
   applyMixins,
   type SignalDispatch,
 } from "document-model";
-import { type RenownCredentialPHState } from "./ph-factories.js";
+import { RenownCredentialPHState } from "./ph-factories.js";
 import { type RenownCredentialAction } from "./actions.js";
 import { reducer } from "./reducer.js";
 import { createDocument } from "./utils.js";

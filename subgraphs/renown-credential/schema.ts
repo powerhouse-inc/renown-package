@@ -3,7 +3,7 @@ import type { DocumentNode } from "graphql";
 
 export const schema: DocumentNode = gql`
   """
-  Subgraph definition for RenownCredential (renown/credential)
+  Subgraph definition for RenownCredential (powerhouse/renown-credential)
   """
   type CredentialStatus {
     id: String!

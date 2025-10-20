@@ -15,7 +15,7 @@ import {
   type RenownCredentialState,
   type RenownCredentialLocalState,
 } from "./types.js";
-import { type RenownCredentialPHState } from "./ph-factories.js";
+import { RenownCredentialPHState } from "./ph-factories.js";
 import { reducer } from "./reducer.js";
 
 export const initialGlobalState: RenownCredentialState = {
@@ -46,7 +46,7 @@ export const createDocument: CreateDocument<RenownCredentialPHState> = (
   state,
 ) => {
   const document = baseCreateDocument(createState, state);
-  document.header.documentType = "renown/credential";
+  document.header.documentType = "powerhouse/renown-credential";
   // for backwards compatibility, but this is NOT a valid signed document id
   document.header.id = generateId();
   return document;

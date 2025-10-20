@@ -68,7 +68,8 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
             );
 
             return docs.filter(
-              (doc) => doc.header.documentType === "renown/credential",
+              (doc) =>
+                doc.header.documentType === "powerhouse/renown-credential",
             );
           },
         };
@@ -80,7 +81,9 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
         args: { name: string; driveId?: string },
       ) => {
         const { driveId, name } = args;
-        const document = await reactor.addDocument("renown/credential");
+        const document = await reactor.addDocument(
+          "powerhouse/renown-credential",
+        );
 
         if (driveId) {
           await reactor.addAction(
@@ -88,7 +91,7 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
             addFile({
               name,
               id: document.header.id,
-              documentType: "renown/credential",
+              documentType: "powerhouse/renown-credential",
             }),
           );
         }
