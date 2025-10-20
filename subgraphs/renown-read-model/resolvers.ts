@@ -45,15 +45,18 @@ interface ReadCredentialStatus {
 
 interface ReadRenownCredential {
   documentId: string;
+  vcPayload: string | null;
   credentialId: string | null;
-  context: string[];
-  type: string[];
-  issuer: string;
-  issuanceDate: Date | string;
-  credentialSubject: string;
+  context: string[] | null;
+  type: string[] | null;
+  issuer: string | null;
+  issuanceDate: Date | string | null;
+  credentialSubject: string | null;
   expirationDate: Date | string | null;
   credentialStatus: ReadCredentialStatus | null;
   jwt: string | null;
+  jwtPayload: string | null;
+  jwtVerified: boolean;
   revoked: boolean;
   revokedAt: Date | string | null;
   revocationReason: string | null;
@@ -79,12 +82,13 @@ const mapToUser = (user: {
 
 const mapToCredential = (credential: {
   document_id: string;
-  context: string;
+  vc_payload: string | null;
+  context: string | null;
   credential_id: string | null;
-  type: string;
-  issuer: string;
-  issuance_date: Date;
-  credential_subject: string;
+  type: string | null;
+  issuer: string | null;
+  issuance_date: Date | null;
+  credential_subject: string | null;
   expiration_date: Date | null;
   credential_status_id: string | null;
   credential_status_type: string | null;
@@ -92,6 +96,8 @@ const mapToCredential = (credential: {
   credential_status_list_index: string | null;
   credential_status_list_credential: string | null;
   jwt: string | null;
+  jwt_payload: string | null;
+  jwt_verified: boolean;
   revoked: boolean;
   revoked_at: Date | null;
   revocation_reason: string | null;
@@ -99,9 +105,10 @@ const mapToCredential = (credential: {
   updated_at: Date | null;
 }): ReadRenownCredential => ({
   documentId: credential.document_id,
+  vcPayload: credential.vc_payload,
   credentialId: credential.credential_id,
-  context: JSON.parse(credential.context) as string[],
-  type: JSON.parse(credential.type) as string[],
+  context: credential.context ? (JSON.parse(credential.context) as string[]) : null,
+  type: credential.type ? (JSON.parse(credential.type) as string[]) : null,
   issuer: credential.issuer,
   issuanceDate: credential.issuance_date,
   credentialSubject: credential.credential_subject,
@@ -121,6 +128,8 @@ const mapToCredential = (credential: {
         }
       : null,
   jwt: credential.jwt,
+  jwtPayload: credential.jwt_payload,
+  jwtVerified: credential.jwt_verified,
   revoked: credential.revoked,
   revokedAt: credential.revoked_at,
   revocationReason: credential.revocation_reason,

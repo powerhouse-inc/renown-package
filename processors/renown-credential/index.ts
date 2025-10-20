@@ -40,7 +40,8 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
           case "INIT": {
             // INIT operation now only receives JWT, all fields are extracted by the reducer
             // Access the document state to get the extracted fields
-            const state = strand.state?.global as
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            const state = (strand.state)?.global as
               | {
                   vcPayload?: string;
                   context?: string[];
@@ -106,7 +107,8 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
           }
           case "UPDATE_CREDENTIAL_SUBJECT": {
             // Access the updated state to get the synced vcPayload
-            const state = strand.state?.global as
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+            const state = (strand.state)?.global as
               | {
                   vcPayload?: string;
                   credentialSubject?: string;

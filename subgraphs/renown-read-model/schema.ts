@@ -30,15 +30,18 @@ export const schema: DocumentNode = gql`
 
   type ReadRenownCredential {
     documentId: String!
+    vcPayload: String
     credentialId: String
-    context: [String!]!
-    type: [String!]!
-    issuer: String!
-    issuanceDate: DateTime!
-    credentialSubject: String!
+    context: [String!]
+    type: [String!]
+    issuer: String
+    issuanceDate: DateTime
+    credentialSubject: String
     expirationDate: DateTime
     credentialStatus: ReadCredentialStatus
     jwt: String
+    jwtPayload: String
+    jwtVerified: Boolean!
     revoked: Boolean!
     revokedAt: DateTime
     revocationReason: String
