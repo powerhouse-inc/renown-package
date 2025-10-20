@@ -37,13 +37,7 @@ export function CredentialStatusSchema(): z.ZodObject<
 
 export function InitInputSchema(): z.ZodObject<Properties<InitInput>> {
   return z.object({
-    context: z.array(z.string()).nullish(),
-    credentialSubject: z.string(),
-    expirationDate: z.string().datetime().nullish(),
-    id: z.string().nullish(),
-    issuanceDate: z.string().datetime(),
-    issuer: z.string(),
-    type: z.array(z.string()).nullish(),
+    jwt: z.string(),
   });
 }
 
@@ -52,18 +46,22 @@ export function RenownCredentialStateSchema(): z.ZodObject<
 > {
   return z.object({
     __typename: z.literal("RenownCredentialState").optional(),
-    context: z.array(z.string()),
+    context: z.array(z.string()).nullable(),
     credentialStatus: CredentialStatusSchema().nullable(),
-    credentialSubject: z.string(),
+    credentialSubject: z.string().nullable(),
     expirationDate: z.string().datetime().nullable(),
     id: z.string().nullable(),
-    issuanceDate: z.string().datetime(),
-    issuer: z.string(),
+    issuanceDate: z.string().datetime().nullable(),
+    issuer: z.string().nullable(),
     jwt: z.string().nullable(),
+    jwtPayload: z.string().nullable(),
+    jwtVerificationError: z.string().nullable(),
+    jwtVerified: z.boolean().nullable(),
     revocationReason: z.string().nullable(),
     revoked: z.boolean().nullable(),
     revokedAt: z.string().datetime().nullable(),
-    type: z.array(z.string()),
+    type: z.array(z.string()).nullable(),
+    vcPayload: z.string().nullable(),
   });
 }
 

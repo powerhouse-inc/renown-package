@@ -31,11 +31,33 @@ export const documentModel: DocumentModelState = {
                   template: "",
                 },
                 {
-                  code: "MISSING_TYPE",
+                  code: "",
+                  description: "",
+                  id: "invalid-jwt-payload-error",
+                  name: "",
+                  template: "",
+                },
+                {
+                  code: "INVALID_JWT_PAYLOAD",
                   description:
-                    "The type field is required and must include VerifiableCredential",
-                  id: "missing-type-error",
-                  name: "MissingTypeError",
+                    "JWT payload does not contain valid W3C Verifiable Credential fields",
+                  id: "invalid-jwt-payload-error",
+                  name: "InvalidJwtPayloadError",
+                  template: "",
+                },
+                {
+                  code: "",
+                  description: "",
+                  id: "jwt-verification-error",
+                  name: "",
+                  template: "",
+                },
+                {
+                  code: "JWT_VERIFICATION_FAILED",
+                  description:
+                    "Failed to verify the JWT signature or the JWT is malformed",
+                  id: "jwt-verification-error",
+                  name: "JwtVerificationError",
                   template: "",
                 },
                 {
@@ -45,14 +67,21 @@ export const documentModel: DocumentModelState = {
                   name: "InvalidClaimsError",
                   template: "",
                 },
+                {
+                  code: "MISSING_TYPE",
+                  description:
+                    "The type field is required and must include VerifiableCredential",
+                  id: "missing-type-error",
+                  name: "MissingTypeError",
+                  template: "",
+                },
               ],
               examples: [],
               id: "366dfd44-377f-42d7-949d-a8d82b6a909d",
               name: "INIT",
               reducer:
                 '// Validate context\nconst context = action.input.context && action.input.context.length > 0 \n  ? action.input.context \n  : ["https://www.w3.org/2018/credentials/v1"];\n\nif (!context.includes("https://www.w3.org/2018/credentials/v1")) {\n  throw new MissingContextError("Context must include https://www.w3.org/2018/credentials/v1");\n}\n\n// Validate type\nconst type = action.input.type && action.input.type.length > 0\n  ? action.input.type\n  : ["VerifiableCredential"];\n\nif (!type.includes("VerifiableCredential")) {\n  throw new MissingTypeError("Type must include VerifiableCredential");\n}\n\n// Validate credentialSubject is valid JSON\ntry {\n  JSON.parse(action.input.credentialSubject);\n} catch (e) {\n  throw new InvalidClaimsError("Credential subject must be valid JSON");\n}\n\nstate.context = context;\nstate.id = action.input.id || null;\nstate.type = type;\nstate.issuer = action.input.issuer;\nstate.issuanceDate = action.input.issuanceDate;\nstate.credentialSubject = action.input.credentialSubject;\nstate.expirationDate = action.input.expirationDate || null;\nstate.credentialStatus = null;\nstate.jwt = null;\nstate.revoked = false;\nstate.revokedAt = null;\nstate.revocationReason = null;',
-              schema:
-                "input InitInput {\n  context: [String!]\n  id: String\n  type: [String!]\n  issuer: String!\n  issuanceDate: DateTime!\n  credentialSubject: String!\n  expirationDate: DateTime\n}",
+              schema: "input InitInput {\n  jwt: String!\n}",
               scope: "global",
               template: "",
             },
@@ -148,9 +177,9 @@ export const documentModel: DocumentModelState = {
         global: {
           examples: [],
           initialValue:
-            '"{\\n  \\"context\\": [\\"https://www.w3.org/2018/credentials/v1\\"],\\n  \\"id\\": null,\\n  \\"type\\": [\\"VerifiableCredential\\"],\\n  \\"issuer\\": \\"\\",\\n  \\"issuanceDate\\": \\"\\",\\n  \\"credentialSubject\\": \\"{}\\",\\n  \\"expirationDate\\": null,\\n  \\"credentialStatus\\": null,\\n  \\"jwt\\": null,\\n  \\"revoked\\": false,\\n  \\"revokedAt\\": null,\\n  \\"revocationReason\\": null\\n}"',
+            '"{\\n  \\"vcPayload\\": null,\\n  \\"context\\": null,\\n  \\"id\\": null,\\n  \\"type\\": null,\\n  \\"issuer\\": null,\\n  \\"issuanceDate\\": null,\\n  \\"credentialSubject\\": null,\\n  \\"expirationDate\\": null,\\n  \\"credentialStatus\\": null,\\n  \\"jwt\\": null,\\n  \\"jwtVerified\\": false,\\n  \\"jwtVerificationError\\": null,\\n  \\"jwtPayload\\": null,\\n  \\"revoked\\": false,\\n  \\"revokedAt\\": null,\\n  \\"revocationReason\\": null\\n}"',
           schema:
-            'type CredentialStatus {\n  id: String!\n  type: String!\n  statusPurpose: String!\n  statusListIndex: String!\n  statusListCredential: String!\n}\n\ntype RenownCredentialState {\n  "W3C VC Required Fields"\n  context: [String!]!\n  id: String\n  type: [String!]!\n  issuer: String!\n  issuanceDate: DateTime!\n  credentialSubject: String!\n  \n  "W3C VC Optional Fields"\n  expirationDate: DateTime\n  credentialStatus: CredentialStatus\n  \n  "JWT Representation"\n  jwt: String\n  \n  "Revocation tracking"\n  revoked: Boolean\n  revokedAt: DateTime\n  revocationReason: String\n}',
+            'type CredentialStatus {\n  id: String!\n  type: String!\n  statusPurpose: String!\n  statusListIndex: String!\n  statusListCredential: String!\n}\n\ntype RenownCredentialState {\n  "Complete VC Payload - stores the full verifiable credential object for maximum flexibility"\n  vcPayload: String\n  \n  "W3C VC Common Fields - extracted for convenience, may be null for non-standard VCs"\n  context: [String!]\n  id: String\n  type: [String!]\n  issuer: String\n  issuanceDate: DateTime\n  credentialSubject: String\n  \n  "W3C VC Optional Fields"\n  expirationDate: DateTime\n  credentialStatus: CredentialStatus\n  \n  "JWT Representation"\n  jwt: String\n  jwtVerified: Boolean\n  jwtVerificationError: String\n  jwtPayload: String\n  \n  "Revocation tracking"\n  revoked: Boolean\n  revokedAt: DateTime\n  revocationReason: String\n}',
         },
         local: {
           examples: [],

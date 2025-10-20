@@ -65,32 +65,31 @@ export type CredentialStatus = {
 };
 
 export type InitInput = {
-  context?: InputMaybe<Array<Scalars["String"]["input"]>>;
-  credentialSubject: Scalars["String"]["input"];
-  expirationDate?: InputMaybe<Scalars["DateTime"]["input"]>;
-  id?: InputMaybe<Scalars["String"]["input"]>;
-  issuanceDate: Scalars["DateTime"]["input"];
-  issuer: Scalars["String"]["input"];
-  type?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  jwt: Scalars["String"]["input"];
 };
 
 export type RenownCredentialState = {
-  /** W3C VC Required Fields */
-  context: Array<Scalars["String"]["output"]>;
+  /** W3C VC Common Fields - extracted for convenience, may be null for non-standard VCs */
+  context: Maybe<Array<Scalars["String"]["output"]>>;
   credentialStatus: Maybe<CredentialStatus>;
-  credentialSubject: Scalars["String"]["output"];
+  credentialSubject: Maybe<Scalars["String"]["output"]>;
   /** W3C VC Optional Fields */
   expirationDate: Maybe<Scalars["DateTime"]["output"]>;
   id: Maybe<Scalars["String"]["output"]>;
-  issuanceDate: Scalars["DateTime"]["output"];
-  issuer: Scalars["String"]["output"];
+  issuanceDate: Maybe<Scalars["DateTime"]["output"]>;
+  issuer: Maybe<Scalars["String"]["output"]>;
   /** JWT Representation */
   jwt: Maybe<Scalars["String"]["output"]>;
+  jwtPayload: Maybe<Scalars["String"]["output"]>;
+  jwtVerificationError: Maybe<Scalars["String"]["output"]>;
+  jwtVerified: Maybe<Scalars["Boolean"]["output"]>;
   revocationReason: Maybe<Scalars["String"]["output"]>;
   /** Revocation tracking */
   revoked: Maybe<Scalars["Boolean"]["output"]>;
   revokedAt: Maybe<Scalars["DateTime"]["output"]>;
-  type: Array<Scalars["String"]["output"]>;
+  type: Maybe<Array<Scalars["String"]["output"]>>;
+  /** Complete VC Payload - stores the full verifiable credential object for maximum flexibility */
+  vcPayload: Maybe<Scalars["String"]["output"]>;
 };
 
 export type RevokeInput = {

@@ -14,13 +14,16 @@ export const schema: DocumentNode = gql`
   }
 
   type RenownCredentialState {
-    "W3C VC Required Fields"
-    context: [String!]!
+    "Complete VC Payload - stores the full verifiable credential object for maximum flexibility"
+    vcPayload: String
+
+    "W3C VC Common Fields - extracted for convenience, may be null for non-standard VCs"
+    context: [String!]
     id: String
-    type: [String!]!
-    issuer: String!
-    issuanceDate: DateTime!
-    credentialSubject: String!
+    type: [String!]
+    issuer: String
+    issuanceDate: DateTime
+    credentialSubject: String
 
     "W3C VC Optional Fields"
     expirationDate: DateTime
@@ -28,6 +31,9 @@ export const schema: DocumentNode = gql`
 
     "JWT Representation"
     jwt: String
+    jwtVerified: Boolean
+    jwtVerificationError: String
+    jwtPayload: String
 
     "Revocation tracking"
     revoked: Boolean
@@ -84,13 +90,7 @@ export const schema: DocumentNode = gql`
   Module: Manager
   """
   input RenownCredential_InitInput {
-    context: [String!]
-    id: String
-    type: [String!]
-    issuer: String!
-    issuanceDate: DateTime!
-    credentialSubject: String!
-    expirationDate: DateTime
+    jwt: String!
   }
   input RenownCredential_RevokeInput {
     revokedAt: DateTime!

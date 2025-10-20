@@ -35,6 +35,7 @@ export function Editor(props: IProps) {
   } = typedDocument;
 
   const {
+    vcPayload,
     context,
     id: credentialId,
     type,
@@ -44,6 +45,7 @@ export function Editor(props: IProps) {
     expirationDate,
     credentialStatus,
     jwt,
+    jwtPayload,
     revoked,
     revokedAt,
     revocationReason,
@@ -51,33 +53,15 @@ export function Editor(props: IProps) {
 
   const isInitialized = issuer && issuanceDate;
 
-  // Initialize credential
+  // Initialize credential from JWT
   const handleInit = useCallback(
     (values: {
-      issuer: string;
-      credentialSubject: string;
-      expirationDate?: string;
-      context?: string;
-      type?: string;
-      id?: string;
+      jwt: string;
     }) => {
       try {
-        const contextArray = values.context
-          ? values.context.split(",").map((s) => s.trim())
-          : undefined;
-        const typeArray = values.type
-          ? values.type.split(",").map((s) => s.trim())
-          : undefined;
-
         dispatch(
           actions.init({
-            issuer: values.issuer,
-            issuanceDate: new Date().toISOString(),
-            credentialSubject: values.credentialSubject,
-            expirationDate: values.expirationDate || undefined,
-            context: contextArray,
-            type: typeArray,
-            id: values.id,
+            jwt: values.jwt,
           })
         );
         setIsInitializing(false);
@@ -210,63 +194,22 @@ export function Editor(props: IProps) {
                     e.preventDefault();
                     const formData = new FormData(e.target as HTMLFormElement);
                     handleInit({
-                      issuer: formData.get("issuer") as string,
-                      credentialSubject: formData.get("credentialSubject") as string,
-                      expirationDate: formData.get("expirationDate") as string,
-                      context: formData.get("context") as string,
-                      type: formData.get("type") as string,
-                      id: formData.get("id") as string,
+                      jwt: formData.get("jwt") as string,
                     });
                   }}
                 >
                   <div className="space-y-6">
-                    <StringField
-                      name="issuer"
-                      label="Issuer"
-                      required
-                      placeholder="did:example:issuer123"
-                      description="DID or URL of the credential issuer"
-                    />
-
                     <TextareaField
-                      name="credentialSubject"
-                      label="Credential Subject (JSON)"
+                      name="jwt"
+                      label="JWT (JSON Web Token)"
                       required
-                      placeholder='{"id": "did:example:subject123", "name": "Alice"}'
-                      description="JSON object containing the claims about the subject"
-                      rows={4}
-                    />
-
-                    <StringField
-                      name="expirationDate"
-                      label="Expiration Date (Optional)"
-                      placeholder="2025-12-31T23:59:59Z"
-                      description="ISO 8601 date when the credential expires"
-                    />
-
-                    <StringField
-                      name="context"
-                      label="Context (Optional)"
-                      placeholder="https://www.w3.org/2018/credentials/v1, https://example.com/contexts/v1"
-                      description="Comma-separated list of context URLs (default: W3C VC context)"
-                    />
-
-                    <StringField
-                      name="type"
-                      label="Type (Optional)"
-                      placeholder="VerifiableCredential, ExampleCredential"
-                      description="Comma-separated list of types (default: VerifiableCredential)"
-                    />
-
-                    <StringField
-                      name="id"
-                      label="Credential ID (Optional)"
-                      placeholder="urn:uuid:..."
-                      description="Unique identifier for this credential"
+                      placeholder="eyJhbGciOiJFUzI1NksifQ.eyJ2YyI6eyJAY29udGV4dCI6WyJodHRwczovL3d3dy53My5vcmcvMjAxOC9jcmVkZW50aWFscy92MSJdLCJ0eXBlIjpbIlZlcmlmaWFibGVDcmVkZW50aWFsIl0sImNyZWRlbnRpYWxTdWJqZWN0Ijp7ImlkIjoiZGlkOmV4YW1wbGU6MTIzIn19LCJzdWIiOiJkaWQ6ZXhhbXBsZToxMjMiLCJuYmYiOjE3MDkyMDAwMDAsImlzcyI6ImRpZDpleGFtcGxlOmlzc3VlciJ9.signature"
+                      description="Paste the signed JWT representing a W3C Verifiable Credential. The JWT should be cryptographically verified before submitting."
+                      rows={6}
                     />
 
                     <div className="flex justify-end pt-4">
-                      <Button type="submit">Initialize Credential</Button>
+                      <Button type="submit">Initialize Credential from JWT</Button>
                     </div>
                   </div>
                 </Form>
@@ -363,6 +306,25 @@ export function Editor(props: IProps) {
                   </div>
                 </div>
               </div>
+
+              {/* Complete VC Payload */}
+              {vcPayload && (
+                <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-5 bg-purple-50">
+                    <h2 className="text-2xl font-bold text-gray-900">
+                      Complete Verifiable Credential
+                    </h2>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Full VC payload from JWT - supports any W3C VC structure
+                    </p>
+                  </div>
+                  <div className="p-6">
+                    <pre className="bg-gray-50 p-4 rounded-lg border border-gray-200 overflow-auto text-sm max-h-96">
+                      {JSON.stringify(JSON.parse(vcPayload), null, 2)}
+                    </pre>
+                  </div>
+                </div>
+              )}
 
               {/* Credential Subject */}
               <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
@@ -475,11 +437,23 @@ export function Editor(props: IProps) {
                       </div>
                     </Form>
                   ) : jwt ? (
-                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                      <p className="text-xs font-mono text-gray-900 break-all">
-                        {jwt}
-                      </p>
-                    </div>
+                    <>
+                      <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <p className="text-xs font-mono text-gray-900 break-all">
+                          {jwt}
+                        </p>
+                      </div>
+                      {jwtPayload && (
+                        <div className="mt-4">
+                          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                            Decoded JWT Payload
+                          </label>
+                          <pre className="bg-gray-50 p-4 rounded-lg border border-gray-200 overflow-auto text-xs max-h-64">
+                            {JSON.stringify(JSON.parse(jwtPayload), null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <p className="text-gray-500 italic">No JWT set</p>
                   )}

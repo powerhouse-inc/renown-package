@@ -2,16 +2,17 @@ import { type IRelationalDb } from "document-drive/processors/types";
 
 export async function up(db: IRelationalDb<any>): Promise<void> {
   await down(db);
-  // Create renown_credential table
+  // Create renown_credential table with flexible VC schema support
   await db.schema
     .createTable("renown_credential")
     .addColumn("document_id", "varchar(255)")
-    .addColumn("context", "text") // JSON array
+    .addColumn("vc_payload", "text") // Complete VC JSON object
+    .addColumn("context", "text") // JSON array - extracted for convenience
     .addColumn("credential_id", "varchar(255)")
-    .addColumn("type", "text") // JSON array
-    .addColumn("issuer", "varchar(255)", (col) => col.notNull())
-    .addColumn("issuance_date", "timestamp", (col) => col.notNull())
-    .addColumn("credential_subject", "text", (col) => col.notNull()) // JSON object
+    .addColumn("type", "text") // JSON array - extracted for convenience
+    .addColumn("issuer", "varchar(255)") // Now nullable to support any VC structure
+    .addColumn("issuance_date", "timestamp") // Now nullable
+    .addColumn("credential_subject", "text") // JSON object - now nullable
     .addColumn("expiration_date", "timestamp")
     .addColumn("credential_status_id", "varchar(255)")
     .addColumn("credential_status_type", "varchar(255)")
@@ -19,6 +20,8 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
     .addColumn("credential_status_list_index", "varchar(255)")
     .addColumn("credential_status_list_credential", "text")
     .addColumn("jwt", "text")
+    .addColumn("jwt_payload", "text") // Complete JWT payload JSON object
+    .addColumn("jwt_verified", "boolean", (col) => col.notNull().defaultTo(false))
     .addColumn("revoked", "boolean", (col) => col.notNull().defaultTo(false))
     .addColumn("revoked_at", "timestamp")
     .addColumn("revocation_reason", "text")

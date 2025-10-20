@@ -86,6 +86,8 @@
     "@powerhousedao/design-system": "staging",
     "@powerhousedao/document-engineering": "^1.37.0",
     "@powerhousedao/vetra": "staging",
+    "did-jwt": "^8.0.18",
+    "did-jwt-vc": "^4.0.16",
     "document-model": "staging",
     "graphql": "^16.10.0",
     "graphql-tag": "^2.12.6",

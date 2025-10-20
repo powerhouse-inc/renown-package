@@ -6,44 +6,134 @@ import {
   InvalidClaimsError,
   CredentialRevokedError,
   AlreadyRevokedError,
+  JwtVerificationError,
+  InvalidJwtPayloadError,
 } from "../../gen/manager/error.js";
+import { decodeJWT } from 'did-jwt';
+
+// Type definitions for JWT payload structure
+interface CredentialStatus {
+  id: string;
+  type: string;
+  statusPurpose: string;
+  statusListIndex: string;
+  statusListCredential: string;
+}
+
+// Flexible VC payload interface - all fields optional to support various VC structures
+interface VerifiableCredentialPayload {
+  '@context'?: string | string[];
+  type?: string | string[];
+  credentialSubject?: unknown;
+  id?: string;
+  expirationDate?: string;
+  credentialStatus?: CredentialStatus;
+  // Allow any additional fields
+  [key: string]: unknown;
+}
+
+interface JwtPayload {
+  vc: VerifiableCredentialPayload;
+  iss: string;
+  sub?: string;
+  iat?: number;
+  nbf?: number;
+  exp?: number;
+  jti?: string;
+}
 
 export const reducer: RenownCredentialManagerOperations = {
   initOperation(state, action, dispatch) {
-        // Validate context
-        const context = action.input.context && action.input.context.length > 0 
-          ? action.input.context 
-          : ["https://www.w3.org/2018/credentials/v1"];
+        // NOTE: JWT should be cryptographically verified using verifyCredential()
+        // from did-jwt-vc BEFORE dispatching this action. This reducer only decodes
+        // and extracts the credential fields from the JWT payload.
 
-        if (!context.includes("https://www.w3.org/2018/credentials/v1")) {
-          throw new MissingContextError("Context must include https://www.w3.org/2018/credentials/v1");
-        }
-
-        // Validate type
-        const type = action.input.type && action.input.type.length > 0
-          ? action.input.type
-          : ["VerifiableCredential"];
-
-        if (!type.includes("VerifiableCredential")) {
-          throw new MissingTypeError("Type must include VerifiableCredential");
-        }
-
-        // Validate credentialSubject is valid JSON
+        // Decode the JWT to extract payload
+        let decoded;
         try {
-          JSON.parse(action.input.credentialSubject);
+          decoded = decodeJWT(action.input.jwt);
         } catch (e) {
-          throw new InvalidClaimsError("Credential subject must be valid JSON");
+          const error = e as Error;
+          throw new JwtVerificationError(`Failed to decode JWT: ${error.message}`);
         }
 
-        state.context = context;
-        state.id = action.input.id || null;
-        state.type = type;
-        state.issuer = action.input.issuer;
-        state.issuanceDate = action.input.issuanceDate;
-        state.credentialSubject = action.input.credentialSubject;
-        state.expirationDate = action.input.expirationDate || null;
-        state.credentialStatus = null;
-        state.jwt = null;
+        const payload = decoded.payload as JwtPayload;
+
+        // Validate minimum required JWT fields
+        if (!payload.iss) {
+          throw new InvalidJwtPayloadError('JWT payload missing issuer (iss field)');
+        }
+
+        // Extract the verifiable credential from the payload (if present)
+        const vc = payload.vc;
+
+        if (!vc) {
+          throw new InvalidJwtPayloadError('JWT payload does not contain a verifiable credential (vc field)');
+        }
+
+        // Store the complete VC payload for maximum flexibility
+        state.vcPayload = JSON.stringify(vc);
+
+        // Extract common W3C VC fields if present (but don't fail if missing)
+        // Context
+        if (vc['@context']) {
+          const context = Array.isArray(vc['@context']) ? vc['@context'] : [vc['@context']];
+          state.context = context;
+        } else {
+          state.context = null;
+        }
+
+        // Type
+        if (vc.type) {
+          const type = Array.isArray(vc.type) ? vc.type : [vc.type];
+          state.type = type;
+        } else {
+          state.type = null;
+        }
+
+        // Credential Subject - store as JSON string for flexibility
+        if (vc.credentialSubject !== undefined) {
+          const credentialSubjectStr = typeof vc.credentialSubject === 'string'
+            ? vc.credentialSubject
+            : JSON.stringify(vc.credentialSubject);
+          state.credentialSubject = credentialSubjectStr;
+        } else {
+          state.credentialSubject = null;
+        }
+
+        // Issuer (from JWT payload)
+        state.issuer = payload.iss;
+
+        // Issuance date (JWT uses 'iat' or 'nbf')
+        if (payload.nbf || payload.iat) {
+          const issuanceTimestamp = payload.nbf || payload.iat;
+          state.issuanceDate = new Date(issuanceTimestamp! * 1000).toISOString();
+        } else {
+          state.issuanceDate = null;
+        }
+
+        // Expiration date (from JWT exp or VC expirationDate)
+        if (payload.exp) {
+          state.expirationDate = new Date(payload.exp * 1000).toISOString();
+        } else if (vc.expirationDate) {
+          state.expirationDate = vc.expirationDate;
+        } else {
+          state.expirationDate = null;
+        }
+
+        // Credential ID (JWT uses 'jti', VC uses 'id')
+        state.id = payload.jti || vc.id || null;
+
+        // Credential Status (optional W3C VC field)
+        state.credentialStatus = vc.credentialStatus || null;
+
+        // Store JWT metadata
+        state.jwt = action.input.jwt;
+        state.jwtVerified = true;
+        state.jwtVerificationError = null;
+        state.jwtPayload = JSON.stringify(payload);
+
+        // Initialize revocation tracking
         state.revoked = false;
         state.revokedAt = null;
         state.revocationReason = null;
@@ -61,6 +151,17 @@ export const reducer: RenownCredentialManagerOperations = {
       }
 
       state.credentialSubject = action.input.credentialSubject;
+
+      // Update vcPayload if it exists
+      if (state.vcPayload) {
+        try {
+          const vc = JSON.parse(state.vcPayload) as VerifiableCredentialPayload;
+          vc.credentialSubject = JSON.parse(action.input.credentialSubject) as unknown;
+          state.vcPayload = JSON.stringify(vc);
+        } catch (e) {
+          // If vcPayload can't be updated, just continue
+        }
+      }
 
       // Clear JWT as credential content has changed
       state.jwt = null;

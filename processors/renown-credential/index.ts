@@ -38,43 +38,65 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
       for (const operation of strand.operations) {
         switch (operation.action.type) {
           case "INIT": {
-            const input = operation.action.input as
+            // INIT operation now only receives JWT, all fields are extracted by the reducer
+            // Access the document state to get the extracted fields
+            const state = strand.state?.global as
               | {
+                  vcPayload?: string;
                   context?: string[];
                   id?: string;
                   type?: string[];
-                  issuer: string;
-                  issuanceDate: string;
-                  credentialSubject: string;
+                  issuer?: string;
+                  issuanceDate?: string;
+                  credentialSubject?: string;
                   expirationDate?: string;
+                  credentialStatus?: {
+                    id: string;
+                    type: string;
+                    statusPurpose: string;
+                    statusListIndex: string;
+                    statusListCredential: string;
+                  } | null;
+                  jwt?: string;
+                  jwtPayload?: string;
+                  jwtVerified?: boolean;
+                  revoked?: boolean;
+                  revokedAt?: string;
+                  revocationReason?: string;
                 }
               | undefined;
 
-            if (input && !existingCredential) {
+            if (state && !existingCredential) {
               await this.relationalDb
                 .insertInto("renown_credential")
                 .values({
                   document_id: documentId,
-                  context: JSON.stringify(
-                    input.context || ["https://www.w3.org/2018/credentials/v1"]
-                  ),
-                  credential_id: input.id || null,
-                  type: JSON.stringify(input.type || ["VerifiableCredential"]),
-                  issuer: input.issuer,
-                  issuance_date: new Date(input.issuanceDate),
-                  credential_subject: input.credentialSubject,
-                  expiration_date: input.expirationDate
-                    ? new Date(input.expirationDate)
+                  vc_payload: state.vcPayload || null,
+                  context: state.context ? JSON.stringify(state.context) : null,
+                  credential_id: state.id || null,
+                  type: state.type ? JSON.stringify(state.type) : null,
+                  issuer: state.issuer || null,
+                  issuance_date: state.issuanceDate
+                    ? new Date(state.issuanceDate)
                     : null,
-                  credential_status_id: null,
-                  credential_status_type: null,
-                  credential_status_purpose: null,
-                  credential_status_list_index: null,
-                  credential_status_list_credential: null,
-                  jwt: null,
-                  revoked: false,
-                  revoked_at: null,
-                  revocation_reason: null,
+                  credential_subject: state.credentialSubject || null,
+                  expiration_date: state.expirationDate
+                    ? new Date(state.expirationDate)
+                    : null,
+                  credential_status_id: state.credentialStatus?.id || null,
+                  credential_status_type: state.credentialStatus?.type || null,
+                  credential_status_purpose:
+                    state.credentialStatus?.statusPurpose || null,
+                  credential_status_list_index:
+                    state.credentialStatus?.statusListIndex || null,
+                  credential_status_list_credential:
+                    state.credentialStatus?.statusListCredential || null,
+                  jwt: state.jwt || null,
+                  jwt_payload: state.jwtPayload || null,
+                  jwt_verified: state.jwtVerified || false,
+                  revoked: state.revoked || false,
+                  revoked_at: state.revokedAt ? new Date(state.revokedAt) : null,
+                  revocation_reason: state.revocationReason || null,
                   created_at: new Date(),
                   updated_at: new Date(),
                 })
@@ -83,15 +105,23 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
             break;
           }
           case "UPDATE_CREDENTIAL_SUBJECT": {
-            const input = operation.action.input as
-              | { credentialSubject: string }
+            // Access the updated state to get the synced vcPayload
+            const state = strand.state?.global as
+              | {
+                  vcPayload?: string;
+                  credentialSubject?: string;
+                }
               | undefined;
-            if (input && existingCredential) {
+
+            if (state && existingCredential) {
               await this.relationalDb
                 .updateTable("renown_credential")
                 .set({
-                  credential_subject: input.credentialSubject,
+                  credential_subject: state.credentialSubject || null,
+                  vc_payload: state.vcPayload || null, // Sync vcPayload with updated credentialSubject
                   jwt: null, // Clear JWT when content changes
+                  jwt_payload: null, // Also clear JWT payload
+                  jwt_verified: false, // Mark as unverified since content changed
                   updated_at: new Date(),
                 })
                 .where("document_id", "=", documentId)

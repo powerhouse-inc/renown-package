@@ -6,7 +6,7 @@ import {
   isDocumentAction,
   createReducer,
 } from "document-model";
-import { RenownCredentialPHState } from "./ph-factories.js";
+import { type RenownCredentialPHState } from "./ph-factories.js";
 import { z } from "./types.js";
 
 import { reducer as ManagerReducer } from "../src/reducers/manager.js";
