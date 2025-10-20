@@ -1,19 +1,29 @@
 import { type Subgraph } from "@powerhousedao/reactor-api";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
-import type { DB } from "../../processors/renown-user/schema.js";
+import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
+import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
+import type { DB as RenownCredentialDB } from "../../processors/renown-credential/schema.js";
 
 interface RenownUserInput {
-  driveId: string;
+  driveId?: string;
   phid?: string;
   ethAddress?: string;
   username?: string;
 }
 
 interface RenownUsersInput {
-  driveId: string;
+  driveId?: string;
   phids?: string[];
   ethAddresses?: string[];
   usernames?: string[];
+}
+
+interface RenownCredentialsInput {
+  driveId?: string;
+  ethAddress?: string;
+  did?: string;
+  issuer?: string;
+  includeRevoked?: boolean;
 }
 
 interface RenownUser {
@@ -21,6 +31,32 @@ interface RenownUser {
   username: string | null;
   ethAddress: string | null;
   userImage: string | null;
+  createdAt: Date | string | null;
+  updatedAt: Date | string | null;
+}
+
+interface CredentialStatus {
+  id: string;
+  type: string;
+  statusPurpose: string;
+  statusListIndex: string;
+  statusListCredential: string;
+}
+
+interface RenownCredential {
+  documentId: string;
+  credentialId: string | null;
+  context: string[];
+  type: string[];
+  issuer: string;
+  issuanceDate: Date | string;
+  credentialSubject: string;
+  expirationDate: Date | string | null;
+  credentialStatus: CredentialStatus | null;
+  jwt: string | null;
+  revoked: boolean;
+  revokedAt: Date | string | null;
+  revocationReason: string | null;
   createdAt: Date | string | null;
   updatedAt: Date | string | null;
 }
@@ -41,6 +77,67 @@ const mapToUser = (user: {
   updatedAt: user.updated_at,
 });
 
+const mapToCredential = (credential: {
+  document_id: string;
+  context: string;
+  credential_id: string | null;
+  type: string;
+  issuer: string;
+  issuance_date: Date;
+  credential_subject: string;
+  expiration_date: Date | null;
+  credential_status_id: string | null;
+  credential_status_type: string | null;
+  credential_status_purpose: string | null;
+  credential_status_list_index: string | null;
+  credential_status_list_credential: string | null;
+  jwt: string | null;
+  revoked: boolean;
+  revoked_at: Date | null;
+  revocation_reason: string | null;
+  created_at: Date | null;
+  updated_at: Date | null;
+}): RenownCredential => ({
+  documentId: credential.document_id,
+  credentialId: credential.credential_id,
+  context: JSON.parse(credential.context) as string[],
+  type: JSON.parse(credential.type) as string[],
+  issuer: credential.issuer,
+  issuanceDate: credential.issuance_date,
+  credentialSubject: credential.credential_subject,
+  expirationDate: credential.expiration_date,
+  credentialStatus:
+    credential.credential_status_id &&
+    credential.credential_status_type &&
+    credential.credential_status_purpose &&
+    credential.credential_status_list_index &&
+    credential.credential_status_list_credential
+      ? {
+          id: credential.credential_status_id,
+          type: credential.credential_status_type,
+          statusPurpose: credential.credential_status_purpose,
+          statusListIndex: credential.credential_status_list_index,
+          statusListCredential: credential.credential_status_list_credential,
+        }
+      : null,
+  jwt: credential.jwt,
+  revoked: credential.revoked,
+  revokedAt: credential.revoked_at,
+  revocationReason: credential.revocation_reason,
+  createdAt: credential.created_at,
+  updatedAt: credential.updated_at,
+});
+
+const getDriveId = (driveId?: string): string => {
+  const resolvedDriveId = driveId || process.env.RENOWN_PROFILES_DRIVE_ID;
+  if (!resolvedDriveId) {
+    throw new Error(
+      "Drive ID is required. Provide it in the input or set RENOWN_PROFILES_DRIVE_ID environment variable."
+    );
+  }
+  return resolvedDriveId;
+};
+
 export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
   const db = subgraph.relationalDb;
 
@@ -51,8 +148,9 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
         args: { input: RenownUserInput }
       ): Promise<RenownUser | null> => {
         const { driveId, phid, ethAddress, username } = args.input;
+        const resolvedDriveId = getDriveId(driveId);
 
-        let query = RenownUserProcessor.query<DB>(driveId, db).selectFrom(
+        let query = RenownUserProcessor.query<RenownUserDB>(resolvedDriveId, db).selectFrom(
           "renown_user"
         );
 
@@ -79,8 +177,9 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
         args: { input: RenownUsersInput }
       ): Promise<RenownUser[]> => {
         const { driveId, phids, ethAddresses, usernames } = args.input;
+        const resolvedDriveId = getDriveId(driveId);
 
-        let query = RenownUserProcessor.query<DB>(driveId, db).selectFrom(
+        let query = RenownUserProcessor.query<RenownUserDB>(resolvedDriveId, db).selectFrom(
           "renown_user"
         );
 
@@ -115,6 +214,57 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
         const results = await query.selectAll().execute();
 
         return results.map(mapToUser);
+      },
+
+      renownCredentials: async (
+        parent: unknown,
+        args: { input: RenownCredentialsInput }
+      ): Promise<RenownCredential[]> => {
+        const { driveId, ethAddress, did, issuer, includeRevoked = true } =
+          args.input;
+        const resolvedDriveId = getDriveId(driveId);
+
+        let query = RenownCredentialProcessor.query<RenownCredentialDB>(
+          resolvedDriveId,
+          db
+        ).selectFrom("renown_credential");
+
+        // Search by ethAddress or DID in credential_subject JSON
+        if (ethAddress || did) {
+          query = query.where((eb) => {
+            const conditions = [];
+
+            if (ethAddress) {
+              // Search for ethAddress in credential_subject JSON
+              conditions.push(
+                eb("renown_credential.credential_subject", "like", `%${ethAddress}%`)
+              );
+            }
+
+            if (did) {
+              // Search for DID in credential_subject JSON
+              conditions.push(
+                eb("renown_credential.credential_subject", "like", `%${did}%`)
+              );
+            }
+
+            return eb.or(conditions);
+          });
+        }
+
+        // Filter by issuer if provided
+        if (issuer) {
+          query = query.where("renown_credential.issuer", "=", issuer);
+        }
+
+        // Filter by revoked status
+        if (!includeRevoked) {
+          query = query.where("renown_credential.revoked", "=", false);
+        }
+
+        const results = await query.selectAll().execute();
+
+        return results.map(mapToCredential);
       },
     },
   };
