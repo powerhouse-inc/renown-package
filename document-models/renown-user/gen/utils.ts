@@ -12,14 +12,13 @@ import {
   generateId,
 } from "document-model";
 import { type RenownUserState, type RenownUserLocalState } from "./types.js";
-import { RenownUserPHState } from "./ph-factories.js";
+import { type RenownUserPHState } from "./ph-factories.js";
 import { reducer } from "./reducer.js";
 
 export const initialGlobalState: RenownUserState = {
   username: null,
   ethAddress: null,
   userImage: null,
-  authorizations: [],
 };
 export const initialLocalState: RenownUserLocalState = {};
 

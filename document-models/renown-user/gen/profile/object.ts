@@ -1,5 +1,5 @@
 import { BaseDocumentClass } from "document-model";
-import { RenownUserPHState } from "../ph-factories.js";
+import { type RenownUserPHState } from "../ph-factories.js";
 import {
   type SetUsernameInput,
   type SetEthAddressInput,

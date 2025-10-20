@@ -6,11 +6,10 @@ import {
   isDocumentAction,
   createReducer,
 } from "document-model";
-import { RenownUserPHState } from "./ph-factories.js";
+import { type RenownUserPHState } from "./ph-factories.js";
 import { z } from "./types.js";
 
 import { reducer as ProfileReducer } from "../src/reducers/profile.js";
-import { reducer as AuthorizationReducer } from "../src/reducers/authorization.js";
 
 export const stateReducer: StateReducer<RenownUserPHState> = (
   state,
@@ -43,33 +42,6 @@ export const stateReducer: StateReducer<RenownUserPHState> = (
     case "SET_USER_IMAGE":
       z.SetUserImageInputSchema().parse(action.input);
       ProfileReducer.setUserImageOperation(
-        (state as any)[action.scope],
-        action as any,
-        dispatch,
-      );
-      break;
-
-    case "ADD_AUTHORIZATION":
-      z.AddAuthorizationInputSchema().parse(action.input);
-      AuthorizationReducer.addAuthorizationOperation(
-        (state as any)[action.scope],
-        action as any,
-        dispatch,
-      );
-      break;
-
-    case "REVOKE_AUTHORIZATION":
-      z.RevokeAuthorizationInputSchema().parse(action.input);
-      AuthorizationReducer.revokeAuthorizationOperation(
-        (state as any)[action.scope],
-        action as any,
-        dispatch,
-      );
-      break;
-
-    case "REMOVE_AUTHORIZATION":
-      z.RemoveAuthorizationInputSchema().parse(action.input);
-      AuthorizationReducer.removeAuthorizationOperation(
         (state as any)[action.scope],
         action as any,
         dispatch,

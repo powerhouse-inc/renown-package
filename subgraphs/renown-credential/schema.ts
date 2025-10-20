@@ -5,14 +5,34 @@ export const schema: DocumentNode = gql`
   """
   Subgraph definition for RenownCredential (renown/credential)
   """
+  type CredentialStatus {
+    id: String!
+    type: String!
+    statusPurpose: String!
+    statusListIndex: String!
+    statusListCredential: String!
+  }
+
   type RenownCredentialState {
-    "Add your global state fields here"
+    "W3C VC Required Fields"
+    context: [String!]!
+    id: String
+    type: [String!]!
+    issuer: String!
+    issuanceDate: DateTime!
+    credentialSubject: String!
+
+    "W3C VC Optional Fields"
+    expirationDate: DateTime
+    credentialStatus: CredentialStatus
+
+    "JWT Representation"
     jwt: String
+
+    "Revocation tracking"
     revoked: Boolean
-    issuer: String
-    subject: String
-    audience: String
-    payload: String
+    revokedAt: DateTime
+    revocationReason: String
   }
 
   """
@@ -43,20 +63,50 @@ export const schema: DocumentNode = gql`
       docId: PHID
       input: RenownCredential_RevokeInput
     ): Int
+    RenownCredential_updateCredentialSubject(
+      driveId: String
+      docId: PHID
+      input: RenownCredential_UpdateCredentialSubjectInput
+    ): Int
+    RenownCredential_setJwt(
+      driveId: String
+      docId: PHID
+      input: RenownCredential_SetJwtInput
+    ): Int
+    RenownCredential_setCredentialStatus(
+      driveId: String
+      docId: PHID
+      input: RenownCredential_SetCredentialStatusInput
+    ): Int
   }
 
   """
   Module: Manager
   """
   input RenownCredential_InitInput {
-    "Add your inputs here"
-    jwt: String!
-    issuer: String
-    subject: String
-    audience: String
-    payload: String
+    context: [String!]
+    id: String
+    type: [String!]
+    issuer: String!
+    issuanceDate: DateTime!
+    credentialSubject: String!
+    expirationDate: DateTime
   }
   input RenownCredential_RevokeInput {
-    jwt: String
+    revokedAt: DateTime!
+    reason: String
+  }
+  input RenownCredential_UpdateCredentialSubjectInput {
+    credentialSubject: String!
+  }
+  input RenownCredential_SetJwtInput {
+    jwt: String!
+  }
+  input RenownCredential_SetCredentialStatusInput {
+    statusId: String!
+    statusType: String!
+    statusPurpose: String!
+    statusListIndex: String!
+    statusListCredential: String!
   }
 `;

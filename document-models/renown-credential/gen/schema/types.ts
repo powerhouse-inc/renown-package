@@ -56,25 +56,60 @@ export type Scalars = {
   Upload: { input: File; output: File };
 };
 
+export type CredentialStatus = {
+  id: Scalars["String"]["output"];
+  statusListCredential: Scalars["String"]["output"];
+  statusListIndex: Scalars["String"]["output"];
+  statusPurpose: Scalars["String"]["output"];
+  type: Scalars["String"]["output"];
+};
+
 export type InitInput = {
-  audience?: InputMaybe<Scalars["String"]["input"]>;
-  issuer?: InputMaybe<Scalars["String"]["input"]>;
-  /** Add your inputs here */
-  jwt: Scalars["String"]["input"];
-  payload?: InputMaybe<Scalars["String"]["input"]>;
-  subject?: InputMaybe<Scalars["String"]["input"]>;
+  context?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  credentialSubject: Scalars["String"]["input"];
+  expirationDate?: InputMaybe<Scalars["DateTime"]["input"]>;
+  id?: InputMaybe<Scalars["String"]["input"]>;
+  issuanceDate: Scalars["DateTime"]["input"];
+  issuer: Scalars["String"]["input"];
+  type?: InputMaybe<Array<Scalars["String"]["input"]>>;
 };
 
 export type RenownCredentialState = {
-  audience: Maybe<Scalars["String"]["output"]>;
-  issuer: Maybe<Scalars["String"]["output"]>;
-  /** Add your global state fields here */
+  /** W3C VC Required Fields */
+  context: Array<Scalars["String"]["output"]>;
+  credentialStatus: Maybe<CredentialStatus>;
+  credentialSubject: Scalars["String"]["output"];
+  /** W3C VC Optional Fields */
+  expirationDate: Maybe<Scalars["DateTime"]["output"]>;
+  id: Maybe<Scalars["String"]["output"]>;
+  issuanceDate: Scalars["DateTime"]["output"];
+  issuer: Scalars["String"]["output"];
+  /** JWT Representation */
   jwt: Maybe<Scalars["String"]["output"]>;
-  payload: Maybe<Scalars["String"]["output"]>;
+  revocationReason: Maybe<Scalars["String"]["output"]>;
+  /** Revocation tracking */
   revoked: Maybe<Scalars["Boolean"]["output"]>;
-  subject: Maybe<Scalars["String"]["output"]>;
+  revokedAt: Maybe<Scalars["DateTime"]["output"]>;
+  type: Array<Scalars["String"]["output"]>;
 };
 
 export type RevokeInput = {
-  jwt?: InputMaybe<Scalars["String"]["input"]>;
+  reason?: InputMaybe<Scalars["String"]["input"]>;
+  revokedAt: Scalars["DateTime"]["input"];
+};
+
+export type SetCredentialStatusInput = {
+  statusId: Scalars["String"]["input"];
+  statusListCredential: Scalars["String"]["input"];
+  statusListIndex: Scalars["String"]["input"];
+  statusPurpose: Scalars["String"]["input"];
+  statusType: Scalars["String"]["input"];
+};
+
+export type SetJwtInput = {
+  jwt: Scalars["String"]["input"];
+};
+
+export type UpdateCredentialSubjectInput = {
+  credentialSubject: Scalars["String"]["input"];
 };

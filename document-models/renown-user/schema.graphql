@@ -15,24 +15,11 @@ scalar Amount_Currency
 scalar Amount_Crypto
 scalar Amount
 scalar Upload
-type Authorization {
-  id: OID!
-  jwt: String!
-  issuer: String
-  subject: String
-  audience: String
-  payload: String
-  revoked: Boolean
-  createdAt: DateTime
-  revokedAt: DateTime
-}
-
 type RenownUserState {
   "Add your global state fields here"
   username: String
   ethAddress: EthereumAddress
   userImage: String
-  authorizations: [Authorization!]!
 }
 
 
@@ -52,25 +39,4 @@ input SetEthAddressInput {
 input SetUserImageInput {
   "Add your inputs here"
   userImage: String!
-}
-
-# authorization
-
-input AddAuthorizationInput {
-  id: OID!
-  jwt: String!
-  issuer: String
-  subject: String
-  audience: String
-  payload: String
-  createdAt: DateTime!
-}
-
-input RevokeAuthorizationInput {
-  id: OID!
-  revokedAt: DateTime!
-}
-
-input RemoveAuthorizationInput {
-  id: OID!
 }

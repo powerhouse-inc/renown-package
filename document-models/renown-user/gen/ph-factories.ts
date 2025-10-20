@@ -26,7 +26,6 @@ export function defaultGlobalState(): RenownUserState {
     username: null,
     ethAddress: null,
     userImage: null,
-    authorizations: [],
   };
 }
 

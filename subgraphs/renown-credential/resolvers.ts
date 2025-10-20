@@ -4,6 +4,9 @@ import {
   actions,
   type InitInput,
   type RevokeInput,
+  type UpdateCredentialSubjectInput,
+  type SetJwtInput,
+  type SetCredentialStatusInput,
   type RenownCredentialDocument,
 } from "../../document-models/renown-credential/index.js";
 import { setName } from "document-model";
@@ -130,6 +133,73 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
 
         if (result.status !== "SUCCESS") {
           throw new Error(result.error?.message ?? "Failed to revoke");
+        }
+
+        return true;
+      },
+
+      RenownCredential_updateCredentialSubject: async (
+        _: unknown,
+        args: { docId: string; input: UpdateCredentialSubjectInput },
+      ) => {
+        const { docId, input } = args;
+        const doc = await reactor.getDocument<RenownCredentialDocument>(docId);
+        if (!doc) {
+          throw new Error("Document not found");
+        }
+
+        const result = await reactor.addAction(
+          docId,
+          actions.updateCredentialSubject(input),
+        );
+
+        if (result.status !== "SUCCESS") {
+          throw new Error(
+            result.error?.message ?? "Failed to updateCredentialSubject",
+          );
+        }
+
+        return true;
+      },
+
+      RenownCredential_setJwt: async (
+        _: unknown,
+        args: { docId: string; input: SetJwtInput },
+      ) => {
+        const { docId, input } = args;
+        const doc = await reactor.getDocument<RenownCredentialDocument>(docId);
+        if (!doc) {
+          throw new Error("Document not found");
+        }
+
+        const result = await reactor.addAction(docId, actions.setJwt(input));
+
+        if (result.status !== "SUCCESS") {
+          throw new Error(result.error?.message ?? "Failed to setJwt");
+        }
+
+        return true;
+      },
+
+      RenownCredential_setCredentialStatus: async (
+        _: unknown,
+        args: { docId: string; input: SetCredentialStatusInput },
+      ) => {
+        const { docId, input } = args;
+        const doc = await reactor.getDocument<RenownCredentialDocument>(docId);
+        if (!doc) {
+          throw new Error("Document not found");
+        }
+
+        const result = await reactor.addAction(
+          docId,
+          actions.setCredentialStatus(input),
+        );
+
+        if (result.status !== "SUCCESS") {
+          throw new Error(
+            result.error?.message ?? "Failed to setCredentialStatus",
+          );
         }
 
         return true;

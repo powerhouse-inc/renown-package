@@ -15,16 +15,22 @@ import {
   type RenownCredentialState,
   type RenownCredentialLocalState,
 } from "./types.js";
-import { RenownCredentialPHState } from "./ph-factories.js";
+import { type RenownCredentialPHState } from "./ph-factories.js";
 import { reducer } from "./reducer.js";
 
 export const initialGlobalState: RenownCredentialState = {
+  context: ["https://www.w3.org/2018/credentials/v1"],
+  id: null,
+  type: ["VerifiableCredential"],
+  issuer: "",
+  issuanceDate: "",
+  credentialSubject: "{}",
+  expirationDate: null,
+  credentialStatus: null,
   jwt: null,
-  revoked: null,
-  issuer: null,
-  subject: null,
-  audience: null,
-  payload: null,
+  revoked: false,
+  revokedAt: null,
+  revocationReason: null,
 };
 export const initialLocalState: RenownCredentialLocalState = {};
 
