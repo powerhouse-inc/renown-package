@@ -15,20 +15,6 @@ export interface RenownUser {
   username: string | null;
 }
 
-export interface Authorization {
-  id: string;
-  document_id: string;
-  jwt: string;
-  issuer: string | null;
-  subject: string | null;
-  audience: string | null;
-  payload: string | null;
-  revoked: boolean;
-  created_at: Timestamp | null;
-  revoked_at: Timestamp | null;
-}
-
 export interface DB {
   renown_user: RenownUser;
-  authorization: Authorization;
 }
