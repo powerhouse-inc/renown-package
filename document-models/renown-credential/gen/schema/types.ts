@@ -69,7 +69,7 @@ export type InitInput = {
 };
 
 export type RenownCredentialState = {
-  /** W3C VC Common Fields - extracted for convenience, may be null for non-standard VCs */
+  /** W3C VC Common Fields - extracted for querying convenience, may be null for non-standard VCs */
   context: Maybe<Array<Scalars["String"]["output"]>>;
   credentialStatus: Maybe<CredentialStatus>;
   credentialSubject: Maybe<Scalars["String"]["output"]>;
@@ -78,17 +78,15 @@ export type RenownCredentialState = {
   id: Maybe<Scalars["String"]["output"]>;
   issuanceDate: Maybe<Scalars["DateTime"]["output"]>;
   issuer: Maybe<Scalars["String"]["output"]>;
-  /** JWT Representation */
+  /** JWT token containing the Verifiable Credential */
   jwt: Maybe<Scalars["String"]["output"]>;
-  jwtPayload: Maybe<Scalars["String"]["output"]>;
-  jwtVerificationError: Maybe<Scalars["String"]["output"]>;
   jwtVerified: Maybe<Scalars["Boolean"]["output"]>;
   revocationReason: Maybe<Scalars["String"]["output"]>;
   /** Revocation tracking */
   revoked: Maybe<Scalars["Boolean"]["output"]>;
   revokedAt: Maybe<Scalars["DateTime"]["output"]>;
   type: Maybe<Array<Scalars["String"]["output"]>>;
-  /** Complete VC Payload - stores the full verifiable credential object for maximum flexibility */
+  /** Complete VC Payload - extracted from JWT for convenience and flexibility */
   vcPayload: Maybe<Scalars["String"]["output"]>;
 };
 

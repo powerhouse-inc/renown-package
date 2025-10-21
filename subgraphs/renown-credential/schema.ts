@@ -14,10 +14,14 @@ export const schema: DocumentNode = gql`
   }
 
   type RenownCredentialState {
-    "Complete VC Payload - stores the full verifiable credential object for maximum flexibility"
+    "JWT token containing the Verifiable Credential"
+    jwt: String
+    jwtVerified: Boolean
+
+    "Complete VC Payload - extracted from JWT for convenience and flexibility"
     vcPayload: String
 
-    "W3C VC Common Fields - extracted for convenience, may be null for non-standard VCs"
+    "W3C VC Common Fields - extracted for querying convenience, may be null for non-standard VCs"
     context: [String!]
     id: String
     type: [String!]
@@ -28,12 +32,6 @@ export const schema: DocumentNode = gql`
     "W3C VC Optional Fields"
     expirationDate: DateTime
     credentialStatus: CredentialStatus
-
-    "JWT Representation"
-    jwt: String
-    jwtVerified: Boolean
-    jwtVerificationError: String
-    jwtPayload: String
 
     "Revocation tracking"
     revoked: Boolean

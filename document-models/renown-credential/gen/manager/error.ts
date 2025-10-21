@@ -1,90 +1,89 @@
 export type ErrorCode =
-    | 'MissingContextError'
-    | 'MissingTypeError'
-    | 'InvalidClaimsError'
-    | 'JwtVerificationError'
-    | 'InvalidJwtPayloadError'
-    | 'AlreadyRevokedError'
-    | 'CredentialRevokedError'
-    | 'InvalidStatusPurposeError';
+  | "MissingContextError"
+  | "InvalidJwtPayloadError"
+  | "JwtVerificationError"
+  | "InvalidClaimsError"
+  | "MissingTypeError"
+  | "AlreadyRevokedError"
+  | "CredentialRevokedError"
+  | "InvalidStatusPurposeError";
 
 export interface ReducerError {
-    errorCode: ErrorCode;
+  errorCode: ErrorCode;
 }
 
 export class MissingContextError extends Error implements ReducerError {
-    errorCode = 'MissingContextError' as ErrorCode;
-    constructor(message = 'MissingContextError') {
-        super(message);
-    }
-}
-
-export class MissingTypeError extends Error implements ReducerError {
-    errorCode = 'MissingTypeError' as ErrorCode;
-    constructor(message = 'MissingTypeError') {
-        super(message);
-    }
-}
-
-export class InvalidClaimsError extends Error implements ReducerError {
-    errorCode = 'InvalidClaimsError' as ErrorCode;
-    constructor(message = 'InvalidClaimsError') {
-        super(message);
-    }
-}
-
-export class JwtVerificationError extends Error implements ReducerError {
-    errorCode = 'JwtVerificationError' as ErrorCode;
-    constructor(message = 'JwtVerificationError') {
-        super(message);
-    }
+  errorCode = "MissingContextError" as ErrorCode;
+  constructor(message = "MissingContextError") {
+    super(message);
+  }
 }
 
 export class InvalidJwtPayloadError extends Error implements ReducerError {
-    errorCode = 'InvalidJwtPayloadError' as ErrorCode;
-    constructor(message = 'InvalidJwtPayloadError') {
-        super(message);
-    }
+  errorCode = "InvalidJwtPayloadError" as ErrorCode;
+  constructor(message = "InvalidJwtPayloadError") {
+    super(message);
+  }
+}
+
+export class JwtVerificationError extends Error implements ReducerError {
+  errorCode = "JwtVerificationError" as ErrorCode;
+  constructor(message = "JwtVerificationError") {
+    super(message);
+  }
+}
+
+export class InvalidClaimsError extends Error implements ReducerError {
+  errorCode = "InvalidClaimsError" as ErrorCode;
+  constructor(message = "InvalidClaimsError") {
+    super(message);
+  }
+}
+
+export class MissingTypeError extends Error implements ReducerError {
+  errorCode = "MissingTypeError" as ErrorCode;
+  constructor(message = "MissingTypeError") {
+    super(message);
+  }
 }
 
 export class AlreadyRevokedError extends Error implements ReducerError {
-    errorCode = 'AlreadyRevokedError' as ErrorCode;
-    constructor(message = 'AlreadyRevokedError') {
-        super(message);
-    }
+  errorCode = "AlreadyRevokedError" as ErrorCode;
+  constructor(message = "AlreadyRevokedError") {
+    super(message);
+  }
 }
 
 export class CredentialRevokedError extends Error implements ReducerError {
-    errorCode = 'CredentialRevokedError' as ErrorCode;
-    constructor(message = 'CredentialRevokedError') {
-        super(message);
-    }
+  errorCode = "CredentialRevokedError" as ErrorCode;
+  constructor(message = "CredentialRevokedError") {
+    super(message);
+  }
 }
 
 export class InvalidStatusPurposeError extends Error implements ReducerError {
-    errorCode = 'InvalidStatusPurposeError' as ErrorCode;
-    constructor(message = 'InvalidStatusPurposeError') {
-        super(message);
-    }
+  errorCode = "InvalidStatusPurposeError" as ErrorCode;
+  constructor(message = "InvalidStatusPurposeError") {
+    super(message);
+  }
 }
 
-
 export const errors = {
-    Init: {
-            MissingContextError,
-            MissingTypeError,
-            InvalidClaimsError,
-            JwtVerificationError,
-            InvalidJwtPayloadError,
-        },
-    Revoke: {
-            AlreadyRevokedError,
-        },
-    UpdateCredentialSubject: {
-            InvalidClaimsError,
-            CredentialRevokedError,
-        },
-    SetCredentialStatus: {
-            InvalidStatusPurposeError,
-        },
+  Init: {
+    MissingContextError,
+    InvalidJwtPayloadError,
+    JwtVerificationError,
+    InvalidClaimsError,
+    MissingTypeError,
+  },
+  Revoke: {
+    AlreadyRevokedError,
+  },
+  UpdateCredentialSubject: {
+    InvalidClaimsError,
+    CredentialRevokedError,
+  },
+  SetCredentialStatus: {
+    InvalidStatusPurposeError,
+  },
 };

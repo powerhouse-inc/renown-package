@@ -34,8 +34,6 @@ export function defaultGlobalState(): RenownCredentialState {
     credentialStatus: null,
     jwt: null,
     jwtVerified: false,
-    jwtVerificationError: null,
-    jwtPayload: null,
     revoked: false,
     revokedAt: null,
     revocationReason: null,

@@ -39,12 +39,10 @@ export const createDocument: CreateDocument<RenownUserPHState> = (state) => {
 };
 
 export const saveToFile = (document: any, path: string, name?: string) => {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   return baseSaveToFile(document, path, "phru", name);
 };
 
 export const saveToFileHandle = (document: any, input: any) => {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   return baseSaveToFileHandle(document, input);
 };
 

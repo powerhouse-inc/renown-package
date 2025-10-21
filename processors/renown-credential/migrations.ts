@@ -6,7 +6,9 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
   await db.schema
     .createTable("renown_credential")
     .addColumn("document_id", "varchar(255)")
-    .addColumn("vc_payload", "text") // Complete VC JSON object
+    .addColumn("jwt", "text") // JWT token containing the VC
+    .addColumn("jwt_verified", "boolean", (col) => col.notNull().defaultTo(false))
+    .addColumn("vc_payload", "text") // Complete VC JSON object extracted from JWT
     .addColumn("context", "text") // JSON array - extracted for convenience
     .addColumn("credential_id", "varchar(255)")
     .addColumn("type", "text") // JSON array - extracted for convenience
@@ -19,9 +21,6 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
     .addColumn("credential_status_purpose", "varchar(255)")
     .addColumn("credential_status_list_index", "varchar(255)")
     .addColumn("credential_status_list_credential", "text")
-    .addColumn("jwt", "text")
-    .addColumn("jwt_payload", "text") // Complete JWT payload JSON object
-    .addColumn("jwt_verified", "boolean", (col) => col.notNull().defaultTo(false))
     .addColumn("revoked", "boolean", (col) => col.notNull().defaultTo(false))
     .addColumn("revoked_at", "timestamp")
     .addColumn("revocation_reason", "text")

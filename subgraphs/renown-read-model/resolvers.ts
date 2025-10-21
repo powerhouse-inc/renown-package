@@ -45,6 +45,8 @@ interface ReadCredentialStatus {
 
 interface ReadRenownCredential {
   documentId: string;
+  jwt: string | null;
+  jwtVerified: boolean;
   vcPayload: string | null;
   credentialId: string | null;
   context: string[] | null;
@@ -54,9 +56,6 @@ interface ReadRenownCredential {
   credentialSubject: string | null;
   expirationDate: Date | string | null;
   credentialStatus: ReadCredentialStatus | null;
-  jwt: string | null;
-  jwtPayload: string | null;
-  jwtVerified: boolean;
   revoked: boolean;
   revokedAt: Date | string | null;
   revocationReason: string | null;
@@ -82,6 +81,8 @@ const mapToUser = (user: {
 
 const mapToCredential = (credential: {
   document_id: string;
+  jwt: string | null;
+  jwt_verified: boolean;
   vc_payload: string | null;
   context: string | null;
   credential_id: string | null;
@@ -95,9 +96,6 @@ const mapToCredential = (credential: {
   credential_status_purpose: string | null;
   credential_status_list_index: string | null;
   credential_status_list_credential: string | null;
-  jwt: string | null;
-  jwt_payload: string | null;
-  jwt_verified: boolean;
   revoked: boolean;
   revoked_at: Date | null;
   revocation_reason: string | null;
@@ -105,6 +103,8 @@ const mapToCredential = (credential: {
   updated_at: Date | null;
 }): ReadRenownCredential => ({
   documentId: credential.document_id,
+  jwt: credential.jwt,
+  jwtVerified: credential.jwt_verified,
   vcPayload: credential.vc_payload,
   credentialId: credential.credential_id,
   context: credential.context ? (JSON.parse(credential.context) as string[]) : null,
@@ -127,9 +127,6 @@ const mapToCredential = (credential: {
           statusListCredential: credential.credential_status_list_credential,
         }
       : null,
-  jwt: credential.jwt,
-  jwtPayload: credential.jwt_payload,
-  jwtVerified: credential.jwt_verified,
   revoked: credential.revoked,
   revokedAt: credential.revoked_at,
   revocationReason: credential.revocation_reason,

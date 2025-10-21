@@ -45,7 +45,6 @@ export function Editor(props: IProps) {
     expirationDate,
     credentialStatus,
     jwt,
-    jwtPayload,
     revoked,
     revokedAt,
     revocationReason,
@@ -443,16 +442,6 @@ export function Editor(props: IProps) {
                           {jwt}
                         </p>
                       </div>
-                      {jwtPayload && (
-                        <div className="mt-4">
-                          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                            Decoded JWT Payload
-                          </label>
-                          <pre className="bg-gray-50 p-4 rounded-lg border border-gray-200 overflow-auto text-xs max-h-64">
-                            {JSON.stringify(JSON.parse(jwtPayload), null, 2)}
-                          </pre>
-                        </div>
-                      )}
                     </>
                   ) : (
                     <p className="text-gray-500 italic">No JWT set</p>

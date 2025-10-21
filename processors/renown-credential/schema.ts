@@ -8,7 +8,9 @@ export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
 export interface RenownCredential {
   document_id: string;
-  vc_payload: string | null; // Complete VC JSON object
+  jwt: string | null; // JWT token containing the VC
+  jwt_verified: boolean;
+  vc_payload: string | null; // Complete VC JSON object extracted from JWT
   context: string | null; // JSON array - extracted for convenience
   credential_id: string | null;
   type: string | null; // JSON array - extracted for convenience
@@ -21,9 +23,6 @@ export interface RenownCredential {
   credential_status_purpose: string | null;
   credential_status_list_index: string | null;
   credential_status_list_credential: string | null;
-  jwt: string | null;
-  jwt_payload: string | null; // Complete JWT payload JSON object
-  jwt_verified: boolean;
   revoked: boolean;
   revoked_at: Timestamp | null;
   revocation_reason: string | null;

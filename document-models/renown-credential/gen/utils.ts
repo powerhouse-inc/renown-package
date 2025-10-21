@@ -30,8 +30,6 @@ export const initialGlobalState: RenownCredentialState = {
   credentialStatus: null,
   jwt: null,
   jwtVerified: false,
-  jwtVerificationError: null,
-  jwtPayload: null,
   revoked: false,
   revokedAt: null,
   revocationReason: null,
@@ -57,12 +55,10 @@ export const createDocument: CreateDocument<RenownCredentialPHState> = (
 };
 
 export const saveToFile = (document: any, path: string, name?: string) => {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   return baseSaveToFile(document, path, "phrc", name);
 };
 
 export const saveToFileHandle = (document: any, input: any) => {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   return baseSaveToFileHandle(document, input);
 };
 

@@ -54,8 +54,6 @@ export function RenownCredentialStateSchema(): z.ZodObject<
     issuanceDate: z.string().datetime().nullable(),
     issuer: z.string().nullable(),
     jwt: z.string().nullable(),
-    jwtPayload: z.string().nullable(),
-    jwtVerificationError: z.string().nullable(),
     jwtVerified: z.boolean().nullable(),
     revocationReason: z.string().nullable(),
     revoked: z.boolean().nullable(),

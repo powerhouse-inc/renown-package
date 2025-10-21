@@ -31,25 +31,11 @@ export const documentModel: DocumentModelState = {
                   template: "",
                 },
                 {
-                  code: "",
-                  description: "",
-                  id: "invalid-jwt-payload-error",
-                  name: "",
-                  template: "",
-                },
-                {
                   code: "INVALID_JWT_PAYLOAD",
                   description:
                     "JWT payload does not contain valid W3C Verifiable Credential fields",
                   id: "invalid-jwt-payload-error",
                   name: "InvalidJwtPayloadError",
-                  template: "",
-                },
-                {
-                  code: "",
-                  description: "",
-                  id: "jwt-verification-error",
-                  name: "",
                   template: "",
                 },
                 {
@@ -80,7 +66,7 @@ export const documentModel: DocumentModelState = {
               id: "366dfd44-377f-42d7-949d-a8d82b6a909d",
               name: "INIT",
               reducer:
-                '// Validate context\nconst context = action.input.context && action.input.context.length > 0 \n  ? action.input.context \n  : ["https://www.w3.org/2018/credentials/v1"];\n\nif (!context.includes("https://www.w3.org/2018/credentials/v1")) {\n  throw new MissingContextError("Context must include https://www.w3.org/2018/credentials/v1");\n}\n\n// Validate type\nconst type = action.input.type && action.input.type.length > 0\n  ? action.input.type\n  : ["VerifiableCredential"];\n\nif (!type.includes("VerifiableCredential")) {\n  throw new MissingTypeError("Type must include VerifiableCredential");\n}\n\n// Validate credentialSubject is valid JSON\ntry {\n  JSON.parse(action.input.credentialSubject);\n} catch (e) {\n  throw new InvalidClaimsError("Credential subject must be valid JSON");\n}\n\nstate.context = context;\nstate.id = action.input.id || null;\nstate.type = type;\nstate.issuer = action.input.issuer;\nstate.issuanceDate = action.input.issuanceDate;\nstate.credentialSubject = action.input.credentialSubject;\nstate.expirationDate = action.input.expirationDate || null;\nstate.credentialStatus = null;\nstate.jwt = null;\nstate.revoked = false;\nstate.revokedAt = null;\nstate.revocationReason = null;',
+                "// NOTE: JWT should be cryptographically verified using verifyCredential()\n// from did-jwt-vc BEFORE dispatching this action. This reducer only decodes\n// and extracts the credential fields from the JWT payload.\n\n// Decode the JWT to extract payload\nlet decoded;\ntry {\n  decoded = decodeJWT(action.input.jwt);\n} catch (e) {\n  const error = e as Error;\n  throw new JwtVerificationError(`Failed to decode JWT: ${error.message}`);\n}\n\nconst payload = decoded.payload as JwtPayload;\n\n// Validate minimum required JWT fields\nif (!payload.iss) {\n  throw new InvalidJwtPayloadError('JWT payload missing issuer (iss field)');\n}\n\n// Extract the verifiable credential from the payload (if present)\nconst vc = payload.vc as VerifiableCredentialPayload | undefined;\n\nif (!vc) {\n  throw new InvalidJwtPayloadError('JWT payload does not contain a verifiable credential (vc field)');\n}\n\n// Store the complete VC payload for maximum flexibility\nstate.vcPayload = JSON.stringify(vc);\n\n// Extract common W3C VC fields if present (but don't fail if missing)\n// Context\nif (vc['@context']) {\n  const context = Array.isArray(vc['@context']) ? vc['@context'] : [vc['@context']];\n  state.context = context;\n} else {\n  state.context = null;\n}\n\n// Type\nif (vc.type) {\n  const type = Array.isArray(vc.type) ? vc.type : [vc.type];\n  state.type = type;\n} else {\n  state.type = null;\n}\n\n// Credential Subject - store as JSON string for flexibility\nif (vc.credentialSubject !== undefined) {\n  const credentialSubjectStr = typeof vc.credentialSubject === 'string'\n    ? vc.credentialSubject\n    : JSON.stringify(vc.credentialSubject);\n  state.credentialSubject = credentialSubjectStr;\n} else {\n  state.credentialSubject = null;\n}\n\n// Issuer (from JWT payload)\nstate.issuer = payload.iss;\n\n// Issuance date (JWT uses 'iat' or 'nbf')\nif (payload.nbf || payload.iat) {\n  const issuanceTimestamp = (payload.nbf || payload.iat)!;\n  state.issuanceDate = new Date(issuanceTimestamp * 1000).toISOString();\n} else {\n  state.issuanceDate = null;\n}\n\n// Expiration date (from JWT exp or VC expirationDate)\nif (payload.exp) {\n  state.expirationDate = new Date(payload.exp * 1000).toISOString();\n} else if (vc.expirationDate) {\n  state.expirationDate = vc.expirationDate;\n} else {\n  state.expirationDate = null;\n}\n\n// Credential ID (JWT uses 'jti', VC uses 'id')\nstate.id = payload.jti || vc.id || null;\n\n// Credential Status (optional W3C VC field)\nstate.credentialStatus = vc.credentialStatus || null;\n\n// Store JWT token\nstate.jwt = action.input.jwt;\nstate.jwtVerified = true;\n\n// Initialize revocation tracking\nstate.revoked = false;\nstate.revokedAt = null;\nstate.revocationReason = null;",
               schema: "input InitInput {\n  jwt: String!\n}",
               scope: "global",
               template: "",
@@ -177,9 +163,9 @@ export const documentModel: DocumentModelState = {
         global: {
           examples: [],
           initialValue:
-            '"{\\n  \\"vcPayload\\": null,\\n  \\"context\\": null,\\n  \\"id\\": null,\\n  \\"type\\": null,\\n  \\"issuer\\": null,\\n  \\"issuanceDate\\": null,\\n  \\"credentialSubject\\": null,\\n  \\"expirationDate\\": null,\\n  \\"credentialStatus\\": null,\\n  \\"jwt\\": null,\\n  \\"jwtVerified\\": false,\\n  \\"jwtVerificationError\\": null,\\n  \\"jwtPayload\\": null,\\n  \\"revoked\\": false,\\n  \\"revokedAt\\": null,\\n  \\"revocationReason\\": null\\n}"',
+            '"{\\n  \\"vcPayload\\": null,\\n  \\"context\\": null,\\n  \\"id\\": null,\\n  \\"type\\": null,\\n  \\"issuer\\": null,\\n  \\"issuanceDate\\": null,\\n  \\"credentialSubject\\": null,\\n  \\"expirationDate\\": null,\\n  \\"credentialStatus\\": null,\\n  \\"jwt\\": null,\\n  \\"jwtVerified\\": false,\\n  \\"revoked\\": false,\\n  \\"revokedAt\\": null,\\n  \\"revocationReason\\": null\\n}"',
           schema:
-            'type CredentialStatus {\n  id: String!\n  type: String!\n  statusPurpose: String!\n  statusListIndex: String!\n  statusListCredential: String!\n}\n\ntype RenownCredentialState {\n  "Complete VC Payload - stores the full verifiable credential object for maximum flexibility"\n  vcPayload: String\n  \n  "W3C VC Common Fields - extracted for convenience, may be null for non-standard VCs"\n  context: [String!]\n  id: String\n  type: [String!]\n  issuer: String\n  issuanceDate: DateTime\n  credentialSubject: String\n  \n  "W3C VC Optional Fields"\n  expirationDate: DateTime\n  credentialStatus: CredentialStatus\n  \n  "JWT Representation"\n  jwt: String\n  jwtVerified: Boolean\n  jwtVerificationError: String\n  jwtPayload: String\n  \n  "Revocation tracking"\n  revoked: Boolean\n  revokedAt: DateTime\n  revocationReason: String\n}',
+            'type CredentialStatus {\n  id: String!\n  type: String!\n  statusPurpose: String!\n  statusListIndex: String!\n  statusListCredential: String!\n}\n\ntype RenownCredentialState {\n  "JWT token containing the Verifiable Credential"\n  jwt: String\n  jwtVerified: Boolean\n\n  "Complete VC Payload - extracted from JWT for convenience and flexibility"\n  vcPayload: String\n\n  "W3C VC Common Fields - extracted for querying convenience, may be null for non-standard VCs"\n  context: [String!]\n  id: String\n  type: [String!]\n  issuer: String\n  issuanceDate: DateTime\n  credentialSubject: String\n\n  "W3C VC Optional Fields"\n  expirationDate: DateTime\n  credentialStatus: CredentialStatus\n\n  "Revocation tracking"\n  revoked: Boolean\n  revokedAt: DateTime\n  revocationReason: String\n}',
         },
         local: {
           examples: [],

@@ -72,6 +72,8 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
                 .insertInto("renown_credential")
                 .values({
                   document_id: documentId,
+                  jwt: state.jwt || null,
+                  jwt_verified: state.jwtVerified || false,
                   vc_payload: state.vcPayload || null,
                   context: state.context ? JSON.stringify(state.context) : null,
                   credential_id: state.id || null,
@@ -92,9 +94,6 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
                     state.credentialStatus?.statusListIndex || null,
                   credential_status_list_credential:
                     state.credentialStatus?.statusListCredential || null,
-                  jwt: state.jwt || null,
-                  jwt_payload: state.jwtPayload || null,
-                  jwt_verified: state.jwtVerified || false,
                   revoked: state.revoked || false,
                   revoked_at: state.revokedAt ? new Date(state.revokedAt) : null,
                   revocation_reason: state.revocationReason || null,
@@ -122,7 +121,6 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
                   credential_subject: state.credentialSubject || null,
                   vc_payload: state.vcPayload || null, // Sync vcPayload with updated credentialSubject
                   jwt: null, // Clear JWT when content changes
-                  jwt_payload: null, // Also clear JWT payload
                   jwt_verified: false, // Mark as unverified since content changed
                   updated_at: new Date(),
                 })

@@ -65,7 +65,7 @@ export const reducer: RenownCredentialManagerOperations = {
         }
 
         // Extract the verifiable credential from the payload (if present)
-        const vc = payload.vc;
+        const vc = payload.vc as VerifiableCredentialPayload | undefined;
 
         if (!vc) {
           throw new InvalidJwtPayloadError('JWT payload does not contain a verifiable credential (vc field)');
@@ -106,8 +106,8 @@ export const reducer: RenownCredentialManagerOperations = {
 
         // Issuance date (JWT uses 'iat' or 'nbf')
         if (payload.nbf || payload.iat) {
-          const issuanceTimestamp = payload.nbf || payload.iat;
-          state.issuanceDate = new Date(issuanceTimestamp! * 1000).toISOString();
+          const issuanceTimestamp = (payload.nbf || payload.iat)!;
+          state.issuanceDate = new Date(issuanceTimestamp * 1000).toISOString();
         } else {
           state.issuanceDate = null;
         }
@@ -127,11 +127,9 @@ export const reducer: RenownCredentialManagerOperations = {
         // Credential Status (optional W3C VC field)
         state.credentialStatus = vc.credentialStatus || null;
 
-        // Store JWT metadata
+        // Store JWT token
         state.jwt = action.input.jwt;
         state.jwtVerified = true;
-        state.jwtVerificationError = null;
-        state.jwtPayload = JSON.stringify(payload);
 
         // Initialize revocation tracking
         state.revoked = false;
@@ -151,17 +149,6 @@ export const reducer: RenownCredentialManagerOperations = {
       }
 
       state.credentialSubject = action.input.credentialSubject;
-
-      // Update vcPayload if it exists
-      if (state.vcPayload) {
-        try {
-          const vc = JSON.parse(state.vcPayload) as VerifiableCredentialPayload;
-          vc.credentialSubject = JSON.parse(action.input.credentialSubject) as unknown;
-          state.vcPayload = JSON.stringify(vc);
-        } catch (e) {
-          // If vcPayload can't be updated, just continue
-        }
-      }
 
       // Clear JWT as credential content has changed
       state.jwt = null;
