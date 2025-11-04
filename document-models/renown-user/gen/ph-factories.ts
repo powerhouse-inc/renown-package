@@ -1,27 +1,17 @@
 /**
  * Factory methods for creating RenownUserDocument instances
  */
-
-import {
-  createBaseState,
-  defaultBaseState,
-  type PHAuthState,
-  type PHDocumentState,
-  type PHBaseState,
-} from "document-model";
+import type { PHAuthState, PHDocumentState, PHBaseState } from "document-model";
+import { createBaseState, defaultBaseState } from "document-model/core";
 import type {
   RenownUserDocument,
   RenownUserLocalState,
-  RenownUserState,
+  RenownUserGlobalState,
+  RenownUserPHState,
 } from "./types.js";
 import { createDocument } from "./utils.js";
 
-export type RenownUserPHState = PHBaseState & {
-  global: RenownUserState;
-  local: RenownUserLocalState;
-};
-
-export function defaultGlobalState(): RenownUserState {
+export function defaultGlobalState(): RenownUserGlobalState {
   return {
     username: null,
     ethAddress: null,
@@ -42,12 +32,12 @@ export function defaultPHState(): RenownUserPHState {
 }
 
 export function createGlobalState(
-  state?: Partial<RenownUserState>,
-): RenownUserState {
+  state?: Partial<RenownUserGlobalState>,
+): RenownUserGlobalState {
   return {
     ...defaultGlobalState(),
     ...(state || {}),
-  } as RenownUserState;
+  } as RenownUserGlobalState;
 }
 
 export function createLocalState(
@@ -61,7 +51,7 @@ export function createLocalState(
 
 export function createState(
   baseState?: Partial<PHBaseState>,
-  globalState?: Partial<RenownUserState>,
+  globalState?: Partial<RenownUserGlobalState>,
   localState?: Partial<RenownUserLocalState>,
 ): RenownUserPHState {
   return {
@@ -80,7 +70,7 @@ export function createRenownUserDocument(
   state?: Partial<{
     auth?: Partial<PHAuthState>;
     document?: Partial<PHDocumentState>;
-    global?: Partial<RenownUserState>;
+    global?: Partial<RenownUserGlobalState>;
     local?: Partial<RenownUserLocalState>;
   }>,
 ): RenownUserDocument {

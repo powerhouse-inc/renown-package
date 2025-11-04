@@ -1,28 +1,44 @@
 {
-    "compilerOptions": {
-        "target": "ESNext",
-        "module": "ESNext",
-        "moduleResolution": "Bundler",
-        "types": ["node", "vitest/globals"],
-        "declaration": true,
-        "outDir": "./dist",
-        "allowSyntheticDefaultImports": true,
-        "esModuleInterop": true,
-        "forceConsistentCasingInFileNames": true,
-        "strict": true,
-        "noImplicitAny": true,
-        "skipLibCheck": true,
-        "jsx": "react-jsx",
-        "lib": ["ESNext", "dom", "dom.iterable"],
-        "baseUrl": "./",
-        "allowJs": true,
-    },
-    "include": [
-        "./index.ts",
-        "**/*.ts",
-        "**/*.tsx",
-        "*.config.ts",
-        ".storybook/**/*",
-    ],
-    "exclude": ["dist/", "node_modules"],
+ // Visit https://aka.ms/tsconfig to read more about this file
+ "compilerOptions": {
+    // File Layout
+    "outDir": "./dist",
+
+    // Environment Settings
+    // See also https://aka.ms/tsconfig/module
+    "module": "nodenext",
+    "target": "esnext",
+    "types": ["node", "vitest/globals"],
+    "lib": ["ESNext", "dom", "dom.iterable"],
+
+    // Other Outputs
+    "sourceMap": false,
+    "declaration": true,
+    "declarationMap": true,
+    "noImplicitAny": false,
+
+    // Stricter Typechecking Options
+    // "noUncheckedIndexedAccess": true,
+    // "exactOptionalPropertyTypes": true,
+
+    // Style Options
+    // "noImplicitReturns": true,
+    // "noImplicitOverride": true,
+    // "noUnusedLocals": true,
+    // "noUnusedParameters": true,
+    // "noFallthroughCasesInSwitch": true,
+    // "noPropertyAccessFromIndexSignature": true,
+
+    // Recommended Options
+    "strict": true,
+    "jsx": "react-jsx",
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+  },
+  "files": [ "./powerhouse.manifest.json", "./vite.config.ts", "./vitest.config.ts"],
+  "include": ["**/*",],
+  "exclude": ["dist", "node_modules", ".ph", "vitest.config.ts"],
 }

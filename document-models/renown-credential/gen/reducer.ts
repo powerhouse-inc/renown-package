@@ -1,12 +1,9 @@
 // TODO: remove eslint-disable rules once refactor is done
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
-import {
-  type StateReducer,
-  isDocumentAction,
-  createReducer,
-} from "document-model";
-import { type RenownCredentialPHState } from "./ph-factories.js";
+import type { StateReducer } from "document-model";
+import { isDocumentAction, createReducer } from "document-model/core";
+import type { RenownCredentialPHState } from "./types.js";
 import { z } from "./types.js";
 
 import { reducer as ManagerReducer } from "../src/reducers/manager.js";

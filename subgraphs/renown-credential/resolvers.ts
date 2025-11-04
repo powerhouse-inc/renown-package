@@ -1,4 +1,4 @@
-import { type Subgraph } from "@powerhousedao/reactor-api";
+import type { ISubgraph } from "@powerhousedao/reactor-api";
 import { addFile } from "document-drive";
 import {
   actions,
@@ -11,7 +11,7 @@ import {
 } from "../../document-models/renown-credential/index.js";
 import { setName } from "document-model";
 
-export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
+export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
   const reactor = subgraph.reactor;
 
   return {

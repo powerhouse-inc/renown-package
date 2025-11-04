@@ -6,16 +6,21 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 import { globalIgnores } from "eslint/config";
 
+/** Typescript (`.ts`) files */
+const typescriptFiles = ["**/*.ts"];
+
+/** Typescript React (`.tsx`) files */
+const typescriptReactFiles = ["**/*.tsx"];
+
+/** Javascript (`.js`, `.cjs`, `.mjs`) files */
+const javascriptFiles = ["**/*.js", "**/*.cjs", "**/*.mjs"];
+
 export default tseslint.config(
-  globalIgnores([
-    "node_modules/",
-    "dist/",
-    ".ph/",
-    "eslint.config.js",
-  ]),
+  globalIgnores(["node_modules/", "dist/", ".ph/", "eslint.config.js"]),
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
+    files: [...typescriptFiles, ...typescriptReactFiles, ...javascriptFiles],
     languageOptions: {
       sourceType: "module",
       ecmaVersion: "latest",
@@ -31,15 +36,15 @@ export default tseslint.config(
         },
       },
     },
-    rules: {      
+    rules: {
       "@typescript-eslint/consistent-type-imports": [
-      "error",
-      {
-        disallowTypeAnnotations: false,
-        prefer: "type-imports",
-        fixStyle: "inline-type-imports",
-      },
-    ],
+        "error",
+        {
+          disallowTypeAnnotations: false,
+          prefer: "type-imports",
+          fixStyle: "inline-type-imports",
+        },
+      ],
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/prefer-nullish-coalescing": "off",
       "@typescript-eslint/no-floating-promises": "off",
@@ -54,7 +59,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["**/*.tsx"],
+    files: [typescriptReactFiles],
     ...reactPlugin.configs.flat.recommended,
     ...reactPlugin.configs.flat["jsx-runtime"],
     settings: {
@@ -66,5 +71,5 @@ export default tseslint.config(
       react: reactPlugin,
       "react-hooks": reactHooksPlugin,
     },
-  }
+  },
 );

@@ -1,4 +1,4 @@
-import { type Subgraph } from "@powerhousedao/reactor-api";
+import type { ISubgraph } from "@powerhousedao/reactor-api";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
 import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
@@ -144,7 +144,7 @@ const getDriveId = (driveId?: string): string => {
   return resolvedDriveId;
 };
 
-export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
+export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
   const db = subgraph.relationalDb;
 
   return {
@@ -200,7 +200,7 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
         }
 
         query = query.where((eb) => {
-          const conditions = [];
+          const conditions: ReturnType<typeof eb>[] = [];
 
           if (hasPhids) {
             conditions.push(eb("renown_user.document_id", "in", phids));
@@ -238,7 +238,7 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
         // Search by ethAddress or DID in credential_subject JSON
         if (ethAddress || did) {
           query = query.where((eb) => {
-            const conditions = [];
+            const conditions: ReturnType<typeof eb>[] = [];
 
             if (ethAddress) {
               // Search for ethAddress in credential_subject JSON

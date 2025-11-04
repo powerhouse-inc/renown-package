@@ -1,4 +1,4 @@
-import { type IRelationalDb } from "document-drive/processors/types";
+import { type IRelationalDb } from "document-drive";
 
 export async function up(db: IRelationalDb<any>): Promise<void> {
   await down(db);

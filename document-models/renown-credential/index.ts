@@ -4,24 +4,26 @@
  */
 
 import {
-  actions as BaseActions,
+  createState,
   type DocumentModelModule,
+  baseActions,
 } from "document-model";
+import { defaultBaseState } from "document-model/core";
 import { actions as RenownCredentialActions } from "./gen/index.js";
 import { reducer } from "./gen/reducer.js";
 import { documentModel } from "./gen/document-model.js";
 import genUtils from "./gen/utils.js";
 import * as customUtils from "./src/utils.js";
-import type { RenownCredentialPHState } from "./gen/ph-factories.js";
+import type { RenownCredentialPHState } from "./gen/types.js";
 
 const utils = { ...genUtils, ...customUtils };
-const actions = { ...BaseActions, ...RenownCredentialActions };
+const actions = { ...baseActions, ...RenownCredentialActions };
 
 export const module: DocumentModelModule<RenownCredentialPHState> = {
   reducer,
   actions,
   utils,
-  documentModel,
+  documentModel: createState(defaultBaseState(), documentModel),
 };
 
 export { reducer, actions, utils, documentModel };

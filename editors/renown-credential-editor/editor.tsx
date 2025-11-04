@@ -1,6 +1,6 @@
 import { useSelectedDocument } from "@powerhousedao/reactor-browser";
 import type { EditorProps } from "document-model";
-import { generateId } from "document-model";
+import { generateId } from "document-model/core";
 import { useCallback, useState } from "react";
 import {
   type RenownCredentialDocument,

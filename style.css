@@ -1,7 +1,5 @@
-@import "tailwindcss" source("./");
-@import "@powerhousedao/design-system/style.css";
-@import "@powerhousedao/document-engineering/style.css";
-@import "@powerhousedao/vetra/style.css";
+@import "tailwindcss";
+@import "@powerhousedao/design-system/theme.css";
 
 /* Uses .dark class for dark mode */
 @custom-variant dark (&:where(.dark, .dark *));

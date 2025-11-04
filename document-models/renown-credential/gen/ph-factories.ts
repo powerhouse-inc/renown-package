@@ -1,27 +1,17 @@
 /**
  * Factory methods for creating RenownCredentialDocument instances
  */
-
-import {
-  createBaseState,
-  defaultBaseState,
-  type PHAuthState,
-  type PHDocumentState,
-  type PHBaseState,
-} from "document-model";
+import type { PHAuthState, PHDocumentState, PHBaseState } from "document-model";
+import { createBaseState, defaultBaseState } from "document-model/core";
 import type {
   RenownCredentialDocument,
   RenownCredentialLocalState,
-  RenownCredentialState,
+  RenownCredentialGlobalState,
+  RenownCredentialPHState,
 } from "./types.js";
 import { createDocument } from "./utils.js";
 
-export type RenownCredentialPHState = PHBaseState & {
-  global: RenownCredentialState;
-  local: RenownCredentialLocalState;
-};
-
-export function defaultGlobalState(): RenownCredentialState {
+export function defaultGlobalState(): RenownCredentialGlobalState {
   return {
     vcPayload: null,
     context: null,
@@ -53,12 +43,12 @@ export function defaultPHState(): RenownCredentialPHState {
 }
 
 export function createGlobalState(
-  state?: Partial<RenownCredentialState>,
-): RenownCredentialState {
+  state?: Partial<RenownCredentialGlobalState>,
+): RenownCredentialGlobalState {
   return {
     ...defaultGlobalState(),
     ...(state || {}),
-  } as RenownCredentialState;
+  } as RenownCredentialGlobalState;
 }
 
 export function createLocalState(
@@ -72,7 +62,7 @@ export function createLocalState(
 
 export function createState(
   baseState?: Partial<PHBaseState>,
-  globalState?: Partial<RenownCredentialState>,
+  globalState?: Partial<RenownCredentialGlobalState>,
   localState?: Partial<RenownCredentialLocalState>,
 ): RenownCredentialPHState {
   return {
@@ -91,7 +81,7 @@ export function createRenownCredentialDocument(
   state?: Partial<{
     auth?: Partial<PHAuthState>;
     document?: Partial<PHDocumentState>;
-    global?: Partial<RenownCredentialState>;
+    global?: Partial<RenownCredentialGlobalState>;
     local?: Partial<RenownCredentialLocalState>;
   }>,
 ): RenownCredentialDocument {
