@@ -1,7 +1,7 @@
 {
   "name": "@powerhousedao/renown-package",
   "description": "",
-  "version": "0.0.30",
+  "version": "0.0.31",
   "license": "AGPL-3.0-only",
   "type": "module",
   "files": [
@@ -91,6 +91,7 @@
     "@powerhousedao/connect": "^5.0.1",
     "@powerhousedao/design-system": "latest",
     "@powerhousedao/document-engineering": "^1.38.0",
+    "@powerhousedao/vetra": "^5.0.1",
     "did-jwt": "^8.0.18",
     "did-jwt-vc": "^4.0.16",
     "document-model": "latest",

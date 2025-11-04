@@ -23,6 +23,9 @@ importers:
       '@powerhousedao/document-engineering':
         specifier: ^1.38.0
         version: 1.39.0(@types/express@4.17.23)(@types/react-dom@19.2.2(@types/react@19.2.2))(@types/react@19.2.2)(bufferutil@4.0.9)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
+      '@powerhousedao/vetra':
+        specifier: ^5.0.1
+        version: 5.0.1(cea354e7862ea7d81942cedc484f9384)
       did-jwt:
         specifier: ^8.0.18
         version: 8.0.18
@@ -2739,6 +2742,12 @@ packages:
   '@powerhousedao/switchboard@5.0.1':
     resolution: {integrity: sha512-ZD/7DgzdDRUCzzuwBJPQgKXdk+t8I1Xio5OyzYv5BxIishY0SnZFhkkwlPEge26VDYfR8nc7Q1pHRDw9qTQ1yw==}
     hasBin: true
+
+  '@powerhousedao/vetra@5.0.1':
+    resolution: {integrity: sha512-mPDD0vEpF7HFmP2pMHzU3+l76WiQkkauc3WOe7pm7Oq10AfNtVl1DBtXUT+hDRrTOI2gOeyF/lZjRV0sHrlwkA==}
+    peerDependencies:
+      react: ^19.2.0
+      react-dom: ^19.2.0
 
   '@prettier/sync@0.5.5':
     resolution: {integrity: sha512-6BMtNr7aQhyNcGzmumkL0tgr1YQGfm9d7ZdmRpWqWuqpc9vZBind4xMe5NMiRECOhjuSiWHfBWLBnXkpeE90bw==}
@@ -8109,7 +8118,6 @@ packages:
 
   libsql@0.4.7:
     resolution: {integrity: sha512-T9eIRCs6b0J1SHKYIvD8+KCJMcWZ900iZyxdnSCdqxN12Z1ijzT+jY5nrk72Jw4B0HGzms2NgpryArlJqvc3Lw==}
-    cpu: [x64, arm64, wasm32]
     os: [darwin, linux, win32]
 
   lie@3.1.1:
@@ -17246,6 +17254,95 @@ snapshots:
       - uWebSockets.js
       - uploadthing
       - utf-8-validate
+      - yaml
+
+  '@powerhousedao/vetra@5.0.1(cea354e7862ea7d81942cedc484f9384)':
+    dependencies:
+      '@powerhousedao/builder-tools': 5.0.1(c2e4f239d1f9d24d13ad84c041afd820)
+      '@powerhousedao/common': 5.0.1(62b9ca2fa74bb30f4ccfb1576b68b29f)
+      '@powerhousedao/config': 5.0.1(@types/node@22.18.11)
+      '@powerhousedao/connect': 5.0.1(31cf321f968636ed301729aab4d25ada)
+      '@powerhousedao/design-system': 5.0.1(@tanstack/query-core@5.90.5)(@types/express@4.17.23)(@types/react-dom@19.2.2(@types/react@19.2.2))(@types/react@19.2.2)(bufferutil@4.0.9)(encoding@0.1.13)(react-dom@19.2.0(react@19.2.0))(react-native@0.82.0(@babel/core@7.28.4)(@types/react@19.2.2)(bufferutil@4.0.9)(react@19.2.0)(utf-8-validate@5.0.10))(react@19.2.0)(rollup@4.52.4)(typescript@5.9.3)(utf-8-validate@5.0.10)
+      change-case: 5.4.4
+      colorette: 2.0.20
+      document-model: 5.0.1
+      graphql: 16.11.0
+      graphql-tag: 2.12.6(graphql@16.11.0)
+      kysely: 0.28.8
+      react: 19.2.0
+      react-dom: 19.2.0(react@19.2.0)
+      uuid: 11.1.0
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - '@azure/app-configuration'
+      - '@azure/cosmos'
+      - '@azure/data-tables'
+      - '@azure/identity'
+      - '@azure/keyvault-secrets'
+      - '@azure/storage-blob'
+      - '@capacitor/preferences'
+      - '@deno/kv'
+      - '@emotion/react'
+      - '@emotion/styled'
+      - '@lezer/highlight'
+      - '@monaco-editor/react'
+      - '@mui/material'
+      - '@netlify/blobs'
+      - '@planetscale/database'
+      - '@powerhousedao/analytics-engine-knex'
+      - '@react-native-async-storage/async-storage'
+      - '@tanstack/query-core'
+      - '@types/express'
+      - '@types/koa'
+      - '@types/node'
+      - '@types/react'
+      - '@types/react-dom'
+      - '@upstash/redis'
+      - '@vercel/blob'
+      - '@vercel/functions'
+      - '@vercel/kv'
+      - aws4fetch
+      - better-sqlite3
+      - bluebird
+      - bufferutil
+      - cosmiconfig-toml-loader
+      - db0
+      - document-model-libs
+      - encoding
+      - i18next
+      - ibm_db
+      - immer
+      - ioredis
+      - jiti
+      - less
+      - lightningcss
+      - mariadb
+      - monaco-editor
+      - mysql
+      - mysql2
+      - oracledb
+      - pg
+      - pg-hstore
+      - pg-native
+      - prettier
+      - react-native
+      - rolldown
+      - rollup
+      - sass
+      - sass-embedded
+      - snowflake-sdk
+      - sqlite3
+      - storybook
+      - stylus
+      - sugarss
+      - supports-color
+      - tedious
+      - terser
+      - tsx
+      - typescript
+      - uploadthing
+      - utf-8-validate
+      - vite
       - yaml
 
   '@prettier/sync@0.5.5(prettier@3.6.2)':
