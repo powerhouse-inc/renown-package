@@ -36,33 +36,6 @@ export const stateReducer: StateReducer<RenownCredentialPHState> = (
       );
       break;
 
-    case "UPDATE_CREDENTIAL_SUBJECT":
-      z.UpdateCredentialSubjectInputSchema().parse(action.input);
-      ManagerReducer.updateCredentialSubjectOperation(
-        (state as any)[action.scope],
-        action as any,
-        dispatch,
-      );
-      break;
-
-    case "SET_JWT":
-      z.SetJwtInputSchema().parse(action.input);
-      ManagerReducer.setJwtOperation(
-        (state as any)[action.scope],
-        action as any,
-        dispatch,
-      );
-      break;
-
-    case "SET_CREDENTIAL_STATUS":
-      z.SetCredentialStatusInputSchema().parse(action.input);
-      ManagerReducer.setCredentialStatusOperation(
-        (state as any)[action.scope],
-        action as any,
-        dispatch,
-      );
-      break;
-
     default:
       return state;
   }

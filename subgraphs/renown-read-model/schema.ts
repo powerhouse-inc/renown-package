@@ -30,30 +30,32 @@ export const schema: DocumentNode = gql`
 
   type ReadRenownCredential {
     documentId: String!
-    jwt: String
-    jwtVerified: Boolean!
-    vcPayload: String
-    credentialId: String
-    context: [String!]
-    type: [String!]
-    issuer: String
-    issuanceDate: DateTime
-    credentialSubject: String
+    credentialId: String!
+    context: [String!]!
+    type: [String!]!
+    issuerId: String!
+    issuerEthereumAddress: String!
+    issuanceDate: DateTime!
     expirationDate: DateTime
-    credentialStatus: ReadCredentialStatus
+    credentialSubjectId: String
+    credentialSubjectApp: String!
+    credentialStatusId: String
+    credentialStatusType: String
+    credentialSchemaId: String!
+    credentialSchemaType: String!
+    proofVerificationMethod: String!
+    proofEthereumAddress: String!
+    proofCreated: DateTime!
+    proofPurpose: String!
+    proofType: String!
+    proofValue: String!
+    proofEip712Domain: String!
+    proofEip712PrimaryType: String!
     revoked: Boolean!
     revokedAt: DateTime
     revocationReason: String
     createdAt: DateTime
     updatedAt: DateTime
-  }
-
-  type ReadCredentialStatus {
-    id: String!
-    type: String!
-    statusPurpose: String!
-    statusListIndex: String!
-    statusListCredential: String!
   }
 
   input RenownCredentialsInput {

@@ -2,6 +2,7 @@ dist
 coverage
 node_modules
 
+.env
 .env.local
 
 .ph

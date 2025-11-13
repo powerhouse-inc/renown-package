@@ -8,21 +8,30 @@ export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
 export interface RenownCredential {
   document_id: string;
-  jwt: string | null; // JWT token containing the VC
-  jwt_verified: boolean;
-  vc_payload: string | null; // Complete VC JSON object extracted from JWT
-  context: string | null; // JSON array - extracted for convenience
-  credential_id: string | null;
-  type: string | null; // JSON array - extracted for convenience
-  issuer: string | null;
-  issuance_date: Timestamp | null;
-  credential_subject: string | null; // JSON object - extracted for convenience
+  // W3C VC Fields
+  context: string; // JSON array
+  credential_id: string;
+  type: string; // JSON array
+  issuer_id: string;
+  issuer_ethereum_address: string;
+  issuance_date: Timestamp;
   expiration_date: Timestamp | null;
+  credential_subject_id: string | null;
+  credential_subject_app: string;
   credential_status_id: string | null;
   credential_status_type: string | null;
-  credential_status_purpose: string | null;
-  credential_status_list_index: string | null;
-  credential_status_list_credential: string | null;
+  credential_schema_id: string;
+  credential_schema_type: string;
+  // Proof fields (EIP-712)
+  proof_verification_method: string;
+  proof_ethereum_address: string;
+  proof_created: Timestamp;
+  proof_purpose: string;
+  proof_type: string;
+  proof_value: string; // EIP-712 signature
+  proof_eip712_domain: string; // JSON object
+  proof_eip712_primary_type: string;
+  // Revocation
   revoked: boolean;
   revoked_at: Timestamp | null;
   revocation_reason: string | null;

@@ -1,50 +1,61 @@
-scalar Amount_Tokens
-scalar EthereumAddress
-scalar Amount_Percentage
-scalar EmailAddress
-scalar Date
 scalar DateTime
-scalar URL
-scalar Amount_Money
-scalar OLabel
-scalar Currency
-scalar PHID
-scalar OID
-scalar Amount_Fiat
-scalar Amount_Currency
-scalar Amount_Crypto
-scalar Amount
-scalar Upload
+scalar EthereumAddress
+
+type Issuer {
+  id: String!
+  ethereumAddress: EthereumAddress!
+}
+
+type CredentialSubject {
+  id: String
+  app: String!
+}
+
 type CredentialStatus {
   id: String!
   type: String!
-  statusPurpose: String!
-  statusListIndex: String!
-  statusListCredential: String!
+}
+
+type CredentialSchema {
+  id: String!
+  type: String!
+}
+
+type EIP712Domain {
+  version: String!
+  chainId: Int!
+}
+
+type EIP712 {
+  domain: EIP712Domain!
+  primaryType: String!
+}
+
+type Proof {
+  verificationMethod: String!
+  ethereumAddress: EthereumAddress!
+  created: DateTime!
+  proofPurpose: String!
+  type: String!
+  proofValue: String!
+  eip712: EIP712!
 }
 
 type RenownCredentialState {
-  "JWT token containing the Verifiable Credential"
-  jwt: String
-  jwtVerified: Boolean
-
-  "Complete VC Payload - extracted from JWT for convenience and flexibility"
-  vcPayload: String
-
-  "W3C VC Common Fields - extracted for querying convenience, may be null for non-standard VCs"
-  context: [String!]
-  id: String
-  type: [String!]
-  issuer: String
-  issuanceDate: DateTime
-  credentialSubject: String
-
-  "W3C VC Optional Fields"
+  "W3C VC Fields - EIP-712 Signed Verifiable Credential"
+  context: [String!]!
+  id: String!
+  type: [String!]!
+  issuer: Issuer!
+  issuanceDate: DateTime!
   expirationDate: DateTime
+  credentialSubject: CredentialSubject!
   credentialStatus: CredentialStatus
+  credentialSchema: CredentialSchema!
+  proof: Proof!
 
   "Revocation tracking"
-  revoked: Boolean
+  revoked: Boolean!
   revokedAt: DateTime
   revocationReason: String
 }
@@ -53,27 +64,60 @@ type RenownCredentialState {
 
 # manager
 
+input IssuerInput {
+  id: String!
+  ethereumAddress: EthereumAddress!
+}
+
+input CredentialSubjectInput {
+  id: String
+  app: String!
+}
+
+input CredentialStatusInput {
+  id: String!
+  type: String!
+}
+
+input CredentialSchemaInput {
+  id: String!
+  type: String!
+}
+
+input EIP712DomainInput {
+  version: String!
+  chainId: Int!
+}
+
+input EIP712Input {
+  domain: EIP712DomainInput!
+  primaryType: String!
+}
+
+input ProofInput {
+  verificationMethod: String!
+  ethereumAddress: EthereumAddress!
+  created: DateTime!
+  proofPurpose: String!
+  type: String!
+  proofValue: String!
+  eip712: EIP712Input!
+}
+
 input InitInput {
-  jwt: String!
+  context: [String!]!
+  id: String!
+  type: [String!]!
+  issuer: IssuerInput!
+  issuanceDate: DateTime!
+  expirationDate: DateTime
+  credentialSubject: CredentialSubjectInput!
+  credentialStatus: CredentialStatusInput
+  credentialSchema: CredentialSchemaInput!
+  proof: ProofInput!
 }
 
 input RevokeInput {
   revokedAt: DateTime!
   reason: String
-}
-
-input UpdateCredentialSubjectInput {
-  credentialSubject: String!
-}
-
-input SetJwtInput {
-  jwt: String!
-}
-
-input SetCredentialStatusInput {
-  statusId: String!
-  statusType: String!
-  statusPurpose: String!
-  statusListIndex: String!
-  statusListCredential: String!
 }

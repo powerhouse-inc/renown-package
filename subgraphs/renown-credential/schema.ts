@@ -5,36 +5,62 @@ export const schema: DocumentNode = gql`
   """
   Subgraph definition for RenownCredential (powerhouse/renown-credential)
   """
+  type Issuer {
+    id: String!
+    ethereumAddress: EthereumAddress!
+  }
+
+  type CredentialSubject {
+    id: String
+    app: String!
+    name: String
+  }
+
   type CredentialStatus {
     id: String!
     type: String!
-    statusPurpose: String!
-    statusListIndex: String!
-    statusListCredential: String!
+  }
+
+  type CredentialSchema {
+    id: String!
+    type: String!
+  }
+
+  type EIP712Domain {
+    version: String!
+    chainId: Int!
+  }
+
+  type EIP712 {
+    domain: EIP712Domain!
+    primaryType: String!
+  }
+
+  type Proof {
+    verificationMethod: String!
+    ethereumAddress: EthereumAddress!
+    created: DateTime!
+    proofPurpose: String!
+    type: String!
+    proofValue: String!
+    eip712: EIP712!
   }
 
   type RenownCredentialState {
-    "JWT token containing the Verifiable Credential"
-    jwt: String
-    jwtVerified: Boolean
-
-    "Complete VC Payload - extracted from JWT for convenience and flexibility"
-    vcPayload: String
-
-    "W3C VC Common Fields - extracted for querying convenience, may be null for non-standard VCs"
-    context: [String!]
-    id: String
-    type: [String!]
-    issuer: String
-    issuanceDate: DateTime
-    credentialSubject: String
-
-    "W3C VC Optional Fields"
+    "W3C VC Fields - EIP-712 Signed Verifiable Credential"
+    context: [String!]!
+    id: String!
+    type: [String!]!
+    issuer: Issuer!
+    issuanceDate: DateTime!
     expirationDate: DateTime
+    credentialSubject: CredentialSubject!
     credentialStatus: CredentialStatus
+    credentialSchema: CredentialSchema!
+    proof: Proof!
 
     "Revocation tracking"
-    revoked: Boolean
+    revoked: Boolean!
     revokedAt: DateTime
     revocationReason: String
   }
@@ -67,44 +93,67 @@ export const schema: DocumentNode = gql`
       docId: PHID
       input: RenownCredential_RevokeInput
     ): Int
-    RenownCredential_updateCredentialSubject(
-      driveId: String
-      docId: PHID
-      input: RenownCredential_UpdateCredentialSubjectInput
-    ): Int
-    RenownCredential_setJwt(
-      driveId: String
-      docId: PHID
-      input: RenownCredential_SetJwtInput
-    ): Int
-    RenownCredential_setCredentialStatus(
-      driveId: String
-      docId: PHID
-      input: RenownCredential_SetCredentialStatusInput
-    ): Int
   }
 
   """
   Module: Manager
   """
-  input RenownCredential_InitInput {
-    jwt: String!
+  input IssuerInput {
+    id: String!
+    ethereumAddress: EthereumAddress!
   }
+
+  input CredentialSubjectInput {
+    id: String
+    app: String!
+    name: String
+  }
+
+  input CredentialStatusInput {
+    id: String!
+    type: String!
+  }
+
+  input CredentialSchemaInput {
+    id: String!
+    type: String!
+  }
+
+  input EIP712DomainInput {
+    version: String!
+    chainId: Int!
+  }
+
+  input EIP712Input {
+    domain: EIP712DomainInput!
+    primaryType: String!
+  }
+
+  input ProofInput {
+    verificationMethod: String!
+    ethereumAddress: EthereumAddress!
+    created: DateTime!
+    proofPurpose: String!
+    type: String!
+    proofValue: String!
+    eip712: EIP712Input!
+  }
+
+  input RenownCredential_InitInput {
+    context: [String!]!
+    id: String!
+    type: [String!]!
+    issuer: IssuerInput!
+    issuanceDate: DateTime!
+    expirationDate: DateTime
+    credentialSubject: CredentialSubjectInput!
+    credentialStatus: CredentialStatusInput
+    credentialSchema: CredentialSchemaInput!
+    proof: ProofInput!
+  }
+
   input RenownCredential_RevokeInput {
     revokedAt: DateTime!
     reason: String
-  }
-  input RenownCredential_UpdateCredentialSubjectInput {
-    credentialSubject: String!
-  }
-  input RenownCredential_SetJwtInput {
-    jwt: String!
-  }
-  input RenownCredential_SetCredentialStatusInput {
-    statusId: String!
-    statusType: String!
-    statusPurpose: String!
-    statusListIndex: String!
-    statusListCredential: String!
   }
 `;

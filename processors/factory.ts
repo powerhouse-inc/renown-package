@@ -12,8 +12,14 @@ import { type PHDocumentHeader } from "document-model";
 
 // Import processor factories here as they are generated
 import { renownUserProcessorFactory } from "./renown-user/factory.js";
+import {
+  renownCredentialProcessorFactory,
+  type IProcessorHostModuleWithReactor,
+} from "./renown-credential/factory.js";
 
-export const processorFactory = (module: IProcessorHostModule) => {
+export const processorFactory = (
+  module: IProcessorHostModule | IProcessorHostModuleWithReactor,
+) => {
   // Initialize all processor factories once with the module
   const factories: Array<
     (driveHeader: PHDocumentHeader) => Promise<ProcessorRecord[]>
@@ -21,6 +27,11 @@ export const processorFactory = (module: IProcessorHostModule) => {
 
   // Add processors here as they are generated
   factories.push(renownUserProcessorFactory(module));
+  factories.push(
+    renownCredentialProcessorFactory(
+      module as IProcessorHostModuleWithReactor,
+    ),
+  );
 
   // Return the inner function that will be called for each drive
   return async (driveHeader: PHDocumentHeader): Promise<ProcessorRecord[]> => {

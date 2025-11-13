@@ -10,7 +10,7 @@ export const renownUserProcessorFactory =
   (module: IProcessorHostModule) =>
   async (driveHeader: PHDocumentHeader): Promise<ProcessorRecord[]> => {
     // Create a namespace for the processor and the provided drive id
-    const namespace = RenownUserProcessor.getNamespace(driveHeader.id);
+    const namespace = RenownUserProcessor.getNamespace("renown-user");
 
     // Create a namespaced db for the processor
     const store =

@@ -4,9 +4,7 @@ export type ErrorCode =
   | "JwtVerificationError"
   | "InvalidClaimsError"
   | "MissingTypeError"
-  | "AlreadyRevokedError"
-  | "CredentialRevokedError"
-  | "InvalidStatusPurposeError";
+  | "AlreadyRevokedError";
 
 export interface ReducerError {
   errorCode: ErrorCode;
@@ -54,20 +52,6 @@ export class AlreadyRevokedError extends Error implements ReducerError {
   }
 }
 
-export class CredentialRevokedError extends Error implements ReducerError {
-  errorCode = "CredentialRevokedError" as ErrorCode;
-  constructor(message = "CredentialRevokedError") {
-    super(message);
-  }
-}
-
-export class InvalidStatusPurposeError extends Error implements ReducerError {
-  errorCode = "InvalidStatusPurposeError" as ErrorCode;
-  constructor(message = "InvalidStatusPurposeError") {
-    super(message);
-  }
-}
-
 export const errors = {
   Init: {
     MissingContextError,
@@ -78,12 +62,5 @@ export const errors = {
   },
   Revoke: {
     AlreadyRevokedError,
-  },
-  UpdateCredentialSubject: {
-    InvalidClaimsError,
-    CredentialRevokedError,
-  },
-  SetCredentialStatus: {
-    InvalidStatusPurposeError,
   },
 };
