@@ -7,6 +7,38 @@
   "files": [
     "/dist"
   ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./document-models": {
+      "types": "./dist/document-models/index.d.ts",
+      "import": "./dist/document-models/index.js"
+    },
+    "./document-models/*": {
+      "types": "./dist/document-models/*/index.d.ts",
+      "import": "./dist/document-models/*/index.js"
+    },
+    "./editors": {
+      "types": "./dist/editors/index.d.ts",
+      "import": "./dist/editors/index.js"
+    },
+    "./editors/*": {
+      "types": "./dist/editors/*/index.d.ts",
+      "import": "./dist/editors/*/index.js"
+    },
+    "./subgraphs": {
+      "types": "./dist/subgraphs/index.d.ts",
+      "import": "./dist/subgraphs/index.js"
+    },
+    "./processors": {
+      "types": "./dist/processors/index.d.ts",
+      "import": "./dist/processors/index.js"
+    },
+    "./manifest": "./dist/powerhouse.manifest.json",
+    "./style.css": "./dist/style.css"
+  },
   "release": {
     "branches": [
       "main",
@@ -34,48 +66,6 @@
       "@semantic-release/github"
     ]
   },
-  "exports": {
-    ".": {
-      "development": "./index.ts",
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
-    "./document-models": {
-      "development": "./document-models/index.ts",
-      "types": "./dist/document-models/index.d.ts",
-      "default": "./dist/document-models/index.js"
-    },
-    "./document-models/renown-credential": {
-      "development": "./document-models/renown-credential/index.ts",
-      "types": "./dist/document-models/renown-credential/index.d.ts",
-      "default": "./dist/document-models/renown-credential/index.js"
-    },
-    "./document-models/renown-user": {
-      "development": "./document-models/renown-user/index.ts",
-      "types": "./dist/document-models/renown-user/index.d.ts",
-      "default": "./dist/document-models/renown-user/index.js"
-    },
-    "./editors": {
-      "development": "./editors/index.ts",
-      "types": "./dist/editors/index.d.ts",
-      "default": "./dist/editors/index.js"
-    },
-    "./subgraphs": {
-      "development": "./subgraphs/index.ts",
-      "types": "./dist/subgraphs/index.d.ts",
-      "default": "./dist/subgraphs/index.js"
-    },
-    "./processors": {
-      "development": "./processors/index.ts",
-      "types": "./dist/processors/index.d.ts",
-      "default": "./dist/processors/index.js"
-    },
-    "./manifest": {
-      "development": "./powerhouse.manifest.json",
-      "default": "./dist/powerhouse.manifest.json"
-    },
-    "./style.css": "./dist/style.css"
-  },
   "scripts": {
     "lint": "eslint . --cache",
     "lint:fix": "eslint . --fix --cache",
@@ -98,7 +88,6 @@
   "dependencies": {
     "@powerhousedao/builder-tools": "staging",
     "@powerhousedao/common": "staging",
-    "@powerhousedao/connect": "staging",
     "@powerhousedao/design-system": "staging",
     "@powerhousedao/document-engineering": "^1.38.0",
     "@powerhousedao/vetra": "staging",
@@ -115,6 +104,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.2.17",
     "@eslint/js": "^9.37.0",
+    "@powerhousedao/connect": "staging",
     "@openfeature/core": "^1.9.1",
     "@powerhousedao/analytics-engine-core": "^0.5.0",
     "@powerhousedao/codegen": "staging",
