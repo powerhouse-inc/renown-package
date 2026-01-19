@@ -1,7 +1,7 @@
 {
   "name": "@powerhousedao/renown-package",
   "description": "",
-  "version": "0.0.33-staging",
+  "version": "0.0.33-staging.1",
   "license": "AGPL-3.0-only",
   "type": "module",
   "files": [
@@ -45,6 +45,16 @@
       "types": "./dist/document-models/index.d.ts",
       "default": "./dist/document-models/index.js"
     },
+    "./document-models/renown-credential": {
+      "development": "./document-models/renown-credential/index.ts",
+      "types": "./dist/document-models/renown-credential/index.d.ts",
+      "default": "./dist/document-models/renown-credential/index.js"
+    },
+    "./document-models/renown-user": {
+      "development": "./document-models/renown-user/index.ts",
+      "types": "./dist/document-models/renown-user/index.d.ts",
+      "default": "./dist/document-models/renown-user/index.js"
+    },
     "./editors": {
       "development": "./editors/index.ts",
       "types": "./dist/editors/index.d.ts",
@@ -86,13 +96,13 @@
     "service-unstartup": "bash ./node_modules/@powerhousedao/ph-cli/dist/scripts/service-unstartup.sh"
   },
   "dependencies": {
-    "@powerhousedao/builder-tools": "5.0.2",
-    "@powerhousedao/common": "5.0.2",
-    "@powerhousedao/connect": "5.0.2",
-    "@powerhousedao/design-system": "5.0.2",
+    "@powerhousedao/builder-tools": "staging",
+    "@powerhousedao/common": "staging",
+    "@powerhousedao/connect": "staging",
+    "@powerhousedao/design-system": "staging",
     "@powerhousedao/document-engineering": "^1.38.0",
-    "@powerhousedao/vetra": "5.0.2",
-    "document-model": "5.0.2",
+    "@powerhousedao/vetra": "staging",
+    "document-model": "staging",
     "graphql": "^16.10.0",
     "graphql-request": "^7.2.0",
     "graphql-tag": "^2.12.6",
@@ -100,20 +110,20 @@
     "luxon": "^3.7.2",
     "nanoid": "^5.1.6",
     "uuid": "^11.1.0",
-    "zod": "^3.24.2"
+    "zod": "^4.1.13"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.2.17",
     "@eslint/js": "^9.37.0",
     "@openfeature/core": "^1.9.1",
     "@powerhousedao/analytics-engine-core": "^0.5.0",
-    "@powerhousedao/codegen": "5.0.2",
-    "@powerhousedao/ph-cli": "5.0.2",
-    "@powerhousedao/reactor-api": "5.0.2",
-    "@powerhousedao/reactor-browser": "5.0.2",
-    "@powerhousedao/reactor-local": "5.0.2",
+    "@powerhousedao/codegen": "staging",
+    "@powerhousedao/ph-cli": "staging",
+    "@powerhousedao/reactor-api": "staging",
+    "@powerhousedao/reactor-browser": "staging",
+    "@powerhousedao/reactor-local": "staging",
     "@powerhousedao/scalars": "latest",
-    "@powerhousedao/switchboard": "5.0.2",
+    "@powerhousedao/switchboard": "staging",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
     "@tailwindcss/cli": "^4.1.14",
@@ -122,7 +132,7 @@
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.0.4",
     "adm-zip": "^0.5.16",
-    "document-drive": "5.0.2",
+    "document-drive": "staging",
     "eslint": "^9.37.0",
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-react-hooks": "^5.2.0",

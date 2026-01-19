@@ -1,13 +1,14 @@
 import { createAction } from "document-model/core";
-import { z, type InitInput, type RevokeInput } from "../types.js";
-import { type InitAction, type RevokeAction } from "./actions.js";
+import { InitInputSchema, RevokeInputSchema } from "../schema/zod.js";
+import type { InitInput, RevokeInput } from "../types.js";
+import type { InitAction, RevokeAction } from "./actions.js";
 
 export const init = (input: InitInput) =>
   createAction<InitAction>(
     "INIT",
     { ...input },
     undefined,
-    z.InitInputSchema,
+    InitInputSchema,
     "global",
   );
 
@@ -16,6 +17,6 @@ export const revoke = (input: RevokeInput) =>
     "REVOKE",
     { ...input },
     undefined,
-    z.RevokeInputSchema,
+    RevokeInputSchema,
     "global",
   );

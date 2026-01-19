@@ -9,6 +9,13 @@ import {
 import type { RenownUserGlobalState, RenownUserLocalState } from "./types.js";
 import type { RenownUserPHState } from "./types.js";
 import { reducer } from "./reducer.js";
+import { renownUserDocumentType } from "./document-type.js";
+import {
+  isRenownUserDocument,
+  assertIsRenownUserDocument,
+  isRenownUserState,
+  assertIsRenownUserState,
+} from "./document-schema.js";
 
 export const initialGlobalState: RenownUserGlobalState = {
   username: null,
@@ -17,7 +24,7 @@ export const initialGlobalState: RenownUserGlobalState = {
 };
 export const initialLocalState: RenownUserLocalState = {};
 
-const utils: DocumentModelUtils<RenownUserPHState> = {
+export const utils: DocumentModelUtils<RenownUserPHState> = {
   fileExtension: "phru",
   createState(state) {
     return {
@@ -29,7 +36,7 @@ const utils: DocumentModelUtils<RenownUserPHState> = {
   createDocument(state) {
     const document = baseCreateDocument(utils.createState, state);
 
-    document.header.documentType = "powerhouse/renown-user";
+    document.header.documentType = renownUserDocumentType;
 
     // for backwards compatibility, but this is NOT a valid signed document id
     document.header.id = generateId();
@@ -42,11 +49,25 @@ const utils: DocumentModelUtils<RenownUserPHState> = {
   loadFromInput(input) {
     return baseLoadFromInput(input, reducer);
   },
+  isStateOfType(state) {
+    return isRenownUserState(state);
+  },
+  assertIsStateOfType(state) {
+    return assertIsRenownUserState(state);
+  },
+  isDocumentOfType(document) {
+    return isRenownUserDocument(document);
+  },
+  assertIsDocumentOfType(document) {
+    return assertIsRenownUserDocument(document);
+  },
 };
 
 export const createDocument = utils.createDocument;
 export const createState = utils.createState;
 export const saveToFileHandle = utils.saveToFileHandle;
 export const loadFromInput = utils.loadFromInput;
-
-export default utils;
+export const isStateOfType = utils.isStateOfType;
+export const assertIsStateOfType = utils.assertIsStateOfType;
+export const isDocumentOfType = utils.isDocumentOfType;
+export const assertIsDocumentOfType = utils.assertIsDocumentOfType;

@@ -3,12 +3,17 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 import type { StateReducer } from "document-model";
 import { isDocumentAction, createReducer } from "document-model/core";
-import type { RenownUserPHState } from "./types.js";
-import { z } from "./types.js";
+import type { RenownUserPHState } from "@powerhousedao/renown-package/document-models/renown-user";
 
-import { reducer as ProfileReducer } from "../src/reducers/profile.js";
+import { renownUserProfileOperations } from "../src/reducers/profile.js";
 
-export const stateReducer: StateReducer<RenownUserPHState> = (
+import {
+  SetUsernameInputSchema,
+  SetEthAddressInputSchema,
+  SetUserImageInputSchema,
+} from "./schema/zod.js";
+
+const stateReducer: StateReducer<RenownUserPHState> = (
   state,
   action,
   dispatch,
@@ -16,34 +21,42 @@ export const stateReducer: StateReducer<RenownUserPHState> = (
   if (isDocumentAction(action)) {
     return state;
   }
-
   switch (action.type) {
-    case "SET_USERNAME":
-      z.SetUsernameInputSchema().parse(action.input);
-      ProfileReducer.setUsernameOperation(
-        (state as any)[action.scope],
-        action as any,
-        dispatch,
-      );
-      break;
+    case "SET_USERNAME": {
+      SetUsernameInputSchema().parse(action.input);
 
-    case "SET_ETH_ADDRESS":
-      z.SetEthAddressInputSchema().parse(action.input);
-      ProfileReducer.setEthAddressOperation(
+      renownUserProfileOperations.setUsernameOperation(
         (state as any)[action.scope],
         action as any,
         dispatch,
       );
-      break;
 
-    case "SET_USER_IMAGE":
-      z.SetUserImageInputSchema().parse(action.input);
-      ProfileReducer.setUserImageOperation(
+      break;
+    }
+
+    case "SET_ETH_ADDRESS": {
+      SetEthAddressInputSchema().parse(action.input);
+
+      renownUserProfileOperations.setEthAddressOperation(
         (state as any)[action.scope],
         action as any,
         dispatch,
       );
+
       break;
+    }
+
+    case "SET_USER_IMAGE": {
+      SetUserImageInputSchema().parse(action.input);
+
+      renownUserProfileOperations.setUserImageOperation(
+        (state as any)[action.scope],
+        action as any,
+        dispatch,
+      );
+
+      break;
+    }
 
     default:
       return state;

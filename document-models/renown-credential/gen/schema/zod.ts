@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import type {
   CredentialSchema,
   CredentialSchemaInput,
@@ -20,7 +20,7 @@ import type {
 } from "./types.js";
 
 type Properties<T> = Required<{
-  [K in keyof T]: z.ZodType<T[K], any, T[K]>;
+  [K in keyof T]: z.ZodType<T[K]>;
 }>;
 
 type definedNonNullAny = {};
@@ -76,7 +76,7 @@ export function CredentialSubjectSchema(): z.ZodObject<
   return z.object({
     __typename: z.literal("CredentialSubject").optional(),
     app: z.string(),
-    id: z.string().nullable(),
+    id: z.string().nullish(),
   });
 }
 
@@ -92,7 +92,7 @@ export function CredentialSubjectInputSchema(): z.ZodObject<
 export function Eip712Schema(): z.ZodObject<Properties<Eip712>> {
   return z.object({
     __typename: z.literal("EIP712").optional(),
-    domain: Eip712DomainSchema(),
+    domain: z.lazy(() => Eip712DomainSchema()),
     primaryType: z.string(),
   });
 }
@@ -163,7 +163,7 @@ export function ProofSchema(): z.ZodObject<Properties<Proof>> {
   return z.object({
     __typename: z.literal("Proof").optional(),
     created: z.string().datetime(),
-    eip712: Eip712Schema(),
+    eip712: z.lazy(() => Eip712Schema()),
     ethereumAddress: z
       .string()
       .regex(/^0x[a-fA-F0-9]{40}$/, {
@@ -198,17 +198,17 @@ export function RenownCredentialStateSchema(): z.ZodObject<
   return z.object({
     __typename: z.literal("RenownCredentialState").optional(),
     context: z.array(z.string()),
-    credentialSchema: CredentialSchemaSchema(),
-    credentialStatus: CredentialStatusSchema().nullable(),
-    credentialSubject: CredentialSubjectSchema(),
-    expirationDate: z.string().datetime().nullable(),
+    credentialSchema: z.lazy(() => CredentialSchemaSchema()),
+    credentialStatus: z.lazy(() => CredentialStatusSchema().nullish()),
+    credentialSubject: z.lazy(() => CredentialSubjectSchema()),
+    expirationDate: z.string().datetime().nullish(),
     id: z.string(),
     issuanceDate: z.string().datetime(),
-    issuer: IssuerSchema(),
-    proof: ProofSchema(),
-    revocationReason: z.string().nullable(),
+    issuer: z.lazy(() => IssuerSchema()),
+    proof: z.lazy(() => ProofSchema()),
+    revocationReason: z.string().nullish(),
     revoked: z.boolean(),
-    revokedAt: z.string().datetime().nullable(),
+    revokedAt: z.string().datetime().nullish(),
     type: z.array(z.string()),
   });
 }

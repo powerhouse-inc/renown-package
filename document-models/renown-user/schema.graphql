@@ -1,9 +1,12 @@
+scalar Unknown
+scalar DateTime
+scalar Attachment
+scalar Address
 scalar Amount_Tokens
 scalar EthereumAddress
-scalar Amount_Percentage
 scalar EmailAddress
+scalar Amount_Percentage
 scalar Date
-scalar DateTime
 scalar URL
 scalar Amount_Money
 scalar OLabel
@@ -15,14 +18,13 @@ scalar Amount_Currency
 scalar Amount_Crypto
 scalar Amount
 scalar Upload
+
 type RenownUserState {
   "Add your global state fields here"
   username: String
   ethAddress: EthereumAddress
   userImage: String
 }
-
-
 
 # profile
 

@@ -1,6 +1,6 @@
-import type { RenownUserProfileOperations } from "../../gen/profile/operations.js";
+import type { RenownUserProfileOperations } from "@powerhousedao/renown-package/document-models/renown-user";
 
-export const reducer: RenownUserProfileOperations = {
+export const renownUserProfileOperations: RenownUserProfileOperations = {
   setUsernameOperation(state, action, dispatch) {
     state.username = action.input.username;
   },

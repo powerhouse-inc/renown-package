@@ -1,14 +1,18 @@
 import { createAction } from "document-model/core";
 import {
-  z,
-  type SetUsernameInput,
-  type SetEthAddressInput,
-  type SetUserImageInput,
+  SetUsernameInputSchema,
+  SetEthAddressInputSchema,
+  SetUserImageInputSchema,
+} from "../schema/zod.js";
+import type {
+  SetUsernameInput,
+  SetEthAddressInput,
+  SetUserImageInput,
 } from "../types.js";
-import {
-  type SetUsernameAction,
-  type SetEthAddressAction,
-  type SetUserImageAction,
+import type {
+  SetUsernameAction,
+  SetEthAddressAction,
+  SetUserImageAction,
 } from "./actions.js";
 
 export const setUsername = (input: SetUsernameInput) =>
@@ -16,7 +20,7 @@ export const setUsername = (input: SetUsernameInput) =>
     "SET_USERNAME",
     { ...input },
     undefined,
-    z.SetUsernameInputSchema,
+    SetUsernameInputSchema,
     "global",
   );
 
@@ -25,7 +29,7 @@ export const setEthAddress = (input: SetEthAddressInput) =>
     "SET_ETH_ADDRESS",
     { ...input },
     undefined,
-    z.SetEthAddressInputSchema,
+    SetEthAddressInputSchema,
     "global",
   );
 
@@ -34,6 +38,6 @@ export const setUserImage = (input: SetUserImageInput) =>
     "SET_USER_IMAGE",
     { ...input },
     undefined,
-    z.SetUserImageInputSchema,
+    SetUserImageInputSchema,
     "global",
   );

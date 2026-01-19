@@ -1,6 +1,6 @@
 import { type SignalDispatch } from "document-model";
-import { type InitAction, type RevokeAction } from "./actions.js";
-import { type RenownCredentialState } from "../types.js";
+import type { InitAction, RevokeAction } from "./actions.js";
+import type { RenownCredentialState } from "../types.js";
 
 export interface RenownCredentialManagerOperations {
   initOperation: (

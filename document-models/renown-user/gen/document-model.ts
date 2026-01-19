@@ -61,13 +61,13 @@ export const documentModel: DocumentModelGlobalState = {
         global: {
           examples: [],
           initialValue:
-            '"{\\n  \\"username\\": null,\\n  \\"ethAddress\\": null,\\n  \\"userImage\\": null\\n}"',
+            '{\n  "username": null,\n  "ethAddress": null,\n  "userImage": null\n}',
           schema:
             'type RenownUserState {\n  "Add your global state fields here"\n  username: String\n  ethAddress: EthereumAddress\n  userImage: String\n}',
         },
         local: {
           examples: [],
-          initialValue: '""',
+          initialValue: "",
           schema: "",
         },
       },

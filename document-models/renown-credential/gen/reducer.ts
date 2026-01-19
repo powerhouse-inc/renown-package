@@ -3,12 +3,13 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 import type { StateReducer } from "document-model";
 import { isDocumentAction, createReducer } from "document-model/core";
-import type { RenownCredentialPHState } from "./types.js";
-import { z } from "./types.js";
+import type { RenownCredentialPHState } from "@powerhousedao/renown-package/document-models/renown-credential";
 
-import { reducer as ManagerReducer } from "../src/reducers/manager.js";
+import { renownCredentialManagerOperations } from "../src/reducers/manager.js";
 
-export const stateReducer: StateReducer<RenownCredentialPHState> = (
+import { InitInputSchema, RevokeInputSchema } from "./schema/zod.js";
+
+const stateReducer: StateReducer<RenownCredentialPHState> = (
   state,
   action,
   dispatch,
@@ -16,25 +17,30 @@ export const stateReducer: StateReducer<RenownCredentialPHState> = (
   if (isDocumentAction(action)) {
     return state;
   }
-
   switch (action.type) {
-    case "INIT":
-      z.InitInputSchema().parse(action.input);
-      ManagerReducer.initOperation(
-        (state as any)[action.scope],
-        action as any,
-        dispatch,
-      );
-      break;
+    case "INIT": {
+      InitInputSchema().parse(action.input);
 
-    case "REVOKE":
-      z.RevokeInputSchema().parse(action.input);
-      ManagerReducer.revokeOperation(
+      renownCredentialManagerOperations.initOperation(
         (state as any)[action.scope],
         action as any,
         dispatch,
       );
+
       break;
+    }
+
+    case "REVOKE": {
+      RevokeInputSchema().parse(action.input);
+
+      renownCredentialManagerOperations.revokeOperation(
+        (state as any)[action.scope],
+        action as any,
+        dispatch,
+      );
+
+      break;
+    }
 
     default:
       return state;

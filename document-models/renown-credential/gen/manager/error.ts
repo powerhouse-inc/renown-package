@@ -60,7 +60,5 @@ export const errors = {
     InvalidClaimsError,
     MissingTypeError,
   },
-  Revoke: {
-    AlreadyRevokedError,
-  },
+  Revoke: { AlreadyRevokedError },
 };

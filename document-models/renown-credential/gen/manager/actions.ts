@@ -1,4 +1,4 @@
-import { type Action } from "document-model";
+import type { Action } from "document-model";
 import type { InitInput, RevokeInput } from "../types.js";
 
 export type InitAction = Action & { type: "INIT"; input: InitInput };
