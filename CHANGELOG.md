@@ -1,3 +1,10 @@
+# [1.0.0-staging.9](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.8...v1.0.0-staging.9) (2026-01-20)
+
+
+### Bug Fixes
+
+* use NPM_TOKEN secret for npm publish ([911aabf](https://github.com/powerhouse-inc/renown-package/commit/911aabf772ae1ed950c6f89be7cf9bea4c488e46))
+
 # [1.0.0-staging.8](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.7...v1.0.0-staging.8) (2026-01-20)
 
 
