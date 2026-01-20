@@ -262,6 +262,7 @@ jobs:
   docker:
     name: Docker (${{ matrix.target }})
     needs: [prepare, release]
+    if: always() && needs.prepare.result == 'success' && needs.release.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
