@@ -2,7 +2,13 @@ dist
 coverage
 node_modules
 
+.env
 .env.local
 
 .ph
 projects-import.js
+.eslintcache
+
+# Sensitive files
+.auth.json
+.keypair.json

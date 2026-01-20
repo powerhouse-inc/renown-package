@@ -207,7 +207,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Configure JSR registry
         run: pnpm config set @jsr:registry https://npm.jsr.io
@@ -223,11 +222,11 @@ jobs:
         continue-on-error: true
 
       - name: Run semantic-release
+        id: semantic-release
         if: needs.prepare.outputs.dry_run != 'true'
         run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
 
       - name: Run semantic-release (dry-run)
         if: needs.prepare.outputs.dry_run == 'true'
@@ -249,6 +248,16 @@ jobs:
             echo "released=false" >> $GITHUB_OUTPUT
             echo "No new release (version: $VERSION)"
           fi
+
+      - name: Publish to npm with provenance (OIDC)
+        if: needs.prepare.outputs.dry_run != 'true' && steps.get-version.outputs.released == 'true'
+        run: |
+          echo "npm version: $(npm --version)"
+          echo "Clearing any existing npmrc..."
+          rm -f ~/.npmrc
+          rm -f .npmrc
+          echo "Publishing with OIDC provenance..."
+          npm publish --provenance --access public --tag ${{ needs.prepare.outputs.channel }} --registry https://registry.npmjs.org
 
   # ==========================================================================
   # Build and push Docker images
