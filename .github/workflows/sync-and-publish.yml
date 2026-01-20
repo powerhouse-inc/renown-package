@@ -1,8 +1,21 @@
-name: Release
+name: Sync and Publish
 
 on:
+  # Triggered by powerhouse monorepo after release
+  repository_dispatch:
+    types: [powerhouse-release]
+
+  # Manual trigger
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'Mode'
+        required: true
+        type: choice
+        options:
+          - release
+          - sync
+        default: 'release'
       channel:
         description: 'Release channel'
         required: true
@@ -36,7 +49,9 @@ jobs:
     name: Prepare
     runs-on: ubuntu-latest
     outputs:
+      mode: ${{ steps.params.outputs.mode }}
       channel: ${{ steps.params.outputs.channel }}
+      version: ${{ steps.params.outputs.version }}
       branch: ${{ steps.params.outputs.branch }}
       project_name: ${{ steps.params.outputs.project_name }}
       dry_run: ${{ steps.params.outputs.dry_run }}
@@ -45,9 +60,23 @@ jobs:
       - name: Determine parameters
         id: params
         run: |
-          CHANNEL="${{ inputs.channel }}"
-          DRY_RUN="${{ inputs.dry-run }}"
-          SKIP_DOCKER="${{ inputs.skip-docker }}"
+          # Determine mode based on trigger
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            MODE="sync"
+            CHANNEL="${{ github.event.client_payload.channel }}"
+            VERSION="${{ github.event.client_payload.version }}"
+            DRY_RUN="false"
+            SKIP_DOCKER="false"
+          else
+            MODE="${{ inputs.mode }}"
+            CHANNEL="${{ inputs.channel }}"
+            VERSION=""
+            DRY_RUN="${{ inputs.dry-run }}"
+            SKIP_DOCKER="${{ inputs.skip-docker }}"
+          fi
+
+          # Default channel to dev if not set
+          CHANNEL="${CHANNEL:-dev}"
 
           # Determine branch from channel
           case "$CHANNEL" in
@@ -59,24 +88,29 @@ jobs:
 
           PROJECT_NAME="${GITHUB_REPOSITORY#*/}"
 
+          echo "mode=$MODE" >> $GITHUB_OUTPUT
           echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
           echo "project_name=$PROJECT_NAME" >> $GITHUB_OUTPUT
           echo "dry_run=$DRY_RUN" >> $GITHUB_OUTPUT
           echo "skip_docker=$SKIP_DOCKER" >> $GITHUB_OUTPUT
 
+          echo "Mode: $MODE"
           echo "Channel: $CHANNEL"
+          echo "Version: $VERSION"
           echo "Branch: $BRANCH"
           echo "Project: $PROJECT_NAME"
           echo "Dry Run: $DRY_RUN"
           echo "Skip Docker: $SKIP_DOCKER"
 
   # ==========================================================================
-  # Semantic Release - handles versioning, changelog, npm publish
+  # Release mode - Semantic Release (versioning based on commits)
   # ==========================================================================
   release:
-    name: Release
+    name: Semantic Release
     needs: prepare
+    if: needs.prepare.outputs.mode == 'release'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -121,7 +155,6 @@ jobs:
 
       - name: Run semantic-release
         if: needs.prepare.outputs.dry_run != 'true'
-        id: semantic
         run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -140,6 +173,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
           # Check if a release was made by looking for the tag
+          git fetch --tags
           if git tag --list "v$VERSION" | grep -q "v$VERSION"; then
             echo "released=true" >> $GITHUB_OUTPUT
             echo "Released version: $VERSION"
@@ -149,15 +183,132 @@ jobs:
           fi
 
   # ==========================================================================
+  # Sync mode - Update powerhouse deps and publish
+  # ==========================================================================
+  sync:
+    name: Sync Powerhouse
+    needs: prepare
+    if: needs.prepare.outputs.mode == 'sync'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+      released: ${{ steps.publish.outputs.released }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.branch }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Configure JSR registry
+        run: pnpm config set @jsr:registry https://npm.jsr.io
+
+      - name: Install ph-cli
+        run: |
+          CHANNEL="${{ needs.prepare.outputs.channel }}"
+          case "$CHANNEL" in
+            dev) npm install -g @powerhousedao/ph-cli@dev ;;
+            staging) npm install -g @powerhousedao/ph-cli@staging ;;
+            *) npm install -g @powerhousedao/ph-cli@latest ;;
+          esac
+
+      - name: Update Powerhouse dependencies
+        run: ph update
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build package
+        run: pnpm build
+
+      - name: Run tests
+        run: pnpm test || true
+        continue-on-error: true
+
+      - name: Bump version
+        id: version
+        run: |
+          CHANNEL="${{ needs.prepare.outputs.channel }}"
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+
+          # Determine new version
+          if [ "$CHANNEL" = "latest" ]; then
+            npm version patch --no-git-tag-version
+          else
+            npm version prerelease --preid=$CHANNEL --no-git-tag-version
+          fi
+
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Bumped version: $CURRENT_VERSION -> $NEW_VERSION"
+
+      - name: Commit changes
+        run: |
+          git add package.json pnpm-lock.yaml
+          git commit -m "chore: sync powerhouse dependencies
+
+          - Updated to powerhouse ${{ needs.prepare.outputs.version }}
+          - Bumped version to ${{ steps.version.outputs.new_version }}" || echo "No changes to commit"
+
+      - name: Push changes
+        if: needs.prepare.outputs.dry_run != 'true'
+        run: git push
+
+      - name: Publish to npm
+        id: publish
+        if: needs.prepare.outputs.dry_run != 'true'
+        run: |
+          CHANNEL="${{ needs.prepare.outputs.channel }}"
+          if [ "$CHANNEL" = "latest" ]; then
+            npm publish --provenance --access public --tag latest
+          else
+            npm publish --provenance --access public --tag $CHANNEL
+          fi
+          echo "released=true" >> $GITHUB_OUTPUT
+        env:
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: Create git tag
+        if: needs.prepare.outputs.dry_run != 'true'
+        run: |
+          git tag "v${{ steps.version.outputs.new_version }}"
+          git push origin "v${{ steps.version.outputs.new_version }}"
+
+  # ==========================================================================
   # Build and push Docker images
   # ==========================================================================
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [prepare, release]
+    needs: [prepare, release, sync]
     if: |
+      always() &&
       needs.prepare.outputs.skip_docker != 'true' &&
       needs.prepare.outputs.dry_run != 'true' &&
-      needs.release.outputs.released == 'true'
+      (
+        (needs.prepare.outputs.mode == 'release' && needs.release.outputs.released == 'true') ||
+        (needs.prepare.outputs.mode == 'sync' && needs.sync.outputs.released == 'true')
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -171,7 +322,7 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.branch }}
 
-      - name: Pull latest changes (including release commit)
+      - name: Pull latest changes
         run: git pull origin ${{ needs.prepare.outputs.branch }}
 
       - name: Set up Docker Buildx
@@ -181,7 +332,6 @@ jobs:
         run: |
           PROJECT_NAME="${{ needs.prepare.outputs.project_name }}"
 
-          # Check if project exists, create if not
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -u "${{ secrets.HARBOR_USERNAME }}:${{ secrets.HARBOR_PASSWORD }}" \
             "https://${{ env.HARBOR_REGISTRY }}/api/v2.0/projects?name=${PROJECT_NAME}")
@@ -224,20 +374,27 @@ jobs:
           PACKAGE_NAME=$(node -p "require('./package.json').name")
           echo "name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
 
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ needs.prepare.outputs.mode }}" = "release" ]; then
+            echo "version=${{ needs.release.outputs.new_version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${{ needs.sync.outputs.new_version }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Determine image tags
         id: tags
         run: |
-          VERSION="${{ needs.release.outputs.new_version }}"
+          VERSION="${{ steps.version.outputs.version }}"
           CHANNEL="${{ needs.prepare.outputs.channel }}"
           PROJECT="${{ needs.prepare.outputs.project_name }}"
           TARGET="${{ matrix.target }}"
 
           HARBOR_BASE="${{ env.HARBOR_REGISTRY }}/${PROJECT}/${TARGET}"
 
-          # Always tag with version
           TAGS="${HARBOR_BASE}:v${VERSION}"
 
-          # Add channel tag (latest, staging, dev)
           if [ "$CHANNEL" = "latest" ]; then
             TAGS="${TAGS},${HARBOR_BASE}:latest"
           else
@@ -278,25 +435,42 @@ jobs:
   # ==========================================================================
   summary:
     name: Summary
-    needs: [prepare, release, docker]
+    needs: [prepare, release, sync, docker]
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ needs.prepare.outputs.mode }}" = "release" ]; then
+            echo "version=${{ needs.release.outputs.new_version }}" >> $GITHUB_OUTPUT
+            echo "released=${{ needs.release.outputs.released }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${{ needs.sync.outputs.new_version }}" >> $GITHUB_OUTPUT
+            echo "released=${{ needs.sync.outputs.released }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Summary
         run: |
           echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Mode | ${{ needs.prepare.outputs.mode }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Channel | ${{ needs.prepare.outputs.channel }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Branch | ${{ needs.prepare.outputs.branch }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Version | ${{ needs.release.outputs.new_version }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Released | ${{ needs.release.outputs.released }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ steps.version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Released | ${{ steps.version.outputs.released }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Dry Run | ${{ needs.prepare.outputs.dry_run }} |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.prepare.outputs.mode }}" = "sync" ]; then
+            echo "| Powerhouse Version | ${{ needs.prepare.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ needs.release.outputs.released }}" = "true" ] && [ "${{ needs.prepare.outputs.skip_docker }}" != "true" ]; then
+          if [ "${{ steps.version.outputs.released }}" = "true" ] && [ "${{ needs.prepare.outputs.skip_docker }}" != "true" ]; then
             echo "### Docker Images" >> $GITHUB_STEP_SUMMARY
-            echo "- \`${{ env.HARBOR_REGISTRY }}/${{ needs.prepare.outputs.project_name }}/connect:v${{ needs.release.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- \`${{ env.HARBOR_REGISTRY }}/${{ needs.prepare.outputs.project_name }}/switchboard:v${{ needs.release.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`${{ env.HARBOR_REGISTRY }}/${{ needs.prepare.outputs.project_name }}/connect:v${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`${{ env.HARBOR_REGISTRY }}/${{ needs.prepare.outputs.project_name }}/switchboard:v${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           fi
