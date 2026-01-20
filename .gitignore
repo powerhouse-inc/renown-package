@@ -8,3 +8,7 @@ node_modules
 .ph
 projects-import.js
 .eslintcache
+
+# Sensitive files
+.auth.json
+.keypair.json
