@@ -1,3 +1,10 @@
+# [1.0.0-staging.15](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.14...v1.0.0-staging.15) (2026-01-20)
+
+
+### Bug Fixes
+
+* move docker condition check to step level for debugging ([8360402](https://github.com/powerhouse-inc/renown-package/commit/83604021a90a280345dc5a0eb4d331c2eea09b02))
+
 # [1.0.0-staging.14](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.13...v1.0.0-staging.14) (2026-01-20)
 
 
