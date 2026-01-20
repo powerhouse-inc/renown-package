@@ -223,11 +223,11 @@ jobs:
         continue-on-error: true
 
       - name: Run semantic-release
+        id: semantic-release
         if: needs.prepare.outputs.dry_run != 'true'
         run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Run semantic-release (dry-run)
         if: needs.prepare.outputs.dry_run == 'true'
@@ -249,6 +249,12 @@ jobs:
             echo "released=false" >> $GITHUB_OUTPUT
             echo "No new release (version: $VERSION)"
           fi
+
+      - name: Publish to npm with provenance
+        if: needs.prepare.outputs.dry_run != 'true' && steps.get-version.outputs.released == 'true'
+        run: npm publish --provenance --access public --tag ${{ needs.prepare.outputs.channel }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # ==========================================================================
   # Build and push Docker images
