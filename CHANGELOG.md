@@ -1,3 +1,74 @@
+# [1.0.0-staging.14](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.13...v1.0.0-staging.14) (2026-01-20)
+
+
+### Bug Fixes
+
+* remove debug job and clean up docker condition ([14a3de0](https://github.com/powerhouse-inc/renown-package/commit/14a3de0dc096efb31239b50bf0597b39f9b313b4))
+
+# [1.0.0-staging.13](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.12...v1.0.0-staging.13) (2026-01-20)
+
+
+### Bug Fixes
+
+* add debug step for docker condition ([35f9aa3](https://github.com/powerhouse-inc/renown-package/commit/35f9aa3379748c93c9a9d592e110f3d69e5d58dc))
+
+# [1.0.0-staging.12](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.11...v1.0.0-staging.12) (2026-01-20)
+
+
+### Bug Fixes
+
+* simplify docker job condition ([747970e](https://github.com/powerhouse-inc/renown-package/commit/747970e1c757936b46a33a6612ac613def5fbb82))
+
+# [1.0.0-staging.11](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.10...v1.0.0-staging.11) (2026-01-20)
+
+
+### Bug Fixes
+
+* add repository field to package.json ([76a7314](https://github.com/powerhouse-inc/renown-package/commit/76a7314e6281b1a6803e0349a638cacd89dcaadc))
+
+# [1.0.0-staging.10](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.9...v1.0.0-staging.10) (2026-01-20)
+
+
+### Bug Fixes
+
+* add package description ([98df320](https://github.com/powerhouse-inc/renown-package/commit/98df320a3458eb82b232f5aa448378a33bbac83d))
+
+# [1.0.0-staging.9](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.8...v1.0.0-staging.9) (2026-01-20)
+
+
+### Bug Fixes
+
+* use NPM_TOKEN secret for npm publish ([911aabf](https://github.com/powerhouse-inc/renown-package/commit/911aabf772ae1ed950c6f89be7cf9bea4c488e46))
+
+# [1.0.0-staging.8](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.7...v1.0.0-staging.8) (2026-01-20)
+
+
+### Bug Fixes
+
+* let npm handle OIDC automatically with Trusted Publishers ([1b9367a](https://github.com/powerhouse-inc/renown-package/commit/1b9367a3a8d545291e21c3e47b31088641b8bf76))
+
+# [1.0.0-staging.7](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.6...v1.0.0-staging.7) (2026-01-20)
+
+
+### Bug Fixes
+
+* explicitly request OIDC token for npm authentication ([57707b6](https://github.com/powerhouse-inc/renown-package/commit/57707b63af7a0ce125a50e5d2a072c423f989c54))
+
+# [1.0.0-staging.6](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.5...v1.0.0-staging.6) (2026-01-20)
+
+
+### Bug Fixes
+
+* use NPM_TOKEN for publishing instead of OIDC ([c99eb2b](https://github.com/powerhouse-inc/renown-package/commit/c99eb2be1742d8b5dc1be7ca45b59115e636dad6))
+* use OIDC provenance for npm publish with debug logging ([9de4cbb](https://github.com/powerhouse-inc/renown-package/commit/9de4cbbacab0448fdfaf599b770f17d1b225b7a9))
+
+# [1.0.0-staging.5](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.4...v1.0.0-staging.5) (2026-01-20)
+
+
+### Bug Fixes
+
+* clear npmrc and specify registry explicitly for OIDC publish ([eb61b92](https://github.com/powerhouse-inc/renown-package/commit/eb61b9277291e3113bb529b4c77634d328b9459b))
+
 # [1.0.0-staging.4](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.3...v1.0.0-staging.4) (2026-01-20)
 
 

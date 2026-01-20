@@ -262,10 +262,6 @@ jobs:
   docker:
     name: Docker (${{ matrix.target }})
     needs: [prepare, release]
-    if: |
-      needs.prepare.outputs.skip_docker != 'true' &&
-      needs.prepare.outputs.dry_run != 'true' &&
-      needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -274,6 +270,26 @@ jobs:
       matrix:
         target: [connect, switchboard]
     steps:
+      - name: Check if should run
+        id: check
+        run: |
+          echo "skip_docker: ${{ needs.prepare.outputs.skip_docker }}"
+          echo "dry_run: ${{ needs.prepare.outputs.dry_run }}"
+          echo "released: ${{ needs.release.outputs.released }}"
+          if [ "${{ needs.prepare.outputs.skip_docker }}" = "true" ]; then
+            echo "Skipping: skip_docker is true"
+            exit 1
+          fi
+          if [ "${{ needs.prepare.outputs.dry_run }}" = "true" ]; then
+            echo "Skipping: dry_run is true"
+            exit 1
+          fi
+          if [ "${{ needs.release.outputs.released }}" != "true" ]; then
+            echo "Skipping: no new release (released=${{ needs.release.outputs.released }})"
+            exit 1
+          fi
+          echo "All conditions met, proceeding with Docker build"
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
