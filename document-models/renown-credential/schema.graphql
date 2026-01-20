@@ -45,8 +45,6 @@ type RenownCredentialState {
   revocationReason: String
 }
 
-
-
 # manager
 
 input InitInput {

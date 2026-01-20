@@ -1,16 +1,31 @@
 name: Sync and Publish
 
 on:
-  # Triggered by powerhouse monorepo after release
+  # Triggered on push to main branches (semantic release mode)
+  push:
+    branches:
+      - main
+      - staging
+      - dev
+
+  # Triggered by powerhouse monorepo after release (sync mode)
   repository_dispatch:
     types: [powerhouse-release]
 
   # Manual trigger
   workflow_dispatch:
     inputs:
-      channel:
-        description: 'Release channel'
+      mode:
+        description: 'Release mode'
         required: true
+        type: choice
+        options:
+          - semantic-release
+          - sync-powerhouse
+        default: 'semantic-release'
+      channel:
+        description: 'Release channel (for sync-powerhouse mode)'
+        required: false
         type: choice
         options:
           - dev
@@ -18,7 +33,7 @@ on:
           - latest
         default: 'staging'
       version:
-        description: 'Powerhouse version (e.g., 5.3.0-staging.6)'
+        description: 'Powerhouse version (for sync-powerhouse mode)'
         required: false
         type: string
       dry-run:
@@ -46,6 +61,7 @@ jobs:
     name: Prepare Release
     runs-on: ubuntu-latest
     outputs:
+      mode: ${{ steps.params.outputs.mode }}
       channel: ${{ steps.params.outputs.channel }}
       version: ${{ steps.params.outputs.version }}
       branch: ${{ steps.params.outputs.branch }}
@@ -56,13 +72,27 @@ jobs:
       - name: Determine parameters
         id: params
         run: |
-          # Get channel from dispatch payload or input
+          # Determine mode based on trigger
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            MODE="sync-powerhouse"
             CHANNEL="${{ github.event.client_payload.channel }}"
             VERSION="${{ github.event.client_payload.version }}"
             DRY_RUN="false"
             SKIP_DOCKER="false"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            MODE="semantic-release"
+            BRANCH="${{ github.ref_name }}"
+            case "$BRANCH" in
+              dev) CHANNEL="dev" ;;
+              staging) CHANNEL="staging" ;;
+              main) CHANNEL="latest" ;;
+              *) CHANNEL="staging" ;;
+            esac
+            VERSION=""
+            DRY_RUN="false"
+            SKIP_DOCKER="true"  # Skip docker on regular pushes
           else
+            MODE="${{ inputs.mode }}"
             CHANNEL="${{ inputs.channel }}"
             VERSION="${{ inputs.version }}"
             DRY_RUN="${{ inputs.dry-run }}"
@@ -72,17 +102,20 @@ jobs:
           # Default channel to staging if not set
           CHANNEL="${CHANNEL:-staging}"
 
-          # Determine branch from channel
-          case "$CHANNEL" in
-            dev) BRANCH="dev" ;;
-            staging) BRANCH="staging" ;;
-            latest|main) BRANCH="main" ;;
-            *) BRANCH="staging" ;;
-          esac
+          # Determine branch from channel (for non-push events)
+          if [ "${{ github.event_name }}" != "push" ]; then
+            case "$CHANNEL" in
+              dev) BRANCH="dev" ;;
+              staging) BRANCH="staging" ;;
+              latest|main) BRANCH="main" ;;
+              *) BRANCH="staging" ;;
+            esac
+          fi
 
-          # Extract project name from repository (e.g., powerhouse-inc/renown-package -> renown-package)
+          # Extract project name from repository
           PROJECT_NAME="${GITHUB_REPOSITORY#*/}"
 
+          echo "mode=$MODE" >> $GITHUB_OUTPUT
           echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
@@ -90,6 +123,7 @@ jobs:
           echo "dry_run=$DRY_RUN" >> $GITHUB_OUTPUT
           echo "skip_docker=$SKIP_DOCKER" >> $GITHUB_OUTPUT
 
+          echo "Mode: $MODE"
           echo "Channel: $CHANNEL"
           echo "Version: $VERSION"
           echo "Branch: $BRANCH"
@@ -98,11 +132,74 @@ jobs:
           echo "Skip Docker: $SKIP_DOCKER"
 
   # ==========================================================================
-  # Update dependencies and publish to npm
+  # Semantic Release (for push events and manual semantic-release mode)
   # ==========================================================================
-  update-and-publish:
-    name: Update & Publish NPM
+  semantic-release:
+    name: Semantic Release
     needs: prepare
+    if: needs.prepare.outputs.mode == 'semantic-release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      issues: write
+      pull-requests: write
+    outputs:
+      new_version: ${{ steps.get-version.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Configure JSR registry
+        run: pnpm config set @jsr:registry https://npm.jsr.io
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build package
+        run: pnpm build
+
+      - name: Run semantic-release
+        if: needs.prepare.outputs.dry_run != 'true'
+        run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: Run semantic-release (dry-run)
+        if: needs.prepare.outputs.dry_run == 'true'
+        run: npx semantic-release --dry-run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get released version
+        id: get-version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+  # ==========================================================================
+  # Sync Powerhouse (for repository_dispatch and manual sync mode)
+  # ==========================================================================
+  sync-powerhouse:
+    name: Sync Powerhouse & Publish
+    needs: prepare
+    if: needs.prepare.outputs.mode == 'sync-powerhouse'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -163,10 +260,8 @@ jobs:
 
           # Determine new version
           if [ "$CHANNEL" = "latest" ] || [ "$CHANNEL" = "main" ]; then
-            # For production, use patch bump
             npm version patch --no-git-tag-version
           else
-            # For dev/staging, use prerelease
             npm version prerelease --preid=$CHANNEL --no-git-tag-version
           fi
 
@@ -216,8 +311,13 @@ jobs:
   # ==========================================================================
   build-docker:
     name: Build Docker Images
-    needs: [prepare, update-and-publish]
-    if: needs.prepare.outputs.skip_docker != 'true' && needs.prepare.outputs.dry_run != 'true'
+    needs: [prepare, sync-powerhouse]
+    if: |
+      always() &&
+      needs.prepare.outputs.mode == 'sync-powerhouse' &&
+      needs.prepare.outputs.skip_docker != 'true' &&
+      needs.prepare.outputs.dry_run != 'true' &&
+      needs.sync-powerhouse.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -247,7 +347,6 @@ jobs:
             "https://${{ env.HARBOR_REGISTRY }}/api/v2.0/projects?name=${PROJECT_NAME}")
 
           if [ "$STATUS" = "200" ]; then
-            # Check if the project is in the response
             EXISTS=$(curl -s \
               -u "${{ secrets.HARBOR_USERNAME }}:${{ secrets.HARBOR_PASSWORD }}" \
               "https://${{ env.HARBOR_REGISTRY }}/api/v2.0/projects?name=${PROJECT_NAME}" | \
@@ -295,22 +394,17 @@ jobs:
       - name: Determine image tags
         id: tags
         run: |
-          VERSION="${{ needs.update-and-publish.outputs.new_version }}"
+          VERSION="${{ needs.sync-powerhouse.outputs.new_version }}"
           CHANNEL="${{ needs.prepare.outputs.channel }}"
           PROJECT="${{ needs.prepare.outputs.project_name }}"
           TARGET="${{ matrix.target }}"
 
-          # GHCR tags
           GHCR_BASE="${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/${PROJECT}/${TARGET}"
-
-          # Harbor tags
           HARBOR_BASE="${{ env.HARBOR_REGISTRY }}/${PROJECT}/${TARGET}"
 
-          # Build tag list
           TAGS="${GHCR_BASE}:v${VERSION}"
           TAGS="${TAGS},${HARBOR_BASE}:v${VERSION}"
 
-          # Add channel tag
           if [ "$CHANNEL" = "latest" ] || [ "$CHANNEL" = "main" ]; then
             TAGS="${TAGS},${GHCR_BASE}:latest"
             TAGS="${TAGS},${HARBOR_BASE}:latest"
@@ -342,7 +436,7 @@ jobs:
   # ==========================================================================
   summary:
     name: Release Summary
-    needs: [prepare, update-and-publish, build-docker]
+    needs: [prepare, semantic-release, sync-powerhouse, build-docker]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -352,12 +446,17 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Mode | ${{ needs.prepare.outputs.mode }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Channel | ${{ needs.prepare.outputs.channel }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Branch | ${{ needs.prepare.outputs.branch }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Powerhouse Version | ${{ needs.prepare.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Package Version | ${{ needs.update-and-publish.outputs.new_version }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Dry Run | ${{ needs.prepare.outputs.dry_run }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Docker Images" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.HARBOR_REGISTRY }}/${{ needs.prepare.outputs.project_name }}/connect:v${{ needs.update-and-publish.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.HARBOR_REGISTRY }}/${{ needs.prepare.outputs.project_name }}/switchboard:v${{ needs.update-and-publish.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.prepare.outputs.mode }}" = "semantic-release" ]; then
+            echo "| Package Version | ${{ needs.semantic-release.outputs.new_version }} |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Powerhouse Version | ${{ needs.prepare.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Package Version | ${{ needs.sync-powerhouse.outputs.new_version }} |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Docker Images" >> $GITHUB_STEP_SUMMARY
+            echo "- \`${{ env.HARBOR_REGISTRY }}/${{ needs.prepare.outputs.project_name }}/connect:v${{ needs.sync-powerhouse.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`${{ env.HARBOR_REGISTRY }}/${{ needs.prepare.outputs.project_name }}/switchboard:v${{ needs.sync-powerhouse.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
