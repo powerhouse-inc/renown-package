@@ -1,3 +1,11 @@
+# [1.0.0-staging.6](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.5...v1.0.0-staging.6) (2026-01-20)
+
+
+### Bug Fixes
+
+* use NPM_TOKEN for publishing instead of OIDC ([c99eb2b](https://github.com/powerhouse-inc/renown-package/commit/c99eb2be1742d8b5dc1be7ca45b59115e636dad6))
+* use OIDC provenance for npm publish with debug logging ([9de4cbb](https://github.com/powerhouse-inc/renown-package/commit/9de4cbbacab0448fdfaf599b770f17d1b225b7a9))
+
 # [1.0.0-staging.5](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.4...v1.0.0-staging.5) (2026-01-20)
 
 
