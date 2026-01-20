@@ -133,13 +133,7 @@ jobs:
         run: pnpm config set @jsr:registry https://npm.jsr.io
 
       - name: Update Powerhouse dependencies
-        run: |
-          CHANNEL="${{ needs.prepare.outputs.channel }}"
-          case "$CHANNEL" in
-            dev) pnpm dlx @powerhousedao/ph-cli@dev update ;;
-            staging) pnpm dlx @powerhousedao/ph-cli@staging update ;;
-            *) pnpm dlx @powerhousedao/ph-cli@latest update ;;
-          esac
+        run: pnpm update "@powerhousedao/*" "document-model" "document-drive"
 
       - name: Install dependencies
         run: pnpm install
