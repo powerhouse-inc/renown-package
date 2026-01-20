@@ -1,3 +1,10 @@
+# [1.0.0-staging.7](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.6...v1.0.0-staging.7) (2026-01-20)
+
+
+### Bug Fixes
+
+* explicitly request OIDC token for npm authentication ([57707b6](https://github.com/powerhouse-inc/renown-package/commit/57707b63af7a0ce125a50e5d2a072c423f989c54))
+
 # [1.0.0-staging.6](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.5...v1.0.0-staging.6) (2026-01-20)
 
 
