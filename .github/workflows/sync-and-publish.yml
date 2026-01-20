@@ -127,7 +127,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Configure git
         run: |
@@ -186,6 +185,13 @@ jobs:
       - name: Push changes
         if: needs.prepare.outputs.dry_run != 'true'
         run: git push
+
+      - name: Setup npm for publishing
+        if: needs.prepare.outputs.dry_run != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Publish to npm with provenance
         if: needs.prepare.outputs.dry_run != 'true'
