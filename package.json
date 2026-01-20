@@ -109,7 +109,7 @@
     "@powerhousedao/codegen": "staging",
     "@powerhousedao/connect": "staging",
     "@powerhousedao/ph-cli": "staging",
-    "@powerhousedao/reactor-api": "link:../powerhouse/packages/reactor-api",
+    "@powerhousedao/reactor-api": "staging",
     "@powerhousedao/reactor-browser": "staging",
     "@powerhousedao/reactor-local": "staging",
     "@powerhousedao/scalars": "latest",
