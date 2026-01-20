@@ -1,3 +1,10 @@
+# [1.0.0-staging.4](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.3...v1.0.0-staging.4) (2026-01-20)
+
+
+### Bug Fixes
+
+* remove registry-url from setup-node to allow pure OIDC publishing ([17844ff](https://github.com/powerhouse-inc/renown-package/commit/17844ff389b487419edbc36b9544941f2d061d01))
+
 # [1.0.0-staging.3](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.2...v1.0.0-staging.3) (2026-01-20)
 
 
