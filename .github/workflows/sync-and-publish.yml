@@ -138,6 +138,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Build package
+        run: pnpm build
+
       - name: Check for changes
         id: changes
         run: |
