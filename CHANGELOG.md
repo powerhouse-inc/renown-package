@@ -1,3 +1,10 @@
+# [1.0.0-staging.10](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.9...v1.0.0-staging.10) (2026-01-20)
+
+
+### Bug Fixes
+
+* add package description ([98df320](https://github.com/powerhouse-inc/renown-package/commit/98df320a3458eb82b232f5aa448378a33bbac83d))
+
 # [1.0.0-staging.9](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.8...v1.0.0-staging.9) (2026-01-20)
 
 
