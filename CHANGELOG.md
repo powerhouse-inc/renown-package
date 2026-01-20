@@ -1,3 +1,10 @@
+# [1.0.0-staging.11](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.10...v1.0.0-staging.11) (2026-01-20)
+
+
+### Bug Fixes
+
+* add repository field to package.json ([76a7314](https://github.com/powerhouse-inc/renown-package/commit/76a7314e6281b1a6803e0349a638cacd89dcaadc))
+
 # [1.0.0-staging.10](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.9...v1.0.0-staging.10) (2026-01-20)
 
 
