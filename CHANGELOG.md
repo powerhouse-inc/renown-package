@@ -1,3 +1,10 @@
+# [1.0.0-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.1...v1.0.0-staging.2) (2026-01-20)
+
+
+### Bug Fixes
+
+* use NPM_TOKEN for semantic-release npm authentication ([733e4c5](https://github.com/powerhouse-inc/renown-package/commit/733e4c59ed474dee517e060833b28f5bfa963677))
+
 # 1.0.0-staging.1 (2026-01-20)
 
 
