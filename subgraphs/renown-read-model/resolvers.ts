@@ -1,4 +1,4 @@
-import { type Subgraph } from "@powerhousedao/reactor-api";
+import { type BaseSubgraph } from "@powerhousedao/reactor-api";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
 import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
@@ -138,7 +138,7 @@ const getDriveId = (driveId?: string): string => {
   return resolvedDriveId;
 };
 
-export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
+export const getResolvers = (subgraph: BaseSubgraph): Record<string, unknown> => {
   const db = subgraph.relationalDb;
 
   return {

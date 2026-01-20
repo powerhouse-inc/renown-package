@@ -1,6 +1,6 @@
-import type { DocumentModelState } from "document-model";
+import type { DocumentModelGlobalState } from "document-model";
 
-export const documentModel: DocumentModelState = {
+export const documentModel: DocumentModelGlobalState = {
   author: {
     name: "Powerhouse Inc.",
     website: "https://www.powerhouse.inc",
@@ -61,13 +61,13 @@ export const documentModel: DocumentModelState = {
         global: {
           examples: [],
           initialValue:
-            '"{\\n  \\"username\\": null,\\n  \\"ethAddress\\": null,\\n  \\"userImage\\": null\\n}"',
+            '{\n  "username": null,\n  "ethAddress": null,\n  "userImage": null\n}',
           schema:
             'type RenownUserState {\n  "Add your global state fields here"\n  username: String\n  ethAddress: EthereumAddress\n  userImage: String\n}',
         },
         local: {
           examples: [],
-          initialValue: '""',
+          initialValue: "",
           schema: "",
         },
       },

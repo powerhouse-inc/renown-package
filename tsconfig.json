@@ -16,6 +16,9 @@
         "lib": ["ESNext", "dom", "dom.iterable"],
         "baseUrl": "./",
         "allowJs": true,
+        "paths": {
+            "@powerhousedao/renown-package/*": ["./*"]
+        }
     },
     "include": [
         "./index.ts",

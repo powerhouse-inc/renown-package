@@ -6,8 +6,6 @@ export const module: EditorModule = {
   documentTypes: ["powerhouse/renown-user"],
   config: {
     id: "renown-user-editor",
-    disableExternalControls: true,
-    documentToolbarEnabled: true,
-    showSwitchboardLink: true,
+    name: "Renown User Editor",
   },
 };

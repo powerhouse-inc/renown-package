@@ -1,6 +1,6 @@
-import type { DocumentModelState } from "document-model";
+import type { DocumentModelGlobalState } from "document-model";
 
-export const documentModel: DocumentModelState = {
+export const documentModel: DocumentModelGlobalState = {
   author: {
     name: "Powerhouse Inc.",
     website: "https://www.powerhouse.inc",
@@ -148,13 +148,13 @@ export const documentModel: DocumentModelState = {
         global: {
           examples: [],
           initialValue:
-            '"{\\n  \\"context\\": [\\"https://www.w3.org/2018/credentials/v1\\"],\\n  \\"id\\": null,\\n  \\"type\\": [\\"VerifiableCredential\\"],\\n  \\"issuer\\": \\"\\",\\n  \\"issuanceDate\\": \\"\\",\\n  \\"credentialSubject\\": \\"{}\\",\\n  \\"expirationDate\\": null,\\n  \\"credentialStatus\\": null,\\n  \\"jwt\\": null,\\n  \\"revoked\\": false,\\n  \\"revokedAt\\": null,\\n  \\"revocationReason\\": null\\n}"',
+            '{\n  "context": ["https://www.w3.org/2018/credentials/v1"],\n  "id": null,\n  "type": ["VerifiableCredential"],\n  "issuer": "",\n  "issuanceDate": "",\n  "credentialSubject": "{}",\n  "expirationDate": null,\n  "credentialStatus": null,\n  "jwt": null,\n  "revoked": false,\n  "revokedAt": null,\n  "revocationReason": null\n}',
           schema:
             'type CredentialStatus {\n  id: String!\n  type: String!\n  statusPurpose: String!\n  statusListIndex: String!\n  statusListCredential: String!\n}\n\ntype RenownCredentialState {\n  "W3C VC Required Fields"\n  context: [String!]!\n  id: String\n  type: [String!]!\n  issuer: String!\n  issuanceDate: DateTime!\n  credentialSubject: String!\n  \n  "W3C VC Optional Fields"\n  expirationDate: DateTime\n  credentialStatus: CredentialStatus\n  \n  "JWT Representation"\n  jwt: String\n  \n  "Revocation tracking"\n  revoked: Boolean\n  revokedAt: DateTime\n  revocationReason: String\n}',
         },
         local: {
           examples: [],
-          initialValue: '""',
+          initialValue: "",
           schema: "",
         },
       },

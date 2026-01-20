@@ -1,18 +1,24 @@
-import { createAction } from "document-model";
+import { createAction } from "document-model/core";
 import {
-  z,
-  type InitInput,
-  type RevokeInput,
-  type UpdateCredentialSubjectInput,
-  type SetJwtInput,
-  type SetCredentialStatusInput,
+  InitInputSchema,
+  RevokeInputSchema,
+  UpdateCredentialSubjectInputSchema,
+  SetJwtInputSchema,
+  SetCredentialStatusInputSchema,
+} from "../schema/zod.js";
+import type {
+  InitInput,
+  RevokeInput,
+  UpdateCredentialSubjectInput,
+  SetJwtInput,
+  SetCredentialStatusInput,
 } from "../types.js";
-import {
-  type InitAction,
-  type RevokeAction,
-  type UpdateCredentialSubjectAction,
-  type SetJwtAction,
-  type SetCredentialStatusAction,
+import type {
+  InitAction,
+  RevokeAction,
+  UpdateCredentialSubjectAction,
+  SetJwtAction,
+  SetCredentialStatusAction,
 } from "./actions.js";
 
 export const init = (input: InitInput) =>
@@ -20,7 +26,7 @@ export const init = (input: InitInput) =>
     "INIT",
     { ...input },
     undefined,
-    z.InitInputSchema,
+    InitInputSchema,
     "global",
   );
 
@@ -29,7 +35,7 @@ export const revoke = (input: RevokeInput) =>
     "REVOKE",
     { ...input },
     undefined,
-    z.RevokeInputSchema,
+    RevokeInputSchema,
     "global",
   );
 
@@ -38,7 +44,7 @@ export const updateCredentialSubject = (input: UpdateCredentialSubjectInput) =>
     "UPDATE_CREDENTIAL_SUBJECT",
     { ...input },
     undefined,
-    z.UpdateCredentialSubjectInputSchema,
+    UpdateCredentialSubjectInputSchema,
     "global",
   );
 
@@ -47,7 +53,7 @@ export const setJwt = (input: SetJwtInput) =>
     "SET_JWT",
     { ...input },
     undefined,
-    z.SetJwtInputSchema,
+    SetJwtInputSchema,
     "global",
   );
 
@@ -56,6 +62,6 @@ export const setCredentialStatus = (input: SetCredentialStatusInput) =>
     "SET_CREDENTIAL_STATUS",
     { ...input },
     undefined,
-    z.SetCredentialStatusInputSchema,
+    SetCredentialStatusInputSchema,
     "global",
   );

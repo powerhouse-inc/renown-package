@@ -53,19 +53,8 @@ export class InvalidStatusPurposeError extends Error implements ReducerError {
 }
 
 export const errors = {
-  Init: {
-    MissingContextError,
-    MissingTypeError,
-    InvalidClaimsError,
-  },
-  Revoke: {
-    AlreadyRevokedError,
-  },
-  UpdateCredentialSubject: {
-    InvalidClaimsError,
-    CredentialRevokedError,
-  },
-  SetCredentialStatus: {
-    InvalidStatusPurposeError,
-  },
+  Init: { MissingContextError, MissingTypeError, InvalidClaimsError },
+  Revoke: { AlreadyRevokedError },
+  UpdateCredentialSubject: { InvalidClaimsError, CredentialRevokedError },
+  SetCredentialStatus: { InvalidStatusPurposeError },
 };

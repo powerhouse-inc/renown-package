@@ -1,9 +1,7 @@
 export * from "./actions.js";
 export * from "./document-model.js";
-export * from "./object.js";
 export * from "./types.js";
-export * as actions from "./creators.js";
-export type { RenownUserPHState } from "./ph-factories.js";
+export * from "./creators.js";
 export {
   createRenownUserDocument,
   createState,
@@ -11,3 +9,9 @@ export {
   defaultGlobalState,
   defaultLocalState,
 } from "./ph-factories.js";
+export * from "./utils.js";
+export * from "./reducer.js";
+export * from "./schema/index.js";
+export * from "./document-type.js";
+export * from "./document-schema.js";
+export * from "./profile/operations.js";

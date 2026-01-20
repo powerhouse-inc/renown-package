@@ -1,5 +1,5 @@
 import { RelationalDbProcessor } from "document-drive/processors/relational";
-import { type InternalTransmitterUpdate } from "document-drive/server/listener/transmitter/internal";
+import { type InternalTransmitterUpdate } from "document-drive/server/transmitter/types";
 import { up } from "./migrations.js";
 import { type DB } from "./schema.js";
 

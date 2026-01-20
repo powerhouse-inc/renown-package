@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import type {
   CredentialStatus,
   InitInput,
@@ -10,7 +10,7 @@ import type {
 } from "./types.js";
 
 type Properties<T> = Required<{
-  [K in keyof T]: z.ZodType<T[K], any, T[K]>;
+  [K in keyof T]: z.ZodType<T[K]>;
 }>;
 
 type definedNonNullAny = {};
@@ -39,9 +39,9 @@ export function InitInputSchema(): z.ZodObject<Properties<InitInput>> {
   return z.object({
     context: z.array(z.string()).nullish(),
     credentialSubject: z.string(),
-    expirationDate: z.string().datetime().nullish(),
+    expirationDate: z.iso.datetime().nullish(),
     id: z.string().nullish(),
-    issuanceDate: z.string().datetime(),
+    issuanceDate: z.iso.datetime(),
     issuer: z.string(),
     type: z.array(z.string()).nullish(),
   });
@@ -53,16 +53,16 @@ export function RenownCredentialStateSchema(): z.ZodObject<
   return z.object({
     __typename: z.literal("RenownCredentialState").optional(),
     context: z.array(z.string()),
-    credentialStatus: CredentialStatusSchema().nullable(),
+    credentialStatus: z.lazy(() => CredentialStatusSchema().nullish()),
     credentialSubject: z.string(),
-    expirationDate: z.string().datetime().nullable(),
-    id: z.string().nullable(),
-    issuanceDate: z.string().datetime(),
+    expirationDate: z.iso.datetime().nullish(),
+    id: z.string().nullish(),
+    issuanceDate: z.iso.datetime(),
     issuer: z.string(),
-    jwt: z.string().nullable(),
-    revocationReason: z.string().nullable(),
-    revoked: z.boolean().nullable(),
-    revokedAt: z.string().datetime().nullable(),
+    jwt: z.string().nullish(),
+    revocationReason: z.string().nullish(),
+    revoked: z.boolean().nullish(),
+    revokedAt: z.iso.datetime().nullish(),
     type: z.array(z.string()),
   });
 }
@@ -70,7 +70,7 @@ export function RenownCredentialStateSchema(): z.ZodObject<
 export function RevokeInputSchema(): z.ZodObject<Properties<RevokeInput>> {
   return z.object({
     reason: z.string().nullish(),
-    revokedAt: z.string().datetime(),
+    revokedAt: z.iso.datetime(),
   });
 }
 

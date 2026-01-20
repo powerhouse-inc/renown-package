@@ -1,8 +1,8 @@
 import {
   type ProcessorRecord,
   type IProcessorHostModule,
+  type RelationalDbProcessorFilter,
 } from "document-drive/processors/types";
-import { type RelationalDbProcessorFilter } from "document-drive/processors/relational";
 import { type PHDocumentHeader } from "document-model";
 import { RenownUserProcessor } from "./index.js";
 
