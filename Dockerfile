@@ -55,6 +55,9 @@ RUN if [ -n "$PACKAGE_NAME" ]; then \
         pnpm install; \
     fi
 
+# Workaround: Install @testing-library/react required by design-system's testing.js
+RUN pnpm add -D @testing-library/react
+
 # Regenerate Prisma client for Alpine Linux
 RUN prisma generate --schema node_modules/document-drive/dist/prisma/schema.prisma || true
 
