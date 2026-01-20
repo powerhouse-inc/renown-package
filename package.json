@@ -84,7 +84,7 @@
     "@powerhousedao/builder-tools": "staging",
     "@powerhousedao/common": "staging",
     "@powerhousedao/design-system": "staging",
-    "@powerhousedao/document-engineering": "^1.37.0",
+    "@powerhousedao/document-engineering": "^1.40.1",
     "@powerhousedao/vetra": "staging",
     "document-model": "staging",
     "graphql": "^16.10.0",
