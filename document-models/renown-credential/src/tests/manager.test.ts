@@ -5,8 +5,9 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { generateMock } from "@powerhousedao/codegen";
-import utils from "../../gen/utils.js";
-import { z, type InitInput, type RevokeInput } from "../../gen/schema/index.js";
+import { utils } from "../../gen/utils.js";
+import type { InitInput, RevokeInput } from "../../gen/schema/index.js";
+import { InitInputSchema, RevokeInputSchema } from "../../gen/schema/zod.js";
 import { reducer } from "../../gen/reducer.js";
 import * as creators from "../../gen/manager/creators.js";
 import type { RenownCredentialDocument } from "../../gen/types.js";
@@ -19,7 +20,7 @@ describe("Manager Operations", () => {
   });
 
   it("should handle init operation", () => {
-    const input: InitInput = generateMock(z.InitInputSchema());
+    const input: InitInput = generateMock(InitInputSchema());
 
     const updatedDocument = reducer(document, creators.init(input));
 
@@ -31,7 +32,7 @@ describe("Manager Operations", () => {
     expect(updatedDocument.operations.global[0].index).toEqual(0);
   });
   it("should handle revoke operation", () => {
-    const input: RevokeInput = generateMock(z.RevokeInputSchema());
+    const input: RevokeInput = generateMock(RevokeInputSchema());
 
     const updatedDocument = reducer(document, creators.revoke(input));
 

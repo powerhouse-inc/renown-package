@@ -1,4 +1,4 @@
-import { type IRelationalDb } from "document-drive/processors/types";
+import { type IRelationalDb } from "document-drive";
 
 export async function up(db: IRelationalDb<any>): Promise<void> {
   await down(db);
@@ -37,6 +37,6 @@ export async function down(db: IRelationalDb<any>): Promise<void> {
   await db.schema.dropIndex("idx_renown_user_eth_address").ifExists().execute();
   await db.schema.dropIndex("idx_renown_user_username").ifExists().execute();
 
-  // Drop renown_user table
-  await db.schema.dropTable("renown_user").ifExists().execute();
+  // Drop renown_user table with CASCADE to drop dependent objects
+  await db.schema.dropTable("renown_user").ifExists().cascade().execute();
 }

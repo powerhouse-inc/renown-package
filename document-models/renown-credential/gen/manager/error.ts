@@ -1,10 +1,10 @@
 export type ErrorCode =
   | "MissingContextError"
-  | "MissingTypeError"
+  | "InvalidJwtPayloadError"
+  | "JwtVerificationError"
   | "InvalidClaimsError"
-  | "AlreadyRevokedError"
-  | "CredentialRevokedError"
-  | "InvalidStatusPurposeError";
+  | "MissingTypeError"
+  | "AlreadyRevokedError";
 
 export interface ReducerError {
   errorCode: ErrorCode;
@@ -17,9 +17,16 @@ export class MissingContextError extends Error implements ReducerError {
   }
 }
 
-export class MissingTypeError extends Error implements ReducerError {
-  errorCode = "MissingTypeError" as ErrorCode;
-  constructor(message = "MissingTypeError") {
+export class InvalidJwtPayloadError extends Error implements ReducerError {
+  errorCode = "InvalidJwtPayloadError" as ErrorCode;
+  constructor(message = "InvalidJwtPayloadError") {
+    super(message);
+  }
+}
+
+export class JwtVerificationError extends Error implements ReducerError {
+  errorCode = "JwtVerificationError" as ErrorCode;
+  constructor(message = "JwtVerificationError") {
     super(message);
   }
 }
@@ -31,6 +38,13 @@ export class InvalidClaimsError extends Error implements ReducerError {
   }
 }
 
+export class MissingTypeError extends Error implements ReducerError {
+  errorCode = "MissingTypeError" as ErrorCode;
+  constructor(message = "MissingTypeError") {
+    super(message);
+  }
+}
+
 export class AlreadyRevokedError extends Error implements ReducerError {
   errorCode = "AlreadyRevokedError" as ErrorCode;
   constructor(message = "AlreadyRevokedError") {
@@ -38,34 +52,13 @@ export class AlreadyRevokedError extends Error implements ReducerError {
   }
 }
 
-export class CredentialRevokedError extends Error implements ReducerError {
-  errorCode = "CredentialRevokedError" as ErrorCode;
-  constructor(message = "CredentialRevokedError") {
-    super(message);
-  }
-}
-
-export class InvalidStatusPurposeError extends Error implements ReducerError {
-  errorCode = "InvalidStatusPurposeError" as ErrorCode;
-  constructor(message = "InvalidStatusPurposeError") {
-    super(message);
-  }
-}
-
 export const errors = {
   Init: {
     MissingContextError,
+    InvalidJwtPayloadError,
+    JwtVerificationError,
+    InvalidClaimsError,
     MissingTypeError,
-    InvalidClaimsError,
   },
-  Revoke: {
-    AlreadyRevokedError,
-  },
-  UpdateCredentialSubject: {
-    InvalidClaimsError,
-    CredentialRevokedError,
-  },
-  SetCredentialStatus: {
-    InvalidStatusPurposeError,
-  },
+  Revoke: { AlreadyRevokedError },
 };

@@ -1,24 +1,35 @@
-import { type IRelationalDb } from "document-drive/processors/types";
+import { type IRelationalDb } from "document-drive";
 
 export async function up(db: IRelationalDb<any>): Promise<void> {
   await down(db);
-  // Create renown_credential table
+  // Create renown_credential table with EIP-712 signed credential schema
   await db.schema
     .createTable("renown_credential")
     .addColumn("document_id", "varchar(255)")
-    .addColumn("context", "text") // JSON array
-    .addColumn("credential_id", "varchar(255)")
-    .addColumn("type", "text") // JSON array
-    .addColumn("issuer", "varchar(255)", (col) => col.notNull())
+    // W3C VC Fields
+    .addColumn("context", "text", (col) => col.notNull()) // JSON array
+    .addColumn("credential_id", "varchar(255)", (col) => col.notNull())
+    .addColumn("type", "text", (col) => col.notNull()) // JSON array
+    .addColumn("issuer_id", "varchar(255)", (col) => col.notNull())
+    .addColumn("issuer_ethereum_address", "varchar(255)", (col) => col.notNull())
     .addColumn("issuance_date", "timestamp", (col) => col.notNull())
-    .addColumn("credential_subject", "text", (col) => col.notNull()) // JSON object
     .addColumn("expiration_date", "timestamp")
+    .addColumn("credential_subject_id", "varchar(255)")
+    .addColumn("credential_subject_app", "varchar(255)", (col) => col.notNull())
     .addColumn("credential_status_id", "varchar(255)")
     .addColumn("credential_status_type", "varchar(255)")
-    .addColumn("credential_status_purpose", "varchar(255)")
-    .addColumn("credential_status_list_index", "varchar(255)")
-    .addColumn("credential_status_list_credential", "text")
-    .addColumn("jwt", "text")
+    .addColumn("credential_schema_id", "varchar(255)", (col) => col.notNull())
+    .addColumn("credential_schema_type", "varchar(255)", (col) => col.notNull())
+    // Proof fields (EIP-712)
+    .addColumn("proof_verification_method", "text", (col) => col.notNull())
+    .addColumn("proof_ethereum_address", "varchar(255)", (col) => col.notNull())
+    .addColumn("proof_created", "timestamp", (col) => col.notNull())
+    .addColumn("proof_purpose", "varchar(255)", (col) => col.notNull())
+    .addColumn("proof_type", "varchar(255)", (col) => col.notNull())
+    .addColumn("proof_value", "text", (col) => col.notNull()) // EIP-712 signature
+    .addColumn("proof_eip712_domain", "text", (col) => col.notNull()) // JSON object
+    .addColumn("proof_eip712_primary_type", "varchar(255)", (col) => col.notNull())
+    // Revocation
     .addColumn("revoked", "boolean", (col) => col.notNull().defaultTo(false))
     .addColumn("revoked_at", "timestamp")
     .addColumn("revocation_reason", "text")
@@ -36,19 +47,35 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
     .ifNotExists()
     .execute();
 
-  // Create index on issuer for faster lookups
+  // Create index on issuer_id for faster lookups
   await db.schema
-    .createIndex("idx_renown_credential_issuer")
+    .createIndex("idx_renown_credential_issuer_id")
     .on("renown_credential")
-    .column("issuer")
+    .column("issuer_id")
     .ifNotExists()
     .execute();
 
-  // Create index on credential_subject for faster lookups (using GIN for JSONB-like searches)
+  // Create index on issuer_ethereum_address for faster lookups
   await db.schema
-    .createIndex("idx_renown_credential_subject")
+    .createIndex("idx_renown_credential_issuer_eth")
     .on("renown_credential")
-    .column("credential_subject")
+    .column("issuer_ethereum_address")
+    .ifNotExists()
+    .execute();
+
+  // Create index on credential_subject_app for faster lookups
+  await db.schema
+    .createIndex("idx_renown_credential_subject_app")
+    .on("renown_credential")
+    .column("credential_subject_app")
+    .ifNotExists()
+    .execute();
+
+  // Create index on proof_ethereum_address for faster lookups
+  await db.schema
+    .createIndex("idx_renown_credential_proof_eth")
+    .on("renown_credential")
+    .column("proof_ethereum_address")
     .ifNotExists()
     .execute();
 
@@ -68,11 +95,19 @@ export async function down(db: IRelationalDb<any>): Promise<void> {
     .ifExists()
     .execute();
   await db.schema
-    .dropIndex("idx_renown_credential_subject")
+    .dropIndex("idx_renown_credential_proof_eth")
     .ifExists()
     .execute();
   await db.schema
-    .dropIndex("idx_renown_credential_issuer")
+    .dropIndex("idx_renown_credential_subject_app")
+    .ifExists()
+    .execute();
+  await db.schema
+    .dropIndex("idx_renown_credential_issuer_eth")
+    .ifExists()
+    .execute();
+  await db.schema
+    .dropIndex("idx_renown_credential_issuer_id")
     .ifExists()
     .execute();
   await db.schema
@@ -80,6 +115,6 @@ export async function down(db: IRelationalDb<any>): Promise<void> {
     .ifExists()
     .execute();
 
-  // Drop renown_credential table
-  await db.schema.dropTable("renown_credential").ifExists().execute();
+  // Drop renown_credential table with CASCADE to drop dependent objects
+  await db.schema.dropTable("renown_credential").ifExists().cascade().execute();
 }

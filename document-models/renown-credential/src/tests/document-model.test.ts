@@ -4,7 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import utils, {
+import {
+  utils,
   initialGlobalState,
   initialLocalState,
 } from "../../gen/utils.js";

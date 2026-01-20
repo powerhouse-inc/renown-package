@@ -5,7 +5,7 @@ export const schema: DocumentNode = gql`
   """
   Subgraph definition for Renown Read Model
   """
-  type RenownUser {
+  type ReadRenownUser {
     documentId: String!
     username: String
     ethAddress: String
@@ -28,30 +28,34 @@ export const schema: DocumentNode = gql`
     usernames: [String!]
   }
 
-  type RenownCredential {
+  type ReadRenownCredential {
     documentId: String!
-    credentialId: String
+    credentialId: String!
     context: [String!]!
     type: [String!]!
-    issuer: String!
+    issuerId: String!
+    issuerEthereumAddress: String!
     issuanceDate: DateTime!
-    credentialSubject: String!
     expirationDate: DateTime
-    credentialStatus: CredentialStatus
-    jwt: String
+    credentialSubjectId: String
+    credentialSubjectApp: String!
+    credentialStatusId: String
+    credentialStatusType: String
+    credentialSchemaId: String!
+    credentialSchemaType: String!
+    proofVerificationMethod: String!
+    proofEthereumAddress: String!
+    proofCreated: DateTime!
+    proofPurpose: String!
+    proofType: String!
+    proofValue: String!
+    proofEip712Domain: String!
+    proofEip712PrimaryType: String!
     revoked: Boolean!
     revokedAt: DateTime
     revocationReason: String
     createdAt: DateTime
     updatedAt: DateTime
-  }
-
-  type CredentialStatus {
-    id: String!
-    type: String!
-    statusPurpose: String!
-    statusListIndex: String!
-    statusListCredential: String!
   }
 
   input RenownCredentialsInput {
@@ -63,8 +67,8 @@ export const schema: DocumentNode = gql`
   }
 
   type Query {
-    renownUser(input: RenownUserInput!): RenownUser
-    renownUsers(input: RenownUsersInput!): [RenownUser!]!
-    renownCredentials(input: RenownCredentialsInput!): [RenownCredential!]!
+    renownUser(input: RenownUserInput!): ReadRenownUser
+    renownUsers(input: RenownUsersInput!): [ReadRenownUser!]!
+    renownCredentials(input: RenownCredentialsInput!): [ReadRenownCredential!]!
   }
 `;

@@ -6,8 +6,6 @@ export const module: EditorModule = {
   documentTypes: ["powerhouse/renown-credential"],
   config: {
     id: "renown-credential-editor",
-    disableExternalControls: true,
-    documentToolbarEnabled: true,
-    showSwitchboardLink: true,
+    name: "Renown Credential Editor",
   },
 };

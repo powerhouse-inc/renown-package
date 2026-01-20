@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import type {
   RenownUserState,
   SetEthAddressInput,
@@ -7,7 +7,7 @@ import type {
 } from "./types.js";
 
 type Properties<T> = Required<{
-  [K in keyof T]: z.ZodType<T[K], any, T[K]>;
+  [K in keyof T]: z.ZodType<T[K]>;
 }>;
 
 type definedNonNullAny = {};
@@ -29,9 +29,9 @@ export function RenownUserStateSchema(): z.ZodObject<
       .regex(/^0x[a-fA-F0-9]{40}$/, {
         message: "Invalid Ethereum address format",
       })
-      .nullable(),
-    userImage: z.string().nullable(),
-    username: z.string().nullable(),
+      .nullish(),
+    userImage: z.string().nullish(),
+    username: z.string().nullish(),
   });
 }
 

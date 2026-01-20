@@ -1,10 +1,10 @@
 import { type SignalDispatch } from "document-model";
-import {
-  type SetUsernameAction,
-  type SetEthAddressAction,
-  type SetUserImageAction,
+import type {
+  SetUsernameAction,
+  SetEthAddressAction,
+  SetUserImageAction,
 } from "./actions.js";
-import { type RenownUserState } from "../types.js";
+import type { RenownUserState } from "../types.js";
 
 export interface RenownUserProfileOperations {
   setUsernameOperation: (

@@ -1,4 +1,4 @@
-export type Maybe<T> = T | null;
+export type Maybe<T> = T | null | undefined;
 export type InputMaybe<T> = T | null | undefined;
 export type Exact<T extends { [key: string]: unknown }> = {
   [K in keyof T]: T[K];
@@ -25,6 +25,7 @@ export type Scalars = {
   Boolean: { input: boolean; output: boolean };
   Int: { input: number; output: number };
   Float: { input: number; output: number };
+  Address: { input: `${string}:0x${string}`; output: `${string}:0x${string}` };
   Amount: {
     input: { unit?: string; value?: number };
     output: { unit?: string; value?: number };
@@ -44,6 +45,7 @@ export type Scalars = {
   Amount_Money: { input: number; output: number };
   Amount_Percentage: { input: number; output: number };
   Amount_Tokens: { input: number; output: number };
+  Attachment: { input: string; output: string };
   Currency: { input: string; output: string };
   Date: { input: string; output: string };
   DateTime: { input: string; output: string };
@@ -53,42 +55,117 @@ export type Scalars = {
   OLabel: { input: string; output: string };
   PHID: { input: string; output: string };
   URL: { input: string; output: string };
+  Unknown: { input: unknown; output: unknown };
   Upload: { input: File; output: File };
+};
+
+export type CredentialSchema = {
+  id: Scalars["String"]["output"];
+  type: Scalars["String"]["output"];
+};
+
+export type CredentialSchemaInput = {
+  id: Scalars["String"]["input"];
+  type: Scalars["String"]["input"];
 };
 
 export type CredentialStatus = {
   id: Scalars["String"]["output"];
-  statusListCredential: Scalars["String"]["output"];
-  statusListIndex: Scalars["String"]["output"];
-  statusPurpose: Scalars["String"]["output"];
   type: Scalars["String"]["output"];
 };
 
-export type InitInput = {
-  context?: InputMaybe<Array<Scalars["String"]["input"]>>;
-  credentialSubject: Scalars["String"]["input"];
-  expirationDate?: InputMaybe<Scalars["DateTime"]["input"]>;
+export type CredentialStatusInput = {
+  id: Scalars["String"]["input"];
+  type: Scalars["String"]["input"];
+};
+
+export type CredentialSubject = {
+  app: Scalars["String"]["output"];
+  id: Maybe<Scalars["String"]["output"]>;
+};
+
+export type CredentialSubjectInput = {
+  app: Scalars["String"]["input"];
   id?: InputMaybe<Scalars["String"]["input"]>;
+};
+
+export type Eip712 = {
+  domain: Eip712Domain;
+  primaryType: Scalars["String"]["output"];
+};
+
+export type Eip712Domain = {
+  chainId: Scalars["Int"]["output"];
+  version: Scalars["String"]["output"];
+};
+
+export type Eip712DomainInput = {
+  chainId: Scalars["Int"]["input"];
+  version: Scalars["String"]["input"];
+};
+
+export type Eip712Input = {
+  domain: Eip712DomainInput;
+  primaryType: Scalars["String"]["input"];
+};
+
+export type InitInput = {
+  context: Array<Scalars["String"]["input"]>;
+  credentialSchema: CredentialSchemaInput;
+  credentialStatus?: InputMaybe<CredentialStatusInput>;
+  credentialSubject: CredentialSubjectInput;
+  expirationDate?: InputMaybe<Scalars["DateTime"]["input"]>;
+  id: Scalars["String"]["input"];
   issuanceDate: Scalars["DateTime"]["input"];
-  issuer: Scalars["String"]["input"];
-  type?: InputMaybe<Array<Scalars["String"]["input"]>>;
+  issuer: IssuerInput;
+  proof: ProofInput;
+  type: Array<Scalars["String"]["input"]>;
+};
+
+export type Issuer = {
+  ethereumAddress: Scalars["EthereumAddress"]["output"];
+  id: Scalars["String"]["output"];
+};
+
+export type IssuerInput = {
+  ethereumAddress: Scalars["EthereumAddress"]["input"];
+  id: Scalars["String"]["input"];
+};
+
+export type Proof = {
+  created: Scalars["DateTime"]["output"];
+  eip712: Eip712;
+  ethereumAddress: Scalars["EthereumAddress"]["output"];
+  proofPurpose: Scalars["String"]["output"];
+  proofValue: Scalars["String"]["output"];
+  type: Scalars["String"]["output"];
+  verificationMethod: Scalars["String"]["output"];
+};
+
+export type ProofInput = {
+  created: Scalars["DateTime"]["input"];
+  eip712: Eip712Input;
+  ethereumAddress: Scalars["EthereumAddress"]["input"];
+  proofPurpose: Scalars["String"]["input"];
+  proofValue: Scalars["String"]["input"];
+  type: Scalars["String"]["input"];
+  verificationMethod: Scalars["String"]["input"];
 };
 
 export type RenownCredentialState = {
-  /** W3C VC Required Fields */
+  /** W3C VC Fields - EIP-712 Signed Verifiable Credential */
   context: Array<Scalars["String"]["output"]>;
+  credentialSchema: CredentialSchema;
   credentialStatus: Maybe<CredentialStatus>;
-  credentialSubject: Scalars["String"]["output"];
-  /** W3C VC Optional Fields */
+  credentialSubject: CredentialSubject;
   expirationDate: Maybe<Scalars["DateTime"]["output"]>;
-  id: Maybe<Scalars["String"]["output"]>;
+  id: Scalars["String"]["output"];
   issuanceDate: Scalars["DateTime"]["output"];
-  issuer: Scalars["String"]["output"];
-  /** JWT Representation */
-  jwt: Maybe<Scalars["String"]["output"]>;
+  issuer: Issuer;
+  proof: Proof;
   revocationReason: Maybe<Scalars["String"]["output"]>;
   /** Revocation tracking */
-  revoked: Maybe<Scalars["Boolean"]["output"]>;
+  revoked: Scalars["Boolean"]["output"];
   revokedAt: Maybe<Scalars["DateTime"]["output"]>;
   type: Array<Scalars["String"]["output"]>;
 };
@@ -96,20 +173,4 @@ export type RenownCredentialState = {
 export type RevokeInput = {
   reason?: InputMaybe<Scalars["String"]["input"]>;
   revokedAt: Scalars["DateTime"]["input"];
-};
-
-export type SetCredentialStatusInput = {
-  statusId: Scalars["String"]["input"];
-  statusListCredential: Scalars["String"]["input"];
-  statusListIndex: Scalars["String"]["input"];
-  statusPurpose: Scalars["String"]["input"];
-  statusType: Scalars["String"]["input"];
-};
-
-export type SetJwtInput = {
-  jwt: Scalars["String"]["input"];
-};
-
-export type UpdateCredentialSubjectInput = {
-  credentialSubject: Scalars["String"]["input"];
 };

@@ -1,4 +1,4 @@
-import { type Subgraph } from "@powerhousedao/reactor-api";
+import type { ISubgraph } from "@powerhousedao/reactor-api";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
 import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
@@ -26,7 +26,7 @@ interface RenownCredentialsInput {
   includeRevoked?: boolean;
 }
 
-interface RenownUser {
+interface ReadRenownUser {
   documentId: string;
   username: string | null;
   ethAddress: string | null;
@@ -35,25 +35,29 @@ interface RenownUser {
   updatedAt: Date | string | null;
 }
 
-interface CredentialStatus {
-  id: string;
-  type: string;
-  statusPurpose: string;
-  statusListIndex: string;
-  statusListCredential: string;
-}
-
-interface RenownCredential {
+interface ReadRenownCredential {
   documentId: string;
-  credentialId: string | null;
+  credentialId: string;
   context: string[];
   type: string[];
-  issuer: string;
+  issuerId: string;
+  issuerEthereumAddress: string;
   issuanceDate: Date | string;
-  credentialSubject: string;
   expirationDate: Date | string | null;
-  credentialStatus: CredentialStatus | null;
-  jwt: string | null;
+  credentialSubjectId: string | null;
+  credentialSubjectApp: string;
+  credentialStatusId: string | null;
+  credentialStatusType: string | null;
+  credentialSchemaId: string;
+  credentialSchemaType: string;
+  proofVerificationMethod: string;
+  proofEthereumAddress: string;
+  proofCreated: Date | string;
+  proofPurpose: string;
+  proofType: string;
+  proofValue: string;
+  proofEip712Domain: string;
+  proofEip712PrimaryType: string;
   revoked: boolean;
   revokedAt: Date | string | null;
   revocationReason: string | null;
@@ -68,7 +72,7 @@ const mapToUser = (user: {
   user_image: string | null;
   created_at: Date | null;
   updated_at: Date | null;
-}): RenownUser => ({
+}): ReadRenownUser => ({
   documentId: user.document_id,
   username: user.username,
   ethAddress: user.eth_address,
@@ -80,47 +84,54 @@ const mapToUser = (user: {
 const mapToCredential = (credential: {
   document_id: string;
   context: string;
-  credential_id: string | null;
+  credential_id: string;
   type: string;
-  issuer: string;
+  issuer_id: string;
+  issuer_ethereum_address: string;
   issuance_date: Date;
-  credential_subject: string;
   expiration_date: Date | null;
+  credential_subject_id: string | null;
+  credential_subject_app: string;
   credential_status_id: string | null;
   credential_status_type: string | null;
-  credential_status_purpose: string | null;
-  credential_status_list_index: string | null;
-  credential_status_list_credential: string | null;
-  jwt: string | null;
+  credential_schema_id: string;
+  credential_schema_type: string;
+  proof_verification_method: string;
+  proof_ethereum_address: string;
+  proof_created: Date;
+  proof_purpose: string;
+  proof_type: string;
+  proof_value: string;
+  proof_eip712_domain: string;
+  proof_eip712_primary_type: string;
   revoked: boolean;
   revoked_at: Date | null;
   revocation_reason: string | null;
   created_at: Date | null;
   updated_at: Date | null;
-}): RenownCredential => ({
+}): ReadRenownCredential => ({
   documentId: credential.document_id,
   credentialId: credential.credential_id,
   context: JSON.parse(credential.context) as string[],
   type: JSON.parse(credential.type) as string[],
-  issuer: credential.issuer,
+  issuerId: credential.issuer_id,
+  issuerEthereumAddress: credential.issuer_ethereum_address,
   issuanceDate: credential.issuance_date,
-  credentialSubject: credential.credential_subject,
   expirationDate: credential.expiration_date,
-  credentialStatus:
-    credential.credential_status_id &&
-    credential.credential_status_type &&
-    credential.credential_status_purpose &&
-    credential.credential_status_list_index &&
-    credential.credential_status_list_credential
-      ? {
-          id: credential.credential_status_id,
-          type: credential.credential_status_type,
-          statusPurpose: credential.credential_status_purpose,
-          statusListIndex: credential.credential_status_list_index,
-          statusListCredential: credential.credential_status_list_credential,
-        }
-      : null,
-  jwt: credential.jwt,
+  credentialSubjectId: credential.credential_subject_id,
+  credentialSubjectApp: credential.credential_subject_app,
+  credentialStatusId: credential.credential_status_id,
+  credentialStatusType: credential.credential_status_type,
+  credentialSchemaId: credential.credential_schema_id,
+  credentialSchemaType: credential.credential_schema_type,
+  proofVerificationMethod: credential.proof_verification_method,
+  proofEthereumAddress: credential.proof_ethereum_address,
+  proofCreated: credential.proof_created,
+  proofPurpose: credential.proof_purpose,
+  proofType: credential.proof_type,
+  proofValue: credential.proof_value,
+  proofEip712Domain: credential.proof_eip712_domain,
+  proofEip712PrimaryType: credential.proof_eip712_primary_type,
   revoked: credential.revoked,
   revokedAt: credential.revoked_at,
   revocationReason: credential.revocation_reason,
@@ -129,7 +140,8 @@ const mapToCredential = (credential: {
 });
 
 const getDriveId = (driveId?: string): string => {
-  const resolvedDriveId = driveId || process.env.RENOWN_PROFILES_DRIVE_ID;
+  const resolvedDriveId =
+    driveId || process.env.RENOWN_PROFILES_DRIVE_ID || "renown-user";
   if (!resolvedDriveId) {
     throw new Error(
       "Drive ID is required. Provide it in the input or set RENOWN_PROFILES_DRIVE_ID environment variable."
@@ -138,7 +150,7 @@ const getDriveId = (driveId?: string): string => {
   return resolvedDriveId;
 };
 
-export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
+export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
   const db = subgraph.relationalDb;
 
   return {
@@ -146,13 +158,13 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
       renownUser: async (
         parent: unknown,
         args: { input: RenownUserInput }
-      ): Promise<RenownUser | null> => {
-        const { driveId, phid, ethAddress, username } = args.input;
-        const resolvedDriveId = getDriveId(driveId);
+      ): Promise<ReadRenownUser | null> => {
+        const { phid, ethAddress, username } = args.input;
 
-        let query = RenownUserProcessor.query<RenownUserDB>(resolvedDriveId, db).selectFrom(
-          "renown_user"
-        );
+        let query = RenownUserProcessor.query<RenownUserDB>(
+          "renown-user",
+          db
+        ).selectFrom("renown_user");
 
         // Priority: phid > ethAddress > username
         if (phid) {
@@ -175,13 +187,13 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
       renownUsers: async (
         parent: unknown,
         args: { input: RenownUsersInput }
-      ): Promise<RenownUser[]> => {
+      ): Promise<ReadRenownUser[]> => {
         const { driveId, phids, ethAddresses, usernames } = args.input;
-        const resolvedDriveId = getDriveId(driveId);
 
-        let query = RenownUserProcessor.query<RenownUserDB>(resolvedDriveId, db).selectFrom(
-          "renown_user"
-        );
+        let query = RenownUserProcessor.query<RenownUserDB>(
+          "renown-user",
+          db
+        ).selectFrom("renown_user");
 
         const hasPhids = phids && phids.length > 0;
         const hasEthAddresses = ethAddresses && ethAddresses.length > 0;
@@ -194,7 +206,7 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
         }
 
         query = query.where((eb) => {
-          const conditions = [];
+          const conditions: ReturnType<typeof eb>[] = [];
 
           if (hasPhids) {
             conditions.push(eb("renown_user.document_id", "in", phids));
@@ -219,32 +231,52 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
       renownCredentials: async (
         parent: unknown,
         args: { input: RenownCredentialsInput }
-      ): Promise<RenownCredential[]> => {
-        const { driveId, ethAddress, did, issuer, includeRevoked = true } =
-          args.input;
-        const resolvedDriveId = getDriveId(driveId);
+      ): Promise<ReadRenownCredential[]> => {
+        const {
+          driveId,
+          ethAddress,
+          did,
+          issuer,
+          includeRevoked = true,
+        } = args.input;
 
         let query = RenownCredentialProcessor.query<RenownCredentialDB>(
-          resolvedDriveId,
+          "renown-credential",
           db
         ).selectFrom("renown_credential");
 
-        // Search by ethAddress or DID in credential_subject JSON
+        // Search by ethAddress or DID in credential_subject fields
         if (ethAddress || did) {
           query = query.where((eb) => {
-            const conditions = [];
+            const conditions: ReturnType<typeof eb>[] = [];
 
             if (ethAddress) {
-              // Search for ethAddress in credential_subject JSON
+              // Search for ethAddress in credential_subject_id (case-insensitive)
               conditions.push(
-                eb("renown_credential.credential_subject", "like", `%${ethAddress}%`)
+                eb(
+                  eb.fn("LOWER", ["renown_credential.credential_subject_id"]),
+                  "like",
+                  `%${ethAddress.toLowerCase()}%`
+                )
+              );
+              // Also search in proof_ethereum_address
+              conditions.push(
+                eb(
+                  eb.fn("LOWER", ["renown_credential.proof_ethereum_address"]),
+                  "=",
+                  ethAddress.toLowerCase()
+                )
               );
             }
 
             if (did) {
-              // Search for DID in credential_subject JSON
+              // Search for DID in credential_subject_id (case-insensitive)
               conditions.push(
-                eb("renown_credential.credential_subject", "like", `%${did}%`)
+                eb(
+                  eb.fn("LOWER", ["renown_credential.credential_subject_id"]),
+                  "like",
+                  `%${did.toLowerCase()}%`
+                )
               );
             }
 
@@ -254,7 +286,16 @@ export const getResolvers = (subgraph: Subgraph): Record<string, unknown> => {
 
         // Filter by issuer if provided
         if (issuer) {
-          query = query.where("renown_credential.issuer", "=", issuer);
+          query = query.where((eb) =>
+            eb.or([
+              eb("renown_credential.issuer_id", "=", issuer),
+              eb(
+                eb.fn("LOWER", ["renown_credential.issuer_ethereum_address"]),
+                "=",
+                issuer.toLowerCase()
+              ),
+            ])
+          );
         }
 
         // Filter by revoked status

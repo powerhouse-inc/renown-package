@@ -1,12 +1,44 @@
 {
   "name": "@powerhousedao/renown-package",
   "description": "",
-  "version": "0.0.5",
+  "version": "0.0.33-staging.4",
   "license": "AGPL-3.0-only",
   "type": "module",
   "files": [
     "/dist"
   ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./document-models": {
+      "types": "./dist/document-models/index.d.ts",
+      "import": "./dist/document-models/index.js"
+    },
+    "./document-models/*": {
+      "types": "./dist/document-models/*/index.d.ts",
+      "import": "./dist/document-models/*/index.js"
+    },
+    "./editors": {
+      "types": "./dist/editors/index.d.ts",
+      "import": "./dist/editors/index.js"
+    },
+    "./editors/*": {
+      "types": "./dist/editors/*/index.d.ts",
+      "import": "./dist/editors/*/index.js"
+    },
+    "./subgraphs": {
+      "types": "./dist/subgraphs/index.d.ts",
+      "import": "./dist/subgraphs/index.js"
+    },
+    "./processors": {
+      "types": "./dist/processors/index.d.ts",
+      "import": "./dist/processors/index.js"
+    },
+    "./manifest": "./dist/powerhouse.manifest.json",
+    "./style.css": "./dist/style.css"
+  },
   "release": {
     "branches": [
       "main",
@@ -34,36 +66,9 @@
       "@semantic-release/github"
     ]
   },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
-    "./document-models": {
-      "types": "./dist/document-models/index.d.ts",
-      "default": "./dist/document-models/index.js"
-    },
-    "./editors": {
-      "types": "./dist/editors/index.d.ts",
-      "default": "./dist/editors/index.js"
-    },
-    "./subgraphs": {
-      "types": "./dist/subgraphs/index.d.ts",
-      "default": "./dist/subgraphs/index.js"
-    },
-    "./processors": {
-      "types": "./dist/processors/index.d.ts",
-      "default": "./dist/processors/index.js"
-    },
-    "./manifest": {
-      "types": "./dist/manifest.d.ts",
-      "default": "./dist/manifest.js"
-    },
-    "./style.css": "./dist/style.css"
-  },
   "scripts": {
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
+    "lint": "eslint . --cache",
+    "lint:fix": "eslint . --fix --cache",
     "build:tsc": "tsc",
     "build:tsc:watch": "tsc --watch",
     "build:css": "npx @tailwindcss/cli -i ./style.css -o ./dist/style.css",
@@ -84,59 +89,62 @@
     "@powerhousedao/builder-tools": "staging",
     "@powerhousedao/common": "staging",
     "@powerhousedao/design-system": "staging",
-    "@powerhousedao/document-engineering": "^1.40.1",
+    "@powerhousedao/document-engineering": "^1.38.0",
     "@powerhousedao/vetra": "staging",
     "document-model": "staging",
     "graphql": "^16.10.0",
+    "graphql-request": "^7.2.0",
     "graphql-tag": "^2.12.6",
     "kysely": "^0.28.7",
-    "scalars": "link:../powerhouse/packages/scalars",
+    "luxon": "^3.7.2",
+    "nanoid": "^5.1.6",
     "uuid": "^11.1.0",
-    "zod": "^3.24.2"
+    "zod": "^4.1.13"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.2.12",
-    "@eslint/js": "^9.22.0",
+    "@electric-sql/pglite": "^0.2.17",
+    "@eslint/js": "^9.37.0",
+    "@openfeature/core": "^1.9.1",
     "@powerhousedao/analytics-engine-core": "^0.5.0",
     "@powerhousedao/codegen": "staging",
+    "@powerhousedao/connect": "staging",
     "@powerhousedao/ph-cli": "staging",
     "@powerhousedao/reactor-api": "staging",
     "@powerhousedao/reactor-browser": "staging",
     "@powerhousedao/reactor-local": "staging",
-    "@powerhousedao/scalars": "staging",
+    "@powerhousedao/scalars": "latest",
     "@powerhousedao/switchboard": "staging",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
-    "@tailwindcss/cli": "^4.0.15",
-    "@testing-library/react": "^16.3.0",
+    "@tailwindcss/cli": "^4.1.14",
     "@types/node": "^22.13.11",
-    "@types/react": "^18.3.19",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "adm-zip": "^0.5.16",
     "document-drive": "staging",
-    "eslint": "^9.22.0",
+    "eslint": "^9.37.0",
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^16.0.0",
-    "package-manager-detector": "^0.2.8",
+    "pkh-did-resolver": "^2.0.0",
     "pm2": "^5.4.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "semantic-release": "^24.2.8",
-    "tailwindcss": "^4.1.4",
-    "typescript": "^5.8.3",
-    "typescript-eslint": "^8.30.1",
-    "vite": "^6.2.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "storybook": "^8.6.14",
+    "tailwindcss": "^4.1.14",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.0",
+    "vite": "^7.1.9",
+    "vite-plugin-node-polyfills": "^0.24.0",
     "vitest": "^3.0.9"
   },
   "peerDependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
-  "pnpm": {
-    "overrides": {
-      "viem": "2.21.40",
-      "@wagmi/core": "2.13.5",
-      "wagmi": "2.12.19"
-    }
+  "overrides": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   }
 }
