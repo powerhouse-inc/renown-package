@@ -1,3 +1,10 @@
+# [1.0.0-staging.18](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.17...v1.0.0-staging.18) (2026-01-20)
+
+
+### Bug Fixes
+
+* add package keywords ([520f260](https://github.com/powerhouse-inc/renown-package/commit/520f2607ed2e499ccfb98fc74375ccd06e1e861c))
+
 # [1.0.0-staging.17](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.16...v1.0.0-staging.17) (2026-01-20)
 
 
