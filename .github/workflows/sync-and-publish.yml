@@ -259,10 +259,24 @@ jobs:
   # ==========================================================================
   # Build and push Docker images
   # ==========================================================================
+  debug-docker-condition:
+    name: Debug Docker Condition
+    needs: [prepare, release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Debug outputs
+        run: |
+          echo "skip_docker: '${{ needs.prepare.outputs.skip_docker }}'"
+          echo "dry_run: '${{ needs.prepare.outputs.dry_run }}'"
+          echo "released: '${{ needs.release.outputs.released }}'"
+          echo "Condition 1 (skip_docker != true): ${{ needs.prepare.outputs.skip_docker != 'true' }}"
+          echo "Condition 2 (dry_run != true): ${{ needs.prepare.outputs.dry_run != 'true' }}"
+          echo "Condition 3 (released == true): ${{ needs.release.outputs.released == 'true' }}"
+
   docker:
     name: Docker (${{ matrix.target }})
-    needs: [prepare, release]
-    if: needs.prepare.outputs.skip_docker != 'true' && needs.prepare.outputs.dry_run != 'true' && needs.release.outputs.released == 'true'
+    needs: [prepare, release, debug-docker-condition]
+    if: ${{ needs.prepare.outputs.skip_docker != 'true' && needs.prepare.outputs.dry_run != 'true' && needs.release.outputs.released == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
