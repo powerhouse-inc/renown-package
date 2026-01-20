@@ -1,3 +1,10 @@
+# [1.0.0-staging.16](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.15...v1.0.0-staging.16) (2026-01-20)
+
+
+### Bug Fixes
+
+* force docker job to run with always() condition ([80b6f83](https://github.com/powerhouse-inc/renown-package/commit/80b6f8360be88ec40528dfbf3e47ecc42a5cc68b))
+
 # [1.0.0-staging.15](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.14...v1.0.0-staging.15) (2026-01-20)
 
 
