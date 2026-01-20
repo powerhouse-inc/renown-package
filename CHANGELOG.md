@@ -1,3 +1,10 @@
+# [1.0.0-staging.12](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.11...v1.0.0-staging.12) (2026-01-20)
+
+
+### Bug Fixes
+
+* simplify docker job condition ([747970e](https://github.com/powerhouse-inc/renown-package/commit/747970e1c757936b46a33a6612ac613def5fbb82))
+
 # [1.0.0-staging.11](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.10...v1.0.0-staging.11) (2026-01-20)
 
 
