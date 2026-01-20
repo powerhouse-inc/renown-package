@@ -262,10 +262,7 @@ jobs:
   docker:
     name: Docker (${{ matrix.target }})
     needs: [prepare, release]
-    if: |
-      needs.prepare.outputs.skip_docker != 'true' &&
-      needs.prepare.outputs.dry_run != 'true' &&
-      needs.release.outputs.released == 'true'
+    if: needs.prepare.outputs.skip_docker != 'true' && needs.prepare.outputs.dry_run != 'true' && needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
