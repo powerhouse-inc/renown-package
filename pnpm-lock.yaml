@@ -18,7 +18,7 @@ importers:
         specifier: staging
         version: 5.3.0-staging.6(@tanstack/query-core@5.90.19)(@types/react-dom@19.2.3(@types/react@19.2.8))(@types/react@19.2.8)(bufferutil@4.1.0)(encoding@0.1.13)(react-dom@19.2.3(react@19.2.3))(react-native@0.83.1(@babel/core@7.28.6)(@types/react@19.2.8)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@5.0.10))(react@19.2.3)(typescript@5.9.3)(utf-8-validate@5.0.10)
       '@powerhousedao/document-engineering':
-        specifier: ^1.38.0
+        specifier: ^1.40.1
         version: 1.40.1(@types/react-dom@19.2.3(@types/react@19.2.8))(@types/react@19.2.8)(bufferutil@4.1.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3)(utf-8-validate@5.0.10)
       '@powerhousedao/vetra':
         specifier: staging
@@ -71,22 +71,22 @@ importers:
         version: 5.3.0-staging.6(974149d82ea8d008c13a4e6e3e7d4633)
       '@powerhousedao/ph-cli':
         specifier: staging
-        version: 5.3.0-staging.6(6d5294f30b23129afdf9e9698a91bd40)
+        version: 5.3.0-staging.6(a1f7743ccc9472c180f1e763ca889a51)
       '@powerhousedao/reactor-api':
         specifier: staging
-        version: 5.3.0-staging.6(0ac493f884ad08d9cf6e6d5b6e72d999)
+        version: 5.3.0-staging.6(143ce9d584b394cbfc9168e349a9e763)
       '@powerhousedao/reactor-browser':
         specifier: staging
         version: 5.3.0-staging.6(@powerhousedao/analytics-engine-knex@0.6.0(@powerhousedao/analytics-engine-core@0.5.0)(sqlite3@5.1.7))(@types/node@22.19.7)(bufferutil@4.1.0)(encoding@0.1.13)(pg@8.17.1)(react-dom@19.2.3(react@19.2.3))(react-native@0.83.1(@babel/core@7.28.6)(@types/react@19.2.8)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@5.0.10))(react@19.2.3)(sqlite3@5.1.7)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.3.5)
       '@powerhousedao/reactor-local':
         specifier: staging
-        version: 5.3.0-staging.6(edffc11e2c895caa225ca26104b95743)
+        version: 5.3.0-staging.6(fb787b88231218ece09ff6054448273c)
       '@powerhousedao/scalars':
         specifier: latest
         version: 2.0.1(graphql@16.12.0)(zod@4.3.5)
       '@powerhousedao/switchboard':
         specifier: staging
-        version: 5.3.0-staging.6(7a21ab39c546ead897c4294afc56b90d)
+        version: 5.3.0-staging.6(428d11c85d69519b455a794bd62db52b)
       '@semantic-release/changelog':
         specifier: ^6.0.3
         version: 6.0.3(semantic-release@25.0.2(typescript@5.9.3))
@@ -17572,10 +17572,10 @@ snapshots:
 
   '@opentelemetry/api@1.9.0': {}
 
-  '@opentelemetry/auto-instrumentations-node@0.57.1(@opentelemetry/api@1.9.0)(@opentelemetry/core@1.30.1(@opentelemetry/api@1.9.0))(encoding@0.1.13)':
+  '@opentelemetry/auto-instrumentations-node@0.57.1(@opentelemetry/api@1.9.0)(@opentelemetry/core@2.4.0(@opentelemetry/api@1.9.0))(encoding@0.1.13)':
     dependencies:
       '@opentelemetry/api': 1.9.0
-      '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.0)
+      '@opentelemetry/core': 2.4.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/instrumentation': 0.200.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/instrumentation-amqplib': 0.47.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/instrumentation-aws-lambda': 0.51.1(@opentelemetry/api@1.9.0)
@@ -19881,13 +19881,13 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@powerhousedao/ph-cli@5.3.0-staging.6(6d5294f30b23129afdf9e9698a91bd40)':
+  '@powerhousedao/ph-cli@5.3.0-staging.6(a1f7743ccc9472c180f1e763ca889a51)':
     dependencies:
       '@powerhousedao/builder-tools': 5.3.0-staging.6(0ce8eb4429b44f7a01350672e8469ba8)
       '@powerhousedao/codegen': 5.3.0-staging.6(ca01e15c3d1f54b4e16a48d74238e79e)
       '@powerhousedao/common': 5.3.0-staging.6(402e02f804bde29f0d5135d0d8675db6)
       '@powerhousedao/config': 5.3.0-staging.6(@types/node@22.19.7)
-      '@powerhousedao/switchboard': 5.3.0-staging.6(7a21ab39c546ead897c4294afc56b90d)
+      '@powerhousedao/switchboard': 5.3.0-staging.6(428d11c85d69519b455a794bd62db52b)
       '@renown/sdk': 5.3.0-staging.6(@powerhousedao/reactor@5.3.0-staging.6(@types/node@22.19.7)(bufferutil@4.1.0)(encoding@0.1.13)(pg@8.17.1)(react-native@0.83.1(@babel/core@7.28.6)(@types/react@19.2.8)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10))(bufferutil@4.1.0)(document-model@5.3.0-staging.6)(react@19.2.3)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.3.5)
       '@tmpl/core': '@jsr/tmpl__core@0.6.3'
       colorette: 2.0.20
@@ -20009,7 +20009,7 @@ snapshots:
       - yaml
       - zod
 
-  '@powerhousedao/reactor-api@5.3.0-staging.6(0ac493f884ad08d9cf6e6d5b6e72d999)':
+  '@powerhousedao/reactor-api@5.3.0-staging.6(143ce9d584b394cbfc9168e349a9e763)':
     dependencies:
       '@apollo/gateway': 2.12.2(encoding@0.1.13)(graphql@16.12.0)
       '@apollo/server': 5.2.0(graphql@16.12.0)
@@ -20017,7 +20017,7 @@ snapshots:
       '@as-integrations/express4': 1.1.2(@apollo/server@5.2.0(graphql@16.12.0))(express@4.22.1)
       '@electric-sql/pglite': 0.2.17
       '@graphql-typed-document-node/core': 3.2.0(graphql@16.12.0)
-      '@opentelemetry/auto-instrumentations-node': 0.57.1(@opentelemetry/api@1.9.0)(@opentelemetry/core@1.30.1(@opentelemetry/api@1.9.0))(encoding@0.1.13)
+      '@opentelemetry/auto-instrumentations-node': 0.57.1(@opentelemetry/api@1.9.0)(@opentelemetry/core@2.4.0(@opentelemetry/api@1.9.0))(encoding@0.1.13)
       '@opentelemetry/exporter-trace-otlp-http': 0.57.2(@opentelemetry/api@1.9.0)
       '@opentelemetry/resources': 1.30.1(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-node': 0.57.2(@opentelemetry/api@1.9.0)
@@ -20366,7 +20366,7 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@powerhousedao/reactor-local@5.3.0-staging.6(edffc11e2c895caa225ca26104b95743)':
+  '@powerhousedao/reactor-local@5.3.0-staging.6(fb787b88231218ece09ff6054448273c)':
     dependencies:
       '@apollo/subgraph': 2.12.2(graphql@16.12.0)
       '@electric-sql/pglite': 0.2.17
@@ -20376,7 +20376,7 @@ snapshots:
       '@openfeature/server-sdk': 1.20.1(@openfeature/core@1.9.1)
       '@powerhousedao/common': 5.3.0-staging.6(402e02f804bde29f0d5135d0d8675db6)
       '@powerhousedao/reactor': 5.3.0-staging.6(@types/node@22.19.7)(bufferutil@4.1.0)(encoding@0.1.13)(pg@8.17.1)(react-native@0.83.1(@babel/core@7.28.6)(@types/react@19.2.8)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)
-      '@powerhousedao/reactor-api': 5.3.0-staging.6(0ac493f884ad08d9cf6e6d5b6e72d999)
+      '@powerhousedao/reactor-api': 5.3.0-staging.6(143ce9d584b394cbfc9168e349a9e763)
       change-case: 5.4.4
       commander: 12.1.0
       document-drive: 5.3.0-staging.6(@types/node@22.19.7)(bufferutil@4.1.0)(encoding@0.1.13)(pg@8.17.1)(react-native@0.83.1(@babel/core@7.28.6)(@types/react@19.2.8)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)
@@ -20656,7 +20656,7 @@ snapshots:
       graphql: 16.12.0
       zod: 4.3.5
 
-  '@powerhousedao/switchboard@5.3.0-staging.6(7a21ab39c546ead897c4294afc56b90d)':
+  '@powerhousedao/switchboard@5.3.0-staging.6(428d11c85d69519b455a794bd62db52b)':
     dependencies:
       '@electric-sql/pglite': 0.2.17
       '@openfeature/core': 1.9.1
@@ -20666,7 +20666,7 @@ snapshots:
       '@powerhousedao/analytics-engine-knex': 0.6.0(@powerhousedao/analytics-engine-core@0.5.0)(sqlite3@5.1.7)
       '@powerhousedao/config': 5.3.0-staging.6(@types/node@22.19.7)
       '@powerhousedao/reactor': 5.3.0-staging.6(@types/node@22.19.7)(bufferutil@4.1.0)(encoding@0.1.13)(pg@8.17.1)(react-native@0.83.1(@babel/core@7.28.6)(@types/react@19.2.8)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10)
-      '@powerhousedao/reactor-api': 5.3.0-staging.6(0ac493f884ad08d9cf6e6d5b6e72d999)
+      '@powerhousedao/reactor-api': 5.3.0-staging.6(143ce9d584b394cbfc9168e349a9e763)
       '@pyroscope/nodejs': 0.4.8(express@4.22.1)
       '@renown/sdk': 5.3.0-staging.6(@powerhousedao/reactor@5.3.0-staging.6(@types/node@22.19.7)(bufferutil@4.1.0)(encoding@0.1.13)(pg@8.17.1)(react-native@0.83.1(@babel/core@7.28.6)(@types/react@19.2.8)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10))(bufferutil@4.1.0)(document-model@5.3.0-staging.6)(react@19.2.3)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.3.5)
       '@sentry/node': 9.47.1
