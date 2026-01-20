@@ -227,7 +227,7 @@ jobs:
         run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Run semantic-release (dry-run)
         if: needs.prepare.outputs.dry_run == 'true'
