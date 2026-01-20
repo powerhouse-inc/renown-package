@@ -1,0 +1,10 @@
+{
+  "address": "0x1AD3d72e54Fb0eB46e87F82f77B284FC8a66b16C",
+  "chainId": 1,
+  "did": "did:pkh:eip155:1:0x1ad3d72e54fb0eb46e87f82f77b284fc8a66b16c",
+  "connectDid": "did:key:zDnaeuE85EMwbejaSqmwPdcmN6a2LEyCCiG6dW9bshy9g4waX",
+  "credentialId": "urn:uuid:f79017e8-9dd3-4d8e-97a5-c60b8183996a",
+  "userDocumentId": "ddb68ae6-2979-4e7c-88c8-18b551ea176c",
+  "authenticatedAt": "2026-01-20T15:01:47.704Z",
+  "renownUrl": "https://www.renown.id"
+}
