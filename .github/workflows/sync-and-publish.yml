@@ -132,17 +132,14 @@ jobs:
       - name: Configure JSR registry
         run: pnpm config set @jsr:registry https://npm.jsr.io
 
-      - name: Install ph-cli
+      - name: Update Powerhouse dependencies
         run: |
           CHANNEL="${{ needs.prepare.outputs.channel }}"
           case "$CHANNEL" in
-            dev) pnpm add -g @powerhousedao/ph-cli@dev ;;
-            staging) pnpm add -g @powerhousedao/ph-cli@staging ;;
-            *) pnpm add -g @powerhousedao/ph-cli@latest ;;
+            dev) pnpm dlx @powerhousedao/ph-cli@dev update ;;
+            staging) pnpm dlx @powerhousedao/ph-cli@staging update ;;
+            *) pnpm dlx @powerhousedao/ph-cli@latest update ;;
           esac
-
-      - name: Update Powerhouse dependencies
-        run: ph update
 
       - name: Install dependencies
         run: pnpm install
