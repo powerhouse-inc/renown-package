@@ -1,3 +1,10 @@
+# [1.0.0-staging.8](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.7...v1.0.0-staging.8) (2026-01-20)
+
+
+### Bug Fixes
+
+* let npm handle OIDC automatically with Trusted Publishers ([1b9367a](https://github.com/powerhouse-inc/renown-package/commit/1b9367a3a8d545291e21c3e47b31088641b8bf76))
+
 # [1.0.0-staging.7](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.6...v1.0.0-staging.7) (2026-01-20)
 
 
