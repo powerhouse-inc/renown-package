@@ -249,15 +249,13 @@ jobs:
             echo "No new release (version: $VERSION)"
           fi
 
-      - name: Publish to npm with provenance (OIDC)
+      - name: Publish to npm
         if: needs.prepare.outputs.dry_run != 'true' && steps.get-version.outputs.released == 'true'
         run: |
-          echo "npm version: $(npm --version)"
-          echo "Clearing any existing npmrc..."
-          rm -f ~/.npmrc
-          rm -f .npmrc
-          echo "Publishing with OIDC provenance..."
-          npm publish --provenance --access public --tag ${{ needs.prepare.outputs.channel }} --registry https://registry.npmjs.org
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          npm publish --access public --tag ${{ needs.prepare.outputs.channel }}
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # ==========================================================================
   # Build and push Docker images
