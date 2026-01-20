@@ -187,16 +187,16 @@ jobs:
         if: needs.prepare.outputs.dry_run != 'true'
         run: git push
 
-      - name: Publish to npm
+      - name: Publish to npm with provenance
         if: needs.prepare.outputs.dry_run != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
         run: |
           CHANNEL="${{ needs.prepare.outputs.channel }}"
           if [ "$CHANNEL" = "latest" ] || [ "$CHANNEL" = "main" ]; then
-            npm publish --tag latest
+            npm publish --provenance --access public --tag latest
           else
-            npm publish --tag $CHANNEL
+            npm publish --provenance --access public --tag $CHANNEL
           fi
 
       - name: Create git tag
