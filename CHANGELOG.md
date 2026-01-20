@@ -1,3 +1,10 @@
+# [1.0.0-staging.3](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.2...v1.0.0-staging.3) (2026-01-20)
+
+
+### Bug Fixes
+
+* use npm publish with provenance instead of semantic-release npm plugin ([d4df37b](https://github.com/powerhouse-inc/renown-package/commit/d4df37bef1bf12adb31b29c5604dc0a50640937a))
+
 # [1.0.0-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.1...v1.0.0-staging.2) (2026-01-20)
 
 
