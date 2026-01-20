@@ -1,3 +1,10 @@
+# [1.0.0-staging.5](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.4...v1.0.0-staging.5) (2026-01-20)
+
+
+### Bug Fixes
+
+* clear npmrc and specify registry explicitly for OIDC publish ([eb61b92](https://github.com/powerhouse-inc/renown-package/commit/eb61b9277291e3113bb529b4c77634d328b9459b))
+
 # [1.0.0-staging.4](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.3...v1.0.0-staging.4) (2026-01-20)
 
 
