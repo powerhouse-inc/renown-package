@@ -137,9 +137,9 @@ jobs:
         run: |
           CHANNEL="${{ needs.prepare.outputs.channel }}"
           case "$CHANNEL" in
-            dev) npm install -g @powerhousedao/ph-cli@dev ;;
-            staging) npm install -g @powerhousedao/ph-cli@staging ;;
-            *) npm install -g @powerhousedao/ph-cli@latest ;;
+            dev) pnpm add -g @powerhousedao/ph-cli@dev ;;
+            staging) pnpm add -g @powerhousedao/ph-cli@staging ;;
+            *) pnpm add -g @powerhousedao/ph-cli@latest ;;
           esac
 
       - name: Update Powerhouse dependencies
@@ -197,12 +197,13 @@ jobs:
         if: needs.prepare.outputs.dry_run != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
         run: |
           CHANNEL="${{ needs.prepare.outputs.channel }}"
           if [ "$CHANNEL" = "latest" ] || [ "$CHANNEL" = "main" ]; then
-            npm publish --provenance --access public --tag latest
+            pnpm publish --access public --tag latest --no-git-checks
           else
-            npm publish --provenance --access public --tag $CHANNEL
+            pnpm publish --access public --tag $CHANNEL --no-git-checks
           fi
 
       - name: Create git tag
