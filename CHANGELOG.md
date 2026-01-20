@@ -1,3 +1,10 @@
+# [1.0.0-staging.17](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.16...v1.0.0-staging.17) (2026-01-20)
+
+
+### Bug Fixes
+
+* add @testing-library/react for design-system build compatibility ([e262ed1](https://github.com/powerhouse-inc/renown-package/commit/e262ed18da14aab7ac8fccce56f2f08b8dbb6493))
+
 # [1.0.0-staging.16](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.15...v1.0.0-staging.16) (2026-01-20)
 
 
