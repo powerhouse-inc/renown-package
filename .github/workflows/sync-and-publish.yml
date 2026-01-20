@@ -207,7 +207,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Configure JSR registry
         run: pnpm config set @jsr:registry https://npm.jsr.io
@@ -250,11 +249,9 @@ jobs:
             echo "No new release (version: $VERSION)"
           fi
 
-      - name: Publish to npm with provenance
+      - name: Publish to npm with provenance (OIDC)
         if: needs.prepare.outputs.dry_run != 'true' && steps.get-version.outputs.released == 'true'
         run: npm publish --provenance --access public --tag ${{ needs.prepare.outputs.channel }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # ==========================================================================
   # Build and push Docker images
