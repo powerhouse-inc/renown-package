@@ -136,9 +136,9 @@ jobs:
         run: |
           CHANNEL="${{ needs.prepare.outputs.channel }}"
           case "$CHANNEL" in
-            dev) npm install -g @powerhousedao/ph-cli@dev ;;
-            staging) npm install -g @powerhousedao/ph-cli@staging ;;
-            *) npm install -g @powerhousedao/ph-cli@latest ;;
+            dev) pnpm add -g @powerhousedao/ph-cli@dev ;;
+            staging) pnpm add -g @powerhousedao/ph-cli@staging ;;
+            *) pnpm add -g @powerhousedao/ph-cli@latest ;;
           esac
 
       - name: Update Powerhouse dependencies
