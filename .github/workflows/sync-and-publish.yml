@@ -80,7 +80,7 @@ jobs:
             *) BRANCH="dev" ;;
           esac
 
-          PROJECT_NAME="${GITHUB_REPOSITORY#*/}"
+          PROJECT_NAME="renown"
 
           echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
