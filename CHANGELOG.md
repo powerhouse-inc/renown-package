@@ -1,3 +1,10 @@
+# [1.0.0-staging.20](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.19...v1.0.0-staging.20) (2026-01-21)
+
+
+### Bug Fixes
+
+* use correct Harbor project name (renown) ([4eaa34c](https://github.com/powerhouse-inc/renown-package/commit/4eaa34c73211ab98171803ae834bceb7d5675d31))
+
 # [1.0.0-staging.19](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.18...v1.0.0-staging.19) (2026-01-21)
 
 
