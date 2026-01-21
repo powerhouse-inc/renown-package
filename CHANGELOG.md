@@ -1,3 +1,10 @@
+# [1.0.0-staging.19](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.18...v1.0.0-staging.19) (2026-01-21)
+
+
+### Bug Fixes
+
+* restore full docker build and push flow ([a4c4015](https://github.com/powerhouse-inc/renown-package/commit/a4c40153be12b2aa4ef148435af222ddf15bc59b))
+
 # [1.0.0-staging.18](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.17...v1.0.0-staging.18) (2026-01-20)
 
 
