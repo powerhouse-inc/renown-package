@@ -1,3 +1,10 @@
+# [1.0.0-staging.21](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.20...v1.0.0-staging.21) (2026-01-21)
+
+
+### Bug Fixes
+
+* add bugs URL to package.json ([54f5cf2](https://github.com/powerhouse-inc/renown-package/commit/54f5cf23ae81cba8b218763608991459949ae098))
+
 # [1.0.0-staging.20](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.19...v1.0.0-staging.20) (2026-01-21)
 
 
