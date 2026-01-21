@@ -7,6 +7,7 @@
     "type": "git",
     "url": "https://github.com/powerhouse-inc/renown-package.git"
   },
+  "keywords": ["powerhouse", "document-model", "renown"],
   "type": "module",
   "files": [
     "/dist"
