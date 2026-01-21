@@ -262,7 +262,6 @@ jobs:
   docker:
     name: Docker (${{ matrix.target }})
     needs: [prepare, release]
-    # TESTING: Always run docker build (no release check)
     if: always() && needs.prepare.result == 'success' && needs.release.result == 'success'
     runs-on: ubuntu-latest
     permissions:
@@ -272,26 +271,25 @@ jobs:
       matrix:
         target: [connect, switchboard]
     steps:
-      # TESTING: Skipping release check for build testing
-      # - name: Check if should run
-      #   id: check
-      #   run: |
-      #     echo "skip_docker: ${{ needs.prepare.outputs.skip_docker }}"
-      #     echo "dry_run: ${{ needs.prepare.outputs.dry_run }}"
-      #     echo "released: ${{ needs.release.outputs.released }}"
-      #     if [ "${{ needs.prepare.outputs.skip_docker }}" = "true" ]; then
-      #       echo "Skipping: skip_docker is true"
-      #       exit 1
-      #     fi
-      #     if [ "${{ needs.prepare.outputs.dry_run }}" = "true" ]; then
-      #       echo "Skipping: dry_run is true"
-      #       exit 1
-      #     fi
-      #     if [ "${{ needs.release.outputs.released }}" != "true" ]; then
-      #       echo "Skipping: no new release (released=${{ needs.release.outputs.released }})"
-      #       exit 1
-      #     fi
-      #     echo "All conditions met, proceeding with Docker build"
+      - name: Check if should run
+        id: check
+        run: |
+          echo "skip_docker: ${{ needs.prepare.outputs.skip_docker }}"
+          echo "dry_run: ${{ needs.prepare.outputs.dry_run }}"
+          echo "released: ${{ needs.release.outputs.released }}"
+          if [ "${{ needs.prepare.outputs.skip_docker }}" = "true" ]; then
+            echo "Skipping: skip_docker is true"
+            exit 1
+          fi
+          if [ "${{ needs.prepare.outputs.dry_run }}" = "true" ]; then
+            echo "Skipping: dry_run is true"
+            exit 1
+          fi
+          if [ "${{ needs.release.outputs.released }}" != "true" ]; then
+            echo "Skipping: no new release (released=${{ needs.release.outputs.released }})"
+            exit 1
+          fi
+          echo "All conditions met, proceeding with Docker build"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -382,14 +380,13 @@ jobs:
           esac
           echo "tag=$PH_TAG" >> $GITHUB_OUTPUT
 
-      # TESTING: Build only, no push
-      - name: Build ${{ matrix.target }}
+      - name: Build and push ${{ matrix.target }}
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           target: ${{ matrix.target }}
-          push: false
+          push: true
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
             TAG=${{ steps.ph-tag.outputs.tag }}
