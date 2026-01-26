@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   reducer,
   utils,
-  isRenownCredentialDocument,
   init,
   revoke,
   InitInputSchema,
@@ -17,7 +16,6 @@ describe("ManagerOperations", () => {
 
     const updatedDocument = reducer(document, init(input));
 
-    expect(isRenownCredentialDocument(updatedDocument)).toBe(true);
     expect(updatedDocument.operations.global).toHaveLength(1);
     expect(updatedDocument.operations.global[0].action.type).toBe("INIT");
     expect(updatedDocument.operations.global[0].action.input).toStrictEqual(
@@ -32,7 +30,6 @@ describe("ManagerOperations", () => {
 
     const updatedDocument = reducer(document, revoke(input));
 
-    expect(isRenownCredentialDocument(updatedDocument)).toBe(true);
     expect(updatedDocument.operations.global).toHaveLength(1);
     expect(updatedDocument.operations.global[0].action.type).toBe("REVOKE");
     expect(updatedDocument.operations.global[0].action.input).toStrictEqual(

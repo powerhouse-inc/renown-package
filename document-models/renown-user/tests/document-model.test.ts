@@ -38,84 +38,77 @@ describe("RenownUser Document Model", () => {
   it("should reject a document that is not a RenownUser document", () => {
     const wrongDocumentType = utils.createDocument();
     wrongDocumentType.header.documentType = "the-wrong-thing-1234";
-    try {
-      expect(assertIsRenownUserDocument(wrongDocumentType)).toThrow();
-      expect(isRenownUserDocument(wrongDocumentType)).toBe(false);
-    } catch (error) {
-      expect(error).toBeInstanceOf(ZodError);
-    }
+    expect(isRenownUserDocument(wrongDocumentType)).toBe(false);
+    expect(() => assertIsRenownUserDocument(wrongDocumentType)).toThrow(
+      ZodError,
+    );
   });
-  const wrongState = utils.createDocument();
-  // @ts-expect-error - we are testing the error case
-  wrongState.state.global = {
-    ...{ notWhat: "you want" },
-  };
-  try {
-    expect(isRenownUserState(wrongState.state)).toBe(false);
-    expect(assertIsRenownUserState(wrongState.state)).toThrow();
-    expect(isRenownUserDocument(wrongState)).toBe(false);
-    expect(assertIsRenownUserDocument(wrongState)).toThrow();
-  } catch (error) {
-    expect(error).toBeInstanceOf(ZodError);
-  }
 
-  const wrongInitialState = utils.createDocument();
-  // @ts-expect-error - we are testing the error case
-  wrongInitialState.initialState.global = {
-    ...{ notWhat: "you want" },
-  };
-  try {
-    expect(isRenownUserState(wrongInitialState.state)).toBe(false);
-    expect(assertIsRenownUserState(wrongInitialState.state)).toThrow();
-    expect(isRenownUserDocument(wrongInitialState)).toBe(false);
-    expect(assertIsRenownUserDocument(wrongInitialState)).toThrow();
-  } catch (error) {
-    expect(error).toBeInstanceOf(ZodError);
-  }
+  it("should reject a document with invalid ethAddress format", () => {
+    const invalidState = utils.createDocument();
+    // Invalid Ethereum address format
+    invalidState.state.global.ethAddress = "not-a-valid-address";
 
-  const missingIdInHeader = utils.createDocument();
-  // @ts-expect-error - we are testing the error case
-  delete missingIdInHeader.header.id;
-  try {
+    expect(isRenownUserState(invalidState.state)).toBe(false);
+    expect(() => assertIsRenownUserState(invalidState.state)).toThrow(ZodError);
+    expect(isRenownUserDocument(invalidState)).toBe(false);
+    expect(() => assertIsRenownUserDocument(invalidState)).toThrow(ZodError);
+  });
+
+  it("should reject a document with invalid initial state ethAddress", () => {
+    const invalidInitialState = utils.createDocument();
+    // Invalid Ethereum address format in initial state
+    invalidInitialState.initialState.global.ethAddress = "not-a-valid-address";
+
+    expect(isRenownUserDocument(invalidInitialState)).toBe(false);
+    expect(() => assertIsRenownUserDocument(invalidInitialState)).toThrow(
+      ZodError,
+    );
+  });
+
+  it("should reject a document missing id in header", () => {
+    const missingIdInHeader = utils.createDocument();
+    // @ts-expect-error - we are testing the error case
+    delete missingIdInHeader.header.id;
+
     expect(isRenownUserDocument(missingIdInHeader)).toBe(false);
-    expect(assertIsRenownUserDocument(missingIdInHeader)).toThrow();
-  } catch (error) {
-    expect(error).toBeInstanceOf(ZodError);
-  }
+    expect(() => assertIsRenownUserDocument(missingIdInHeader)).toThrow(
+      ZodError,
+    );
+  });
 
-  const missingNameInHeader = utils.createDocument();
-  // @ts-expect-error - we are testing the error case
-  delete missingNameInHeader.header.name;
-  try {
+  it("should reject a document missing name in header", () => {
+    const missingNameInHeader = utils.createDocument();
+    // @ts-expect-error - we are testing the error case
+    delete missingNameInHeader.header.name;
+
     expect(isRenownUserDocument(missingNameInHeader)).toBe(false);
-    expect(assertIsRenownUserDocument(missingNameInHeader)).toThrow();
-  } catch (error) {
-    expect(error).toBeInstanceOf(ZodError);
-  }
+    expect(() => assertIsRenownUserDocument(missingNameInHeader)).toThrow(
+      ZodError,
+    );
+  });
 
-  const missingCreatedAtUtcIsoInHeader = utils.createDocument();
-  // @ts-expect-error - we are testing the error case
-  delete missingCreatedAtUtcIsoInHeader.header.createdAtUtcIso;
-  try {
+  it("should reject a document missing createdAtUtcIso in header", () => {
+    const missingCreatedAtUtcIsoInHeader = utils.createDocument();
+    // @ts-expect-error - we are testing the error case
+    delete missingCreatedAtUtcIsoInHeader.header.createdAtUtcIso;
+
     expect(isRenownUserDocument(missingCreatedAtUtcIsoInHeader)).toBe(false);
-    expect(
+    expect(() =>
       assertIsRenownUserDocument(missingCreatedAtUtcIsoInHeader),
-    ).toThrow();
-  } catch (error) {
-    expect(error).toBeInstanceOf(ZodError);
-  }
+    ).toThrow(ZodError);
+  });
 
-  const missingLastModifiedAtUtcIsoInHeader = utils.createDocument();
-  // @ts-expect-error - we are testing the error case
-  delete missingLastModifiedAtUtcIsoInHeader.header.lastModifiedAtUtcIso;
-  try {
+  it("should reject a document missing lastModifiedAtUtcIso in header", () => {
+    const missingLastModifiedAtUtcIsoInHeader = utils.createDocument();
+    // @ts-expect-error - we are testing the error case
+    delete missingLastModifiedAtUtcIsoInHeader.header.lastModifiedAtUtcIso;
+
     expect(isRenownUserDocument(missingLastModifiedAtUtcIsoInHeader)).toBe(
       false,
     );
-    expect(
+    expect(() =>
       assertIsRenownUserDocument(missingLastModifiedAtUtcIsoInHeader),
-    ).toThrow();
-  } catch (error) {
-    expect(error).toBeInstanceOf(ZodError);
-  }
+    ).toThrow(ZodError);
+  });
 });
