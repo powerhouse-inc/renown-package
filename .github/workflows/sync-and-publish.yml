@@ -197,6 +197,15 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git pull origin ${{ needs.prepare.outputs.branch }}
 
+      - name: Create local tracking branches for semantic-release
+        run: |
+          # semantic-release needs local branches to exist for all configured release branches
+          for branch in main staging dev; do
+            if ! git show-ref --verify --quiet refs/heads/$branch; then
+              git branch --track $branch origin/$branch 2>/dev/null || true
+            fi
+          done
+
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
