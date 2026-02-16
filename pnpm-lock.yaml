@@ -2351,8 +2351,8 @@ packages:
     resolution: {integrity: sha512-fLgJnDOXFmuVlB38rUN5SmU7hAFQcCjrg3Vrxz67KTY7YHFnSNEKvX4avmEBdOI0yTCxZjwMCFEqsC8k2+Wd3g==}
     engines: {node: '>=16.0.0'}
 
-  '@metamask/utils@11.9.0':
-    resolution: {integrity: sha512-wRnoSDD9jTWOge/+reFviJQANhS+uy8Y+OEwRanp5mQeGTjBFmK1r2cTOnei2UCZRV1crXHzeJVSFEoDDcgRbA==}
+  '@metamask/utils@11.10.0':
+    resolution: {integrity: sha512-+bWmTOANx1MbBW6RFM8Se4ZoigFYGXiuIrkhjj4XnG5Aez8uWaTSZ76yn9srKKClv+PoEVoAuVtcUOogFEMUNA==}
     engines: {node: ^18.18 || ^20.14 || >=22}
 
   '@metamask/utils@5.0.2':
@@ -16976,7 +16976,7 @@ snapshots:
 
   '@metamask/rpc-errors@7.0.2':
     dependencies:
-      '@metamask/utils': 11.9.0
+      '@metamask/utils': 11.10.0
       fast-safe-stringify: 2.1.1
     transitivePeerDependencies:
       - supports-color
@@ -17039,7 +17039,7 @@ snapshots:
 
   '@metamask/superstruct@3.2.1': {}
 
-  '@metamask/utils@11.9.0':
+  '@metamask/utils@11.10.0':
     dependencies:
       '@ethereumjs/tx': 4.2.0
       '@metamask/superstruct': 3.2.1
@@ -17072,7 +17072,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
       '@types/debug': 4.1.12
-      debug: 4.3.4
+      debug: 4.4.3(supports-color@8.1.1)
       pony-cause: 2.1.11
       semver: 7.7.4
       uuid: 9.0.1
@@ -17086,7 +17086,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
       '@types/debug': 4.1.12
-      debug: 4.3.4
+      debug: 4.4.3(supports-color@8.1.1)
       pony-cause: 2.1.11
       semver: 7.7.4
       uuid: 9.0.1
@@ -17312,7 +17312,7 @@ snapshots:
 
   '@npmcli/fs@3.1.1':
     dependencies:
-      semver: 7.7.3
+      semver: 7.7.4
 
   '@npmcli/move-file@1.1.2':
     dependencies:
