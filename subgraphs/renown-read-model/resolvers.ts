@@ -144,7 +144,7 @@ const getDriveId = (driveId?: string): string => {
     driveId || process.env.RENOWN_PROFILES_DRIVE_ID || "renown-user";
   if (!resolvedDriveId) {
     throw new Error(
-      "Drive ID is required. Provide it in the input or set RENOWN_PROFILES_DRIVE_ID environment variable."
+      "Drive ID is required. Provide it in the input or set RENOWN_PROFILES_DRIVE_ID environment variable.",
     );
   }
   return resolvedDriveId;
@@ -157,13 +157,13 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
     Query: {
       renownUser: async (
         parent: unknown,
-        args: { input: RenownUserInput }
+        args: { input: RenownUserInput },
       ): Promise<ReadRenownUser | null> => {
         const { phid, ethAddress, username } = args.input;
 
         let query = RenownUserProcessor.query<RenownUserDB>(
           "renown-user",
-          db
+          db,
         ).selectFrom("renown_user");
 
         // Priority: phid > ethAddress > username
@@ -175,7 +175,7 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           query = query.where("renown_user.username", "=", username);
         } else {
           throw new Error(
-            "At least one of phid, ethAddress, or username must be provided"
+            "At least one of phid, ethAddress, or username must be provided",
           );
         }
 
@@ -186,13 +186,13 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
 
       renownUsers: async (
         parent: unknown,
-        args: { input: RenownUsersInput }
+        args: { input: RenownUsersInput },
       ): Promise<ReadRenownUser[]> => {
         const { driveId, phids, ethAddresses, usernames } = args.input;
 
         let query = RenownUserProcessor.query<RenownUserDB>(
           "renown-user",
-          db
+          db,
         ).selectFrom("renown_user");
 
         const hasPhids = phids && phids.length > 0;
@@ -201,7 +201,7 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
 
         if (!hasPhids && !hasEthAddresses && !hasUsernames) {
           throw new Error(
-            "At least one of phids, ethAddresses, or usernames must be provided"
+            "At least one of phids, ethAddresses, or usernames must be provided",
           );
         }
 
@@ -230,7 +230,7 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
 
       renownCredentials: async (
         parent: unknown,
-        args: { input: RenownCredentialsInput }
+        args: { input: RenownCredentialsInput },
       ): Promise<ReadRenownCredential[]> => {
         const {
           driveId,
@@ -242,46 +242,34 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
 
         let query = RenownCredentialProcessor.query<RenownCredentialDB>(
           "renown-credential",
-          db
+          db,
         ).selectFrom("renown_credential");
 
-        // Search by ethAddress or DID in credential_subject fields
-        if (ethAddress || did) {
-          query = query.where((eb) => {
-            const conditions: ReturnType<typeof eb>[] = [];
+        // Filter by ethAddress in issuer or proof fields
+        if (ethAddress) {
+          query = query.where((eb) =>
+            eb.and([
+              eb(
+                eb.fn("LOWER", ["renown_credential.issuer_ethereum_address"]),
+                "=",
+                ethAddress.toLowerCase(),
+              ),
+              eb(
+                eb.fn("LOWER", ["renown_credential.proof_ethereum_address"]),
+                "=",
+                ethAddress.toLowerCase(),
+              ),
+            ]),
+          );
+        }
 
-            if (ethAddress) {
-              // Search for ethAddress in credential_subject_id (case-insensitive)
-              conditions.push(
-                eb(
-                  eb.fn("LOWER", ["renown_credential.credential_subject_id"]),
-                  "like",
-                  `%${ethAddress.toLowerCase()}%`
-                )
-              );
-              // Also search in proof_ethereum_address
-              conditions.push(
-                eb(
-                  eb.fn("LOWER", ["renown_credential.proof_ethereum_address"]),
-                  "=",
-                  ethAddress.toLowerCase()
-                )
-              );
-            }
-
-            if (did) {
-              // Search for DID in credential_subject_id (case-insensitive)
-              conditions.push(
-                eb(
-                  eb.fn("LOWER", ["renown_credential.credential_subject_id"]),
-                  "like",
-                  `%${did.toLowerCase()}%`
-                )
-              );
-            }
-
-            return eb.or(conditions);
-          });
+        // Filter by app DID in credential_subject_id
+        if (did) {
+          query = query.where(
+            "renown_credential.credential_subject_id",
+            "=",
+            did,
+          );
         }
 
         // Filter by issuer if provided
@@ -292,9 +280,9 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
               eb(
                 eb.fn("LOWER", ["renown_credential.issuer_ethereum_address"]),
                 "=",
-                issuer.toLowerCase()
+                issuer.toLowerCase(),
               ),
-            ])
+            ]),
           );
         }
 
