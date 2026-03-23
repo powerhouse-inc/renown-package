@@ -127,9 +127,9 @@ export function InitInputSchema(): z.ZodObject<Properties<InitInput>> {
     credentialSchema: z.lazy(() => CredentialSchemaInputSchema()),
     credentialStatus: z.lazy(() => CredentialStatusInputSchema().nullish()),
     credentialSubject: z.lazy(() => CredentialSubjectInputSchema()),
-    expirationDate: z.string().datetime().nullish(),
+    expirationDate: z.iso.datetime().nullish(),
     id: z.string(),
-    issuanceDate: z.string().datetime(),
+    issuanceDate: z.iso.datetime(),
     issuer: z.lazy(() => IssuerInputSchema()),
     proof: z.lazy(() => ProofInputSchema()),
     type: z.array(z.string()),
@@ -162,7 +162,7 @@ export function IssuerInputSchema(): z.ZodObject<Properties<IssuerInput>> {
 export function ProofSchema(): z.ZodObject<Properties<Proof>> {
   return z.object({
     __typename: z.literal("Proof").optional(),
-    created: z.string().datetime(),
+    created: z.iso.datetime(),
     eip712: z.lazy(() => Eip712Schema()),
     ethereumAddress: z
       .string()
@@ -178,7 +178,7 @@ export function ProofSchema(): z.ZodObject<Properties<Proof>> {
 
 export function ProofInputSchema(): z.ZodObject<Properties<ProofInput>> {
   return z.object({
-    created: z.string().datetime(),
+    created: z.iso.datetime(),
     eip712: z.lazy(() => Eip712InputSchema()),
     ethereumAddress: z
       .string()
@@ -201,14 +201,14 @@ export function RenownCredentialStateSchema(): z.ZodObject<
     credentialSchema: z.lazy(() => CredentialSchemaSchema()),
     credentialStatus: z.lazy(() => CredentialStatusSchema().nullish()),
     credentialSubject: z.lazy(() => CredentialSubjectSchema()),
-    expirationDate: z.string().datetime().nullish(),
+    expirationDate: z.iso.datetime().nullish(),
     id: z.string(),
-    issuanceDate: z.string().datetime(),
+    issuanceDate: z.iso.datetime(),
     issuer: z.lazy(() => IssuerSchema()),
     proof: z.lazy(() => ProofSchema()),
     revocationReason: z.string().nullish(),
     revoked: z.boolean(),
-    revokedAt: z.string().datetime().nullish(),
+    revokedAt: z.iso.datetime().nullish(),
     type: z.array(z.string()),
   });
 }
@@ -216,6 +216,6 @@ export function RenownCredentialStateSchema(): z.ZodObject<
 export function RevokeInputSchema(): z.ZodObject<Properties<RevokeInput>> {
   return z.object({
     reason: z.string().nullish(),
-    revokedAt: z.string().datetime(),
+    revokedAt: z.iso.datetime(),
   });
 }
