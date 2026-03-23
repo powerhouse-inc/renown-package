@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1...v1.1.0) (2026-03-23)
+
+
+### Features
+
+* updated to latest ph deps ([76655d7](https://github.com/powerhouse-inc/renown-package/commit/76655d7c89731aa21a0ad0469dc5c6e8878899c3))
+
 ## [1.0.1](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0...v1.0.1) (2026-03-23)
 
 
