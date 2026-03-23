@@ -1,3 +1,10 @@
+## [1.0.1-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.1...v1.0.1-staging.2) (2026-03-23)
+
+
+### Bug Fixes
+
+* filter credentials by app DID in renownCredentials resolver ([ece29e4](https://github.com/powerhouse-inc/renown-package/commit/ece29e4a2c84d6e132e192f39feb141f49fc94af))
+
 ## [1.0.1-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0...v1.0.1-staging.1) (2026-01-26)
 
 
