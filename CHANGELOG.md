@@ -1,3 +1,15 @@
+# [1.1.0-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.5...v1.1.0-staging.1) (2026-03-24)
+
+
+### Bug Fixes
+
+* use K8S_REPO_PAT org secret for deploy step ([1256852](https://github.com/powerhouse-inc/renown-package/commit/1256852b0ba8fff3e74a632ee7d84475dec19d1e))
+
+
+### Features
+
+* add deploy step to update k8s Helm values after Docker push ([60e2134](https://github.com/powerhouse-inc/renown-package/commit/60e213436a6dfe7147552d31a7866669f10c9236))
+
 ## [1.0.1-staging.5](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.4...v1.0.1-staging.5) (2026-03-24)
 
 
