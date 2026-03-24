@@ -438,8 +438,7 @@ jobs:
           # Update image tags for switchboard and connect
           UPDATED=$(echo "$CONTENT" | sed \
             -e '/^switchboard:/,/^[a-z]/{/^    tag:/s|tag:.*|tag: '"${DEPLOY_VERSION}"'|}' \
-            -e '/^connect:/,/^[a-z]/{/^    tag:/s|tag:.*|tag: '"${DEPLOY_VERSION}"'|}' \
-            -e "s|PH_PACKAGES:.*|PH_PACKAGES: '@powerhousedao/renown-package@${DEPLOY_NPM_VERSION}'|g")
+            -e '/^connect:/,/^[a-z]/{/^    tag:/s|tag:.*|tag: '"${DEPLOY_VERSION}"'|}')
 
           # Commit updated file
           ENCODED=$(echo "$UPDATED" | base64 -w 0)
