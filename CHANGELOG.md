@@ -1,3 +1,10 @@
+## [1.0.1-staging.3](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.2...v1.0.1-staging.3) (2026-03-24)
+
+
+### Bug Fixes
+
+* update to document-drive Legacy API and new reactor client ([9a94a68](https://github.com/powerhouse-inc/renown-package/commit/9a94a68345f2bc9e8687248d3a1d8f9907fcd6a3))
+
 ## [1.0.1-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.1...v1.0.1-staging.2) (2026-03-23)
 
 
