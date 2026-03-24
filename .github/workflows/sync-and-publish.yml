@@ -426,7 +426,7 @@ jobs:
     steps:
       - name: Update Helm values in k8s-hosting repo
         env:
-          GH_TOKEN: ${{ secrets.K8S_DEPLOY_TOKEN }}
+          GH_TOKEN: ${{ secrets.K8S_REPO_PAT }}
         run: |
           echo "Updating ${VALUES_PATH} with image tag ${DEPLOY_VERSION}"
 
