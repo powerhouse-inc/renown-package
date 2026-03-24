@@ -1,11 +1,32 @@
-# [1.1.0](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1...v1.1.0) (2026-03-23)
+## [1.0.1-staging.5](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.4...v1.0.1-staging.5) (2026-03-24)
 
 
-### Features
+### Bug Fixes
 
-* updated to latest ph deps ([76655d7](https://github.com/powerhouse-inc/renown-package/commit/76655d7c89731aa21a0ad0469dc5c6e8878899c3))
+* add missing package-manager-detector dep for Docker build ([dfa5f64](https://github.com/powerhouse-inc/renown-package/commit/dfa5f64694cf0a1f69597f8ca9fdd83b8fc05e43))
 
-## [1.0.1](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0...v1.0.1) (2026-03-23)
+## [1.0.1-staging.4](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.3...v1.0.1-staging.4) (2026-03-24)
+
+
+### Bug Fixes
+
+* upgrade Dockerfile to Node 24 for ph-cmd compatibility ([dd3aed5](https://github.com/powerhouse-inc/renown-package/commit/dd3aed5dae6b73499e4f35fc73384fc8c1ab374b))
+
+## [1.0.1-staging.3](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.2...v1.0.1-staging.3) (2026-03-24)
+
+
+### Bug Fixes
+
+* update to document-drive Legacy API and new reactor client ([9a94a68](https://github.com/powerhouse-inc/renown-package/commit/9a94a68345f2bc9e8687248d3a1d8f9907fcd6a3))
+
+## [1.0.1-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.1...v1.0.1-staging.2) (2026-03-23)
+
+
+### Bug Fixes
+
+* filter credentials by app DID in renownCredentials resolver ([ece29e4](https://github.com/powerhouse-inc/renown-package/commit/ece29e4a2c84d6e132e192f39feb141f49fc94af))
+
+## [1.0.1-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0...v1.0.1-staging.1) (2026-01-26)
 
 
 ### Bug Fixes
@@ -16,11 +37,17 @@
 * add package keywords ([520f260](https://github.com/powerhouse-inc/renown-package/commit/520f2607ed2e499ccfb98fc74375ccd06e1e861c))
 * correct test structure and assertions ([c76848c](https://github.com/powerhouse-inc/renown-package/commit/c76848c11710d4853aae2fa2276c8a049e7df723))
 * create local tracking branches for semantic-release ([cfc4fe4](https://github.com/powerhouse-inc/renown-package/commit/cfc4fe41a4f1051da08ccaf7953ba4a4924461a3))
-* filter credentials by app DID in renownCredentials resolver ([b86271d](https://github.com/powerhouse-inc/renown-package/commit/b86271d4c139c1f22a383caa3e73f309fadb719c))
 * force docker job to run with always() condition ([b53cf44](https://github.com/powerhouse-inc/renown-package/commit/b53cf448500da5d4fff931693bf591417c47faa8))
 * force docker job to run with always() condition ([80b6f83](https://github.com/powerhouse-inc/renown-package/commit/80b6f8360be88ec40528dfbf3e47ecc42a5cc68b))
 * restore full docker build and push flow ([a4c4015](https://github.com/powerhouse-inc/renown-package/commit/a4c40153be12b2aa4ef148435af222ddf15bc59b))
 * use correct Harbor project name (renown) ([4eaa34c](https://github.com/powerhouse-inc/renown-package/commit/4eaa34c73211ab98171803ae834bceb7d5675d31))
+
+# [1.0.0-staging.21](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.20...v1.0.0-staging.21) (2026-01-21)
+
+
+### Bug Fixes
+
+* add bugs URL to package.json ([54f5cf2](https://github.com/powerhouse-inc/renown-package/commit/54f5cf23ae81cba8b218763608991459949ae098))
 
 # [1.0.0-staging.20](https://github.com/powerhouse-inc/renown-package/compare/v1.0.0-staging.19...v1.0.0-staging.20) (2026-01-21)
 

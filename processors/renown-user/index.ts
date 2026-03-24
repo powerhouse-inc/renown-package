@@ -1,9 +1,9 @@
-import { RelationalDbProcessor } from "document-drive";
+import { RelationalDbProcessorLegacy } from "document-drive";
 import { type InternalTransmitterUpdate } from "document-drive";
 import { up } from "./migrations.js";
 import { type DB } from "./schema.js";
 
-export class RenownUserProcessor extends RelationalDbProcessor<DB> {
+export class RenownUserProcessor extends RelationalDbProcessorLegacy<DB> {
   static override getNamespace(driveId: string): string {
     // Default namespace: `${this.name}_${driveId.replaceAll("-", "_")}`
     return super.getNamespace(driveId);
