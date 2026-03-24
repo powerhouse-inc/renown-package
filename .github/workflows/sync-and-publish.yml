@@ -435,10 +435,11 @@ jobs:
           SHA=$(echo "$RESPONSE" | jq -r '.sha')
           CONTENT=$(echo "$RESPONSE" | jq -r '.content' | base64 -d)
 
-          # Update image tags for switchboard and connect
+          # Update image tags and PH_PACKAGES for switchboard and connect
           UPDATED=$(echo "$CONTENT" | sed \
             -e '/^switchboard:/,/^[a-z]/{/^    tag:/s|tag:.*|tag: '"${DEPLOY_VERSION}"'|}' \
-            -e '/^connect:/,/^[a-z]/{/^    tag:/s|tag:.*|tag: '"${DEPLOY_VERSION}"'|}')
+            -e '/^connect:/,/^[a-z]/{/^    tag:/s|tag:.*|tag: '"${DEPLOY_VERSION}"'|}' \
+            -e 's|PH_PACKAGES:.*|PH_PACKAGES: "'"@powerhousedao/renown-package@${DEPLOY_NPM_VERSION}"'"|g')
 
           # Commit updated file
           ENCODED=$(echo "$UPDATED" | base64 -w 0)
