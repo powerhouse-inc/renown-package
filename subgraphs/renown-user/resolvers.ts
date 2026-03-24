@@ -1,5 +1,4 @@
 import type { ISubgraph } from "@powerhousedao/reactor-api";
-import { addFile } from "document-drive";
 import {
   actions,
   type SetUsernameInput,
@@ -10,7 +9,7 @@ import {
 import { setName } from "document-model";
 
 export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
-  const reactor = subgraph.reactor;
+  const reactor = subgraph.reactorClient;
 
   return {
     Query: {
@@ -24,15 +23,17 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
             }
 
             if (driveId) {
-              const docIds = await reactor.getDocuments(driveId);
-              if (!docIds.includes(docId)) {
+              const { results: children } =
+                await reactor.getChildren(driveId);
+              const childIds = children.map((c) => c.header.id);
+              if (!childIds.includes(docId)) {
                 throw new Error(
                   `Document with id ${docId} is not part of ${driveId}`,
                 );
               }
             }
 
-            const doc = await reactor.getDocument<RenownUserDocument>(docId);
+            const doc = await reactor.get<RenownUserDocument>(docId);
             return {
               driveId: driveId,
               ...doc,
@@ -46,11 +47,12 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           },
           getDocuments: async (args: { driveId: string }) => {
             const { driveId } = args;
-            const docsIds = await reactor.getDocuments(driveId);
+            const { results: children } = await reactor.getChildren(driveId);
             const docs = await Promise.all(
-              docsIds.map(async (docId) => {
-                const doc =
-                  await reactor.getDocument<RenownUserDocument>(docId);
+              children.map(async (child) => {
+                const doc = await reactor.get<RenownUserDocument>(
+                  child.header.id,
+                );
                 return {
                   driveId: driveId,
                   ...doc,
@@ -77,21 +79,13 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
         args: { name: string; driveId?: string },
       ) => {
         const { driveId, name } = args;
-        const document = await reactor.addDocument("powerhouse/renown-user");
-
-        if (driveId) {
-          await reactor.addAction(
-            driveId,
-            addFile({
-              name,
-              id: document.header.id,
-              documentType: "powerhouse/renown-user",
-            }),
-          );
-        }
+        const document = await reactor.createEmpty<RenownUserDocument>(
+          "powerhouse/renown-user",
+          driveId ? { parentIdentifier: driveId } : undefined,
+        );
 
         if (name) {
-          await reactor.addAction(document.header.id, setName(name));
+          await reactor.execute(document.header.id, "main", [setName(name)]);
         }
 
         return document.header.id;
@@ -102,19 +96,12 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
         args: { docId: string; input: SetUsernameInput },
       ) => {
         const { docId, input } = args;
-        const doc = await reactor.getDocument<RenownUserDocument>(docId);
+        const doc = await reactor.get<RenownUserDocument>(docId);
         if (!doc) {
           throw new Error("Document not found");
         }
 
-        const result = await reactor.addAction(
-          docId,
-          actions.setUsername(input),
-        );
-
-        if (result.status !== "SUCCESS") {
-          throw new Error(result.error?.message ?? "Failed to setUsername");
-        }
+        await reactor.execute(docId, "main", [actions.setUsername(input)]);
 
         return true;
       },
@@ -124,19 +111,12 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
         args: { docId: string; input: SetEthAddressInput },
       ) => {
         const { docId, input } = args;
-        const doc = await reactor.getDocument<RenownUserDocument>(docId);
+        const doc = await reactor.get<RenownUserDocument>(docId);
         if (!doc) {
           throw new Error("Document not found");
         }
 
-        const result = await reactor.addAction(
-          docId,
-          actions.setEthAddress(input),
-        );
-
-        if (result.status !== "SUCCESS") {
-          throw new Error(result.error?.message ?? "Failed to setEthAddress");
-        }
+        await reactor.execute(docId, "main", [actions.setEthAddress(input)]);
 
         return true;
       },
@@ -146,19 +126,12 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
         args: { docId: string; input: SetUserImageInput },
       ) => {
         const { docId, input } = args;
-        const doc = await reactor.getDocument<RenownUserDocument>(docId);
+        const doc = await reactor.get<RenownUserDocument>(docId);
         if (!doc) {
           throw new Error("Document not found");
         }
 
-        const result = await reactor.addAction(
-          docId,
-          actions.setUserImage(input),
-        );
-
-        if (result.status !== "SUCCESS") {
-          throw new Error(result.error?.message ?? "Failed to setUserImage");
-        }
+        await reactor.execute(docId, "main", [actions.setUserImage(input)]);
 
         return true;
       },

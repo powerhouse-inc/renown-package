@@ -1,6 +1,6 @@
-import { type IRelationalDb } from "document-drive";
+import { type IRelationalDbLegacy } from "document-drive";
 
-export async function up(db: IRelationalDb<any>): Promise<void> {
+export async function up(db: IRelationalDbLegacy<any>): Promise<void> {
   await down(db);
   // Create renown_user table
   await db.schema
@@ -32,7 +32,7 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
     .execute();
 }
 
-export async function down(db: IRelationalDb<any>): Promise<void> {
+export async function down(db: IRelationalDbLegacy<any>): Promise<void> {
   // Drop renown_user indexes
   await db.schema.dropIndex("idx_renown_user_eth_address").ifExists().execute();
   await db.schema.dropIndex("idx_renown_user_username").ifExists().execute();

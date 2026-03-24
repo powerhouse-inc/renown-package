@@ -1,18 +1,18 @@
 import {
-  type ProcessorRecord,
-  type IProcessorHostModule,
+  type ProcessorRecordLegacy,
+  type IProcessorHostModuleLegacy,
 } from "document-drive";
-import { type RelationalDbProcessorFilter } from "document-drive";
+import { type RelationalDbProcessorFilterLegacy } from "document-drive";
 import { type PHDocumentHeader } from "document-model";
 import { RenownCredentialProcessor, type IReactor } from "./index.js";
 
-export interface IProcessorHostModuleWithReactor extends IProcessorHostModule {
+export interface IProcessorHostModuleWithReactor extends IProcessorHostModuleLegacy {
   reactor?: IReactor;
 }
 
 export const renownCredentialProcessorFactory =
   (module: IProcessorHostModuleWithReactor) =>
-  async (driveHeader: PHDocumentHeader): Promise<ProcessorRecord[]> => {
+  async (driveHeader: PHDocumentHeader): Promise<ProcessorRecordLegacy[]> => {
     // Create a namespace for the processor and the provided drive id
     const namespace =
       RenownCredentialProcessor.getNamespace("renown-credential");
@@ -24,7 +24,7 @@ export const renownCredentialProcessorFactory =
       );
 
     // Create a filter for the processor
-    const filter: RelationalDbProcessorFilter = {
+    const filter: RelationalDbProcessorFilterLegacy = {
       branch: ["main"],
       documentId: ["*"],
       documentType: ["powerhouse/renown-credential"],

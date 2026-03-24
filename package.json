@@ -10,7 +10,11 @@
   "bugs": {
     "url": "https://github.com/powerhouse-inc/renown-package/issues"
   },
-  "keywords": ["powerhouse", "document-model", "renown"],
+  "keywords": [
+    "powerhouse",
+    "document-model",
+    "renown"
+  ],
   "type": "module",
   "files": [
     "/dist"
@@ -93,12 +97,12 @@
     "service-unstartup": "bash ./node_modules/@powerhousedao/ph-cli/dist/scripts/service-unstartup.sh"
   },
   "dependencies": {
-    "@powerhousedao/builder-tools": "staging",
-    "@powerhousedao/common": "staging",
-    "@powerhousedao/design-system": "staging",
+    "@powerhousedao/builder-tools": "6.0.1-staging.0",
+    "@powerhousedao/common": "6.0.1-staging.0",
+    "@powerhousedao/design-system": "6.0.1-staging.0",
     "@powerhousedao/document-engineering": "^1.40.1",
-    "@powerhousedao/vetra": "staging",
-    "document-model": "staging",
+    "@powerhousedao/vetra": "6.0.1-staging.0",
+    "document-model": "6.0.1-staging.0",
     "graphql": "^16.10.0",
     "graphql-request": "^7.2.0",
     "graphql-tag": "^2.12.6",
@@ -106,21 +110,21 @@
     "luxon": "^3.7.2",
     "nanoid": "^5.1.6",
     "uuid": "^11.1.0",
-    "zod": "^4.1.13"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.2.17",
     "@eslint/js": "^9.37.0",
     "@openfeature/core": "^1.9.1",
     "@powerhousedao/analytics-engine-core": "^0.5.0",
-    "@powerhousedao/codegen": "staging",
-    "@powerhousedao/connect": "staging",
-    "@powerhousedao/ph-cli": "staging",
-    "@powerhousedao/reactor-api": "staging",
-    "@powerhousedao/reactor-browser": "staging",
-    "@powerhousedao/reactor-local": "staging",
-    "@powerhousedao/scalars": "latest",
-    "@powerhousedao/switchboard": "staging",
+    "@powerhousedao/codegen": "6.0.1-staging.0",
+    "@powerhousedao/connect": "6.0.1-staging.0",
+    "@powerhousedao/ph-cli": "6.0.1-staging.0",
+    "@powerhousedao/reactor-api": "6.0.1-staging.0",
+    "@powerhousedao/reactor-browser": "6.0.1-staging.0",
+    "@powerhousedao/reactor-local": "6.0.1-staging.0",
+    "@powerhousedao/scalars": "^2.0.1",
+    "@powerhousedao/switchboard": "6.0.1-staging.0",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
     "@tailwindcss/cli": "^4.1.14",
@@ -129,7 +133,7 @@
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.0.4",
     "adm-zip": "^0.5.16",
-    "document-drive": "staging",
+    "document-drive": "6.0.1-staging.0",
     "eslint": "^9.37.0",
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-react-hooks": "^5.2.0",

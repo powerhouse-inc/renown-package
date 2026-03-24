@@ -1,14 +1,14 @@
 import {
-  type ProcessorRecord,
-  type IProcessorHostModule,
+  type ProcessorRecordLegacy,
+  type IProcessorHostModuleLegacy,
 } from "document-drive";
-import { type RelationalDbProcessorFilter } from "document-drive";
+import { type RelationalDbProcessorFilterLegacy } from "document-drive";
 import { type PHDocumentHeader } from "document-model";
 import { RenownUserProcessor } from "./index.js";
 
 export const renownUserProcessorFactory =
-  (module: IProcessorHostModule) =>
-  async (driveHeader: PHDocumentHeader): Promise<ProcessorRecord[]> => {
+  (module: IProcessorHostModuleLegacy) =>
+  async (driveHeader: PHDocumentHeader): Promise<ProcessorRecordLegacy[]> => {
     // Create a namespace for the processor and the provided drive id
     const namespace = RenownUserProcessor.getNamespace("renown-user");
 
@@ -17,7 +17,7 @@ export const renownUserProcessorFactory =
       await module.relationalDb.createNamespace<RenownUserProcessor>(namespace);
 
     // Create a filter for the processor
-    const filter: RelationalDbProcessorFilter = {
+    const filter: RelationalDbProcessorFilterLegacy = {
       branch: ["main"],
       documentId: ["*"],
       documentType: ["powerhouse/renown-user"],

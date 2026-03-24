@@ -1,7 +1,7 @@
 import {
-  RelationalDbProcessor,
-  type RelationalDbProcessorFilter,
-  type IRelationalDb,
+  RelationalDbProcessorLegacy,
+  type RelationalDbProcessorFilterLegacy,
+  type IRelationalDbLegacy,
 } from "document-drive";
 import { type InternalTransmitterUpdate } from "document-drive";
 import { up } from "./migrations.js";
@@ -15,13 +15,13 @@ export interface IReactor {
   deleteDocument(documentId: string): Promise<boolean>;
 }
 
-export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
+export class RenownCredentialProcessor extends RelationalDbProcessorLegacy<DB> {
   private reactor?: IReactor;
 
   constructor(
     namespace: string,
-    filter: RelationalDbProcessorFilter,
-    relationalDb: IRelationalDb<DB>,
+    filter: RelationalDbProcessorFilterLegacy,
+    relationalDb: IRelationalDbLegacy<DB>,
     reactor?: IReactor,
   ) {
     super(namespace, filter, relationalDb);
