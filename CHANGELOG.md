@@ -1,3 +1,19 @@
+# [1.2.0](https://github.com/powerhouse-inc/renown-package/compare/v1.1.0...v1.2.0) (2026-03-24)
+
+
+### Bug Fixes
+
+* add missing package-manager-detector dep for Docker build ([dfa5f64](https://github.com/powerhouse-inc/renown-package/commit/dfa5f64694cf0a1f69597f8ca9fdd83b8fc05e43))
+* filter credentials by app DID in renownCredentials resolver ([ece29e4](https://github.com/powerhouse-inc/renown-package/commit/ece29e4a2c84d6e132e192f39feb141f49fc94af))
+* update to document-drive Legacy API and new reactor client ([9a94a68](https://github.com/powerhouse-inc/renown-package/commit/9a94a68345f2bc9e8687248d3a1d8f9907fcd6a3))
+* upgrade Dockerfile to Node 24 for ph-cmd compatibility ([dd3aed5](https://github.com/powerhouse-inc/renown-package/commit/dd3aed5dae6b73499e4f35fc73384fc8c1ab374b))
+* use K8S_REPO_PAT org secret for deploy step ([1256852](https://github.com/powerhouse-inc/renown-package/commit/1256852b0ba8fff3e74a632ee7d84475dec19d1e))
+
+
+### Features
+
+* add deploy step to update k8s Helm values after Docker push ([60e2134](https://github.com/powerhouse-inc/renown-package/commit/60e213436a6dfe7147552d31a7866669f10c9236))
+
 ## [1.0.1-staging.5](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.4...v1.0.1-staging.5) (2026-03-24)
 
 
