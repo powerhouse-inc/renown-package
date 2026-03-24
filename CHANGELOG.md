@@ -1,3 +1,10 @@
+## [1.0.1-staging.5](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.4...v1.0.1-staging.5) (2026-03-24)
+
+
+### Bug Fixes
+
+* add missing package-manager-detector dep for Docker build ([dfa5f64](https://github.com/powerhouse-inc/renown-package/commit/dfa5f64694cf0a1f69597f8ca9fdd83b8fc05e43))
+
 ## [1.0.1-staging.4](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.3...v1.0.1-staging.4) (2026-03-24)
 
 
