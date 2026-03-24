@@ -405,11 +405,58 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ==========================================================================
+  # Deploy to Kubernetes (update Helm values)
+  # ==========================================================================
+  deploy:
+    name: Deploy
+    needs: [prepare, release, docker]
+    if: >-
+      always() &&
+      needs.docker.result == 'success' &&
+      needs.release.outputs.released == 'true' &&
+      needs.prepare.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DEPLOY_VERSION: v${{ needs.release.outputs.new_version }}
+      DEPLOY_NPM_VERSION: ${{ needs.release.outputs.new_version }}
+      K8S_REPO: powerhouse-inc/powerhouse-k8s-hosting
+      VALUES_PATH: tenants/renown/powerhouse-values.yaml
+    steps:
+      - name: Update Helm values in k8s-hosting repo
+        env:
+          GH_TOKEN: ${{ secrets.K8S_DEPLOY_TOKEN }}
+        run: |
+          echo "Updating ${VALUES_PATH} with image tag ${DEPLOY_VERSION}"
+
+          # Fetch current file
+          RESPONSE=$(gh api "repos/${K8S_REPO}/contents/${VALUES_PATH}" --jq '{content: .content, sha: .sha}')
+          SHA=$(echo "$RESPONSE" | jq -r '.sha')
+          CONTENT=$(echo "$RESPONSE" | jq -r '.content' | base64 -d)
+
+          # Update image tags for switchboard and connect
+          UPDATED=$(echo "$CONTENT" | sed \
+            -e '/^switchboard:/,/^[a-z]/{/^    tag:/s|tag:.*|tag: '"${DEPLOY_VERSION}"'|}' \
+            -e '/^connect:/,/^[a-z]/{/^    tag:/s|tag:.*|tag: '"${DEPLOY_VERSION}"'|}' \
+            -e "s|PH_PACKAGES:.*|PH_PACKAGES: '@powerhousedao/renown-package@${DEPLOY_NPM_VERSION}'|g")
+
+          # Commit updated file
+          ENCODED=$(echo "$UPDATED" | base64 -w 0)
+          gh api --method PUT "repos/${K8S_REPO}/contents/${VALUES_PATH}" \
+            -f message="deploy: update renown to ${DEPLOY_VERSION}" \
+            -f content="${ENCODED}" \
+            -f sha="${SHA}" \
+            -f branch="main"
+
+          echo "Deployed ${DEPLOY_VERSION} to k8s-hosting repo"
+
+  # ==========================================================================
   # Summary
   # ==========================================================================
   summary:
     name: Summary
-    needs: [prepare, sync, release, docker]
+    needs: [prepare, sync, release, docker, deploy]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -437,3 +484,5 @@ jobs:
             echo "- \`${{ env.HARBOR_REGISTRY }}/${{ needs.prepare.outputs.project_name }}/connect:v${{ needs.release.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
             echo "- \`${{ env.HARBOR_REGISTRY }}/${{ needs.prepare.outputs.project_name }}/switchboard:v${{ needs.release.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
           fi
+
+          echo "| Deploy | ${{ needs.deploy.result }} |" >> $GITHUB_STEP_SUMMARY
