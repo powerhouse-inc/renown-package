@@ -1,3 +1,10 @@
+## [1.0.1-staging.4](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.3...v1.0.1-staging.4) (2026-03-24)
+
+
+### Bug Fixes
+
+* upgrade Dockerfile to Node 24 for ph-cmd compatibility ([dd3aed5](https://github.com/powerhouse-inc/renown-package/commit/dd3aed5dae6b73499e4f35fc73384fc8c1ab374b))
+
 ## [1.0.1-staging.3](https://github.com/powerhouse-inc/renown-package/compare/v1.0.1-staging.2...v1.0.1-staging.3) (2026-03-24)
 
 
