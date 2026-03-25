@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/powerhouse-inc/renown-package/compare/v1.3.0...v1.3.1) (2026-03-25)
+
+
+### Bug Fixes
+
+* simplify Docker build — use pnpm install instead of ph install ([420a442](https://github.com/powerhouse-inc/renown-package/commit/420a4428f76496db2daa3bfa94a15c9120cf10bc))
+
 # [1.3.0](https://github.com/powerhouse-inc/renown-package/compare/v1.2.2...v1.3.0) (2026-03-25)
 
 
