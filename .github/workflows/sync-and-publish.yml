@@ -385,7 +385,7 @@ jobs:
           case "$CHANNEL" in
             dev) PH_TAG="dev" ;;
             staging) PH_TAG="staging" ;;
-            *) PH_TAG="latest" ;;
+            *) PH_TAG="dev" ;;
           esac
           echo "tag=$PH_TAG" >> $GITHUB_OUTPUT
 
