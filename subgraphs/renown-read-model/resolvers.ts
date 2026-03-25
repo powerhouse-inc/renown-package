@@ -1,5 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import type { ISubgraph } from "@powerhousedao/reactor-api";
-import type { IRelationalDb } from "@powerhousedao/reactor-browser";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
 import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
@@ -152,7 +152,8 @@ const getDriveId = (driveId?: string): string => {
 };
 
 export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
-  const db = subgraph.relationalDb as unknown as IRelationalDb;
+   
+  const db: any = subgraph.relationalDb;
 
   return {
     Query: {
@@ -162,6 +163,7 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
       ): Promise<ReadRenownUser | null> => {
         const { phid, ethAddress, username } = args.input;
 
+         
         let query = RenownUserProcessor.query<RenownUserDB>(
           "renown-user",
           db,
@@ -191,6 +193,7 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
       ): Promise<ReadRenownUser[]> => {
         const { driveId, phids, ethAddresses, usernames } = args.input;
 
+         
         let query = RenownUserProcessor.query<RenownUserDB>(
           "renown-user",
           db,
@@ -241,6 +244,7 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           includeRevoked = true,
         } = args.input;
 
+         
         let query = RenownCredentialProcessor.query<RenownCredentialDB>(
           "renown-credential",
           db,

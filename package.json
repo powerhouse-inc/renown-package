@@ -120,7 +120,7 @@
     "@powerhousedao/codegen": "6.0.1-staging.0",
     "@powerhousedao/connect": "6.0.1-staging.0",
     "@powerhousedao/ph-cli": "6.0.1-staging.0",
-    "@powerhousedao/reactor-api": "6.0.1-staging.0",
+    "@powerhousedao/reactor-api": "6.0.0-dev.111",
     "@powerhousedao/reactor-browser": "6.0.1-staging.0",
     "@powerhousedao/reactor-local": "6.0.1-staging.0",
     "@powerhousedao/scalars": "^2.0.1",
