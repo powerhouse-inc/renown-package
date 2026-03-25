@@ -44,8 +44,6 @@ RUN pnpm add -D package-manager-detector
 # Build the project
 RUN pnpm build || true
 
-# Regenerate Prisma client for Alpine Linux
-RUN prisma generate --schema node_modules/document-drive/dist/prisma/schema.prisma || true
 
 # -----------------------------------------------------------------------------
 # Connect build stage
@@ -104,9 +102,9 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 # Configure JSR registry
 RUN pnpm config set @jsr:registry https://npm.jsr.io
 
-# Install ph-cmd and prisma globally (needed at runtime)
+# Install ph-cmd globally (needed at runtime)
 ARG TAG=dev
-RUN pnpm add -g ph-cmd@$TAG prisma@5.17.0
+RUN pnpm add -g ph-cmd@$TAG
 
 # Copy built project from build stage
 COPY --from=base /app/project /app/project

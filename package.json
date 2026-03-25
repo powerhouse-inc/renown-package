@@ -124,7 +124,7 @@
     "@powerhousedao/reactor-browser": "6.0.1-staging.0",
     "@powerhousedao/reactor-local": "6.0.1-staging.0",
     "@powerhousedao/scalars": "^2.0.1",
-    "@powerhousedao/switchboard": "6.0.1-staging.0",
+    "@powerhousedao/switchboard": "6.0.0-dev.111",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
     "@tailwindcss/cli": "^4.1.14",
