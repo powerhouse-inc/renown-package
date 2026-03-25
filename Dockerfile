@@ -45,19 +45,8 @@ WORKDIR /app/project
 # Copy full project source
 COPY . ./
 
-# Install the current package (this package)
-ARG PACKAGE_NAME
-RUN if [ -n "$PACKAGE_NAME" ]; then \
-        echo "Installing package: $PACKAGE_NAME"; \
-        ph install "$PACKAGE_NAME"; \
-    else \
-        echo "Warning: PACKAGE_NAME not provided, using local build"; \
-        pnpm install; \
-    fi
-
-# Workaround: Install @testing-library/react required by design-system's testing.js
-# and package-manager-detector required by @powerhousedao/common
-RUN pnpm add -D @testing-library/react package-manager-detector
+# Install dependencies
+RUN pnpm install
 
 # Build the project from source
 RUN pnpm build || true
