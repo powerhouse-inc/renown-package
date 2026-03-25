@@ -1,3 +1,10 @@
+## [1.2.1-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.2.1-staging.1...v1.2.1-staging.2) (2026-03-25)
+
+
+### Bug Fixes
+
+* build local project in Docker and remove PH_PACKAGES from deploy ([02cb07d](https://github.com/powerhouse-inc/renown-package/commit/02cb07dcb4a5bb797bddcf6c2a3708026fda4be4))
+
 ## [1.2.1-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.2.0...v1.2.1-staging.1) (2026-03-25)
 
 
