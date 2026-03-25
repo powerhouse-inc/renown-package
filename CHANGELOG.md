@@ -1,3 +1,10 @@
+## [1.3.3](https://github.com/powerhouse-inc/renown-package/compare/v1.3.2...v1.3.3) (2026-03-25)
+
+
+### Bug Fixes
+
+* simplify Dockerfile — skip ph init, build from source directly ([f4082fe](https://github.com/powerhouse-inc/renown-package/commit/f4082fec6864d170b75190be829893fb5ee12889))
+
 ## [1.3.2](https://github.com/powerhouse-inc/renown-package/compare/v1.3.1...v1.3.2) (2026-03-25)
 
 
