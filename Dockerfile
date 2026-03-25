@@ -42,8 +42,8 @@ RUN case "$TAG" in \
 
 WORKDIR /app/project
 
-# Copy package files for the current package
-COPY package.json pnpm-lock.yaml ./
+# Copy full project source
+COPY . ./
 
 # Install the current package (this package)
 ARG PACKAGE_NAME
@@ -59,7 +59,7 @@ RUN if [ -n "$PACKAGE_NAME" ]; then \
 # and package-manager-detector required by @powerhousedao/common
 RUN pnpm add -D @testing-library/react package-manager-detector
 
-# Build the local project (document-models, subgraphs, processors)
+# Build the project from source
 RUN pnpm build || true
 
 # Regenerate Prisma client for Alpine Linux
