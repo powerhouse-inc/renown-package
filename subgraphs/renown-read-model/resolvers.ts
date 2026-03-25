@@ -1,4 +1,5 @@
 import type { ISubgraph } from "@powerhousedao/reactor-api";
+import type { IRelationalDb } from "@powerhousedao/reactor-browser";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
 import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
@@ -151,7 +152,7 @@ const getDriveId = (driveId?: string): string => {
 };
 
 export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
-  const db = subgraph.relationalDb;
+  const db = subgraph.relationalDb as unknown as IRelationalDb;
 
   return {
     Query: {

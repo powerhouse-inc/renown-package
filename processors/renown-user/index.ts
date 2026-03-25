@@ -1,11 +1,12 @@
-import { RelationalDbProcessorLegacy } from "document-drive";
-import { type InternalTransmitterUpdate } from "document-drive";
+import {
+  RelationalDbProcessor,
+  type OperationWithContext,
+} from "@powerhousedao/reactor-browser";
 import { up } from "./migrations.js";
 import { type DB } from "./schema.js";
 
-export class RenownUserProcessor extends RelationalDbProcessorLegacy<DB> {
+export class RenownUserProcessor extends RelationalDbProcessor<DB> {
   static override getNamespace(driveId: string): string {
-    // Default namespace: `${this.name}_${driveId.replaceAll("-", "_")}`
     return super.getNamespace(driveId);
   }
 
@@ -13,19 +14,15 @@ export class RenownUserProcessor extends RelationalDbProcessorLegacy<DB> {
     await up(this.relationalDb);
   }
 
-  override async onStrands(
-    strands: InternalTransmitterUpdate[]
+  override async onOperations(
+    operations: OperationWithContext[],
   ): Promise<void> {
-    if (strands.length === 0) {
+    if (operations.length === 0) {
       return;
     }
 
-    for (const strand of strands) {
-      if (strand.operations.length === 0) {
-        continue;
-      }
-
-      const documentId = strand.documentId;
+    for (const { operation, context } of operations) {
+      const documentId = context.documentId;
 
       // Ensure the User exists in the database
       const existingUser = await this.relationalDb
@@ -35,7 +32,6 @@ export class RenownUserProcessor extends RelationalDbProcessorLegacy<DB> {
         .executeTakeFirst();
 
       if (!existingUser) {
-        // Create a new User entry
         await this.relationalDb
           .insertInto("renown_user")
           .values({
@@ -49,56 +45,51 @@ export class RenownUserProcessor extends RelationalDbProcessorLegacy<DB> {
           .execute();
       }
 
-      // Process each operation
-      for (const operation of strand.operations) {
-        // Update the User based on the operation type
-        const updateData: Partial<{
-          username: string | null;
-          eth_address: string | null;
-          user_image: string | null;
-          updated_at: Date;
-        }> = {
-          updated_at: new Date(),
-        };
+      const updateData: Partial<{
+        username: string | null;
+        eth_address: string | null;
+        user_image: string | null;
+        updated_at: Date;
+      }> = {
+        updated_at: new Date(),
+      };
 
-        switch (operation.action.type) {
-          case "SET_USERNAME": {
-            const input = operation.action.input as
-              | { username?: string }
-              | undefined;
-            if (input?.username) {
-              updateData.username = input.username;
-            }
-            break;
+      switch (operation.action.type) {
+        case "SET_USERNAME": {
+          const input = operation.action.input as
+            | { username?: string }
+            | undefined;
+          if (input?.username) {
+            updateData.username = input.username;
           }
-          case "SET_ETH_ADDRESS": {
-            const input = operation.action.input as
-              | { ethAddress?: string }
-              | undefined;
-            if (input?.ethAddress) {
-              updateData.eth_address = input.ethAddress;
-            }
-            break;
-          }
-          case "SET_USER_IMAGE": {
-            const input = operation.action.input as
-              | { userImage?: string }
-              | undefined;
-            if (input?.userImage !== undefined) {
-              updateData.user_image = input.userImage || null;
-            }
-            break;
-          }
+          break;
         }
+        case "SET_ETH_ADDRESS": {
+          const input = operation.action.input as
+            | { ethAddress?: string }
+            | undefined;
+          if (input?.ethAddress) {
+            updateData.eth_address = input.ethAddress;
+          }
+          break;
+        }
+        case "SET_USER_IMAGE": {
+          const input = operation.action.input as
+            | { userImage?: string }
+            | undefined;
+          if (input?.userImage !== undefined) {
+            updateData.user_image = input.userImage || null;
+          }
+          break;
+        }
+      }
 
-        // Apply updates if there are any field changes
-        if (Object.keys(updateData).length > 1) {
-          await this.relationalDb
-            .updateTable("renown_user")
-            .set(updateData)
-            .where("document_id", "=", documentId)
-            .execute();
-        }
+      if (Object.keys(updateData).length > 1) {
+        await this.relationalDb
+          .updateTable("renown_user")
+          .set(updateData)
+          .where("document_id", "=", documentId)
+          .execute();
       }
     }
   }

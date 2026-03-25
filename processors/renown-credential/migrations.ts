@@ -1,6 +1,6 @@
-import { type IRelationalDbLegacy } from "document-drive";
+import type { IRelationalDb } from "@powerhousedao/reactor-browser";
 
-export async function up(db: IRelationalDbLegacy<any>): Promise<void> {
+export async function up(db: IRelationalDb<any>): Promise<void> {
   await down(db);
   // Create renown_credential table with EIP-712 signed credential schema
   await db.schema
@@ -88,7 +88,7 @@ export async function up(db: IRelationalDbLegacy<any>): Promise<void> {
     .execute();
 }
 
-export async function down(db: IRelationalDbLegacy<any>): Promise<void> {
+export async function down(db: IRelationalDb<any>): Promise<void> {
   // Drop renown_credential indexes
   await db.schema
     .dropIndex("idx_renown_credential_revoked")
