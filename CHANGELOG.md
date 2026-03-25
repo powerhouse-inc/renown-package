@@ -1,3 +1,10 @@
+## [1.3.2](https://github.com/powerhouse-inc/renown-package/compare/v1.3.1...v1.3.2) (2026-03-25)
+
+
+### Bug Fixes
+
+* default Docker TAG to dev and remove unused prisma global install ([fbd81f4](https://github.com/powerhouse-inc/renown-package/commit/fbd81f44a6448389c8cf66235341330fb61722dd))
+
 ## [1.3.1](https://github.com/powerhouse-inc/renown-package/compare/v1.3.0...v1.3.1) (2026-03-25)
 
 
