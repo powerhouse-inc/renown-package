@@ -1,18 +1,16 @@
 import { generateMock } from "@powerhousedao/codegen";
 import { describe, expect, it } from "vitest";
-import { reducer } from "../gen/reducer.js";
-import { utils } from "../gen/utils.js";
-import { isRenownUserDocument } from "../gen/document-schema.js";
 import {
+  reducer,
+  utils,
+  isRenownUserDocument,
   setUsername,
   setEthAddress,
   setUserImage,
-} from "../gen/profile/creators.js";
-import {
   SetUsernameInputSchema,
   SetEthAddressInputSchema,
   SetUserImageInputSchema,
-} from "../gen/schema/zod.js";
+} from "@powerhousedao/renown-package/document-models/renown-user";
 
 describe("ProfileOperations", () => {
   it("should handle setUsername operation", () => {

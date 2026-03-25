@@ -9,7 +9,7 @@ import {
   utils,
 } from "@powerhousedao/renown-package/document-models/renown-credential";
 
-/** Document model module for the Todo List document type */
+/** Document model module for the RenownCredential document type */
 export const RenownCredential: DocumentModelModule<RenownCredentialPHState> = {
   version: 1,
   reducer,

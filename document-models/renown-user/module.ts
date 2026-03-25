@@ -9,7 +9,7 @@ import {
   utils,
 } from "@powerhousedao/renown-package/document-models/renown-user";
 
-/** Document model module for the Todo List document type */
+/** Document model module for the RenownUser document type */
 export const RenownUser: DocumentModelModule<RenownUserPHState> = {
   version: 1,
   reducer,
