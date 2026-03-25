@@ -12,7 +12,7 @@
 # -----------------------------------------------------------------------------
 FROM node:24-alpine AS base
 
-WORKDIR /app
+WORKDIR /app/project
 
 # Install build dependencies
 RUN apk add --no-cache python3 make g++ git bash \
@@ -30,25 +30,18 @@ RUN pnpm config set @jsr:registry https://npm.jsr.io
 ARG TAG=dev
 ARG PH_CONNECT_BASE_PATH="/"
 
-# Install ph-cmd and prettier globally
-RUN pnpm add -g ph-cmd@$TAG prettier
+# Install ph-cmd globally
+RUN pnpm add -g ph-cmd@$TAG
 
-# Initialize project based on tag (dev/staging/latest)
-RUN case "$TAG" in \
-        *dev*) ph init project --dev --package-manager pnpm ;; \
-        *staging*) ph init project --staging --package-manager pnpm ;; \
-        *) ph init project --package-manager pnpm ;; \
-    esac
-
-WORKDIR /app/project
-
-# Copy full project source
+# Copy project source
 COPY . ./
 
 # Install dependencies
+ENV CI=true
 RUN pnpm install
+RUN pnpm add -D package-manager-detector
 
-# Build the project from source
+# Build the project
 RUN pnpm build || true
 
 # Regenerate Prisma client for Alpine Linux
@@ -112,7 +105,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 RUN pnpm config set @jsr:registry https://npm.jsr.io
 
 # Install ph-cmd and prisma globally (needed at runtime)
-ARG TAG=latest
+ARG TAG=dev
 RUN pnpm add -g ph-cmd@$TAG prisma@5.17.0
 
 # Copy built project from build stage
