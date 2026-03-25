@@ -1,3 +1,13 @@
+## [1.2.1-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.2.0...v1.2.1-staging.1) (2026-03-25)
+
+
+### Bug Fixes
+
+* remove PH_PACKAGES update from deploy step ([3724a3c](https://github.com/powerhouse-inc/renown-package/commit/3724a3ca362f087424d830e9d1a566620f2ec163))
+* remove PH_PACKAGES update from deploy step ([4bf66b4](https://github.com/powerhouse-inc/renown-package/commit/4bf66b43fbdab5b96e719e315e170ecab6aac248))
+* restore PH_PACKAGES update in deploy step with double quotes ([a3f3c76](https://github.com/powerhouse-inc/renown-package/commit/a3f3c765222f9eba04175468ca72a589e1b4b25d))
+* restore PH_PACKAGES update in deploy step with double quotes ([2a8520a](https://github.com/powerhouse-inc/renown-package/commit/2a8520aeb858031b065c7bf32efe1eee74a7f054))
+
 # [1.2.0](https://github.com/powerhouse-inc/renown-package/compare/v1.1.0...v1.2.0) (2026-03-24)
 
 
