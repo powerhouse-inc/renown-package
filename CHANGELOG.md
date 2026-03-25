@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/powerhouse-inc/renown-package/compare/v1.2.2...v1.3.0) (2026-03-25)
+
+
+### Features
+
+* migrate processors to v6 reactor API ([de1c934](https://github.com/powerhouse-inc/renown-package/commit/de1c934695abd9cd8b9a0de5d5f9851e585765d7))
+
 ## [1.2.2](https://github.com/powerhouse-inc/renown-package/compare/v1.2.1...v1.2.2) (2026-03-25)
 
 
