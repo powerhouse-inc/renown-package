@@ -1,3 +1,10 @@
+## [1.3.5](https://github.com/powerhouse-inc/renown-package/compare/v1.3.4...v1.3.5) (2026-03-25)
+
+
+### Bug Fixes
+
+* update reactor-api to dev for v6 BaseSubgraph with reactorClient ([3f8789a](https://github.com/powerhouse-inc/renown-package/commit/3f8789ab0a97d7f33f58f67f8a9b5a05aced3c5c))
+
 ## [1.3.4](https://github.com/powerhouse-inc/renown-package/compare/v1.3.3...v1.3.4) (2026-03-25)
 
 
