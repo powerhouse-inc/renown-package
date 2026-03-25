@@ -1,3 +1,10 @@
+## [1.2.2](https://github.com/powerhouse-inc/renown-package/compare/v1.2.1...v1.2.2) (2026-03-25)
+
+
+### Bug Fixes
+
+* use dev ph-cmd tag for latest channel to pick up switchboard fix ([e29d12a](https://github.com/powerhouse-inc/renown-package/commit/e29d12ada1f05b16837ac0adf4e41dbaf57df7dc))
+
 ## [1.2.1](https://github.com/powerhouse-inc/renown-package/compare/v1.2.0...v1.2.1) (2026-03-25)
 
 
