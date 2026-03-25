@@ -1,3 +1,10 @@
+## [1.3.4](https://github.com/powerhouse-inc/renown-package/compare/v1.3.3...v1.3.4) (2026-03-25)
+
+
+### Bug Fixes
+
+* use switchboard@dev with Postgres read model fix, remove Prisma ([37beb21](https://github.com/powerhouse-inc/renown-package/commit/37beb21b9ef095ac04c3ca570246adbae81e49f6))
+
 ## [1.3.3](https://github.com/powerhouse-inc/renown-package/compare/v1.3.2...v1.3.3) (2026-03-25)
 
 
