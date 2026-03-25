@@ -1,3 +1,10 @@
+## [1.2.1-staging.3](https://github.com/powerhouse-inc/renown-package/compare/v1.2.1-staging.2...v1.2.1-staging.3) (2026-03-25)
+
+
+### Bug Fixes
+
+* copy full project source in Docker to build document-models from source ([4669bdd](https://github.com/powerhouse-inc/renown-package/commit/4669bddbf6528fc9edd406b9eb65971a7f7b849e))
+
 ## [1.2.1-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.2.1-staging.1...v1.2.1-staging.2) (2026-03-25)
 
 
