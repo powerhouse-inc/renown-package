@@ -59,6 +59,9 @@ RUN if [ -n "$PACKAGE_NAME" ]; then \
 # and package-manager-detector required by @powerhousedao/common
 RUN pnpm add -D @testing-library/react package-manager-detector
 
+# Build the local project (document-models, subgraphs, processors)
+RUN pnpm build || true
+
 # Regenerate Prisma client for Alpine Linux
 RUN prisma generate --schema node_modules/document-drive/dist/prisma/schema.prisma || true
 
