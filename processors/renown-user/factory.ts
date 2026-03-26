@@ -5,6 +5,7 @@ import type {
 } from "@powerhousedao/reactor-browser";
 import type { PHDocumentHeader } from "document-model";
 import { RenownUserProcessor } from "./index.js";
+import { up } from "./migrations.js";
 
 export const renownUserProcessorFactory =
   (module: IProcessorHostModule) =>
@@ -12,6 +13,8 @@ export const renownUserProcessorFactory =
     const namespace = RenownUserProcessor.getNamespace("renown-user");
     const store =
       await module.relationalDb.createNamespace<RenownUserProcessor>(namespace);
+
+    await up(store);
 
     const filter: ProcessorFilter = {
       branch: ["main"],

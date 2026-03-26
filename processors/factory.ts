@@ -10,7 +10,7 @@ import {
   type IProcessorHostModuleWithReactor,
 } from "./renown-credential/factory.js";
 
-export const processorFactory = async (
+export const processorFactory = (
   module: IProcessorHostModule | IProcessorHostModuleWithReactor,
 ) => {
   const factories: Array<
