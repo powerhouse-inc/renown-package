@@ -1,7 +1,6 @@
 import type { IRelationalDb } from "@powerhousedao/reactor-browser";
 
 export async function up(db: IRelationalDb<any>): Promise<void> {
-  await down(db);
   // Create renown_user table
   await db.schema
     .createTable("renown_user")

@@ -54,13 +54,13 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
 
       switch (operation.action.type) {
         case "INIT": {
-          // resultingState contains the full document state after this operation
+          // Try resultingState first, fall back to action input
           const stateStr = operation.resultingState ?? context.resultingState;
           const state = stateStr
             ? (JSON.parse(stateStr) as RenownCredentialState | undefined)
-            : undefined;
+            : (operation.action.input as RenownCredentialState | undefined);
 
-          if (state && !existingCredential) {
+          if (state) {
             await this.relationalDb
               .insertInto("renown_credential")
               .values({
@@ -104,6 +104,9 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
                 created_at: new Date(),
                 updated_at: new Date(),
               })
+              .onConflict((oc) => oc.column("document_id").doUpdateSet({
+                updated_at: new Date(),
+              }))
               .execute();
           }
           break;

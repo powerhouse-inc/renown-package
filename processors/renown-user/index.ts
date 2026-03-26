@@ -42,6 +42,7 @@ export class RenownUserProcessor extends RelationalDbProcessor<DB> {
             created_at: new Date(),
             updated_at: new Date(),
           })
+          .onConflict((oc) => oc.column("document_id").doNothing())
           .execute();
       }
 
