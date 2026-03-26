@@ -1,3 +1,10 @@
+## [1.3.6](https://github.com/powerhouse-inc/renown-package/compare/v1.3.5...v1.3.6) (2026-03-26)
+
+
+### Bug Fixes
+
+* run migrations in processor factories and make factory sync ([3c848a6](https://github.com/powerhouse-inc/renown-package/commit/3c848a64da8da980801b36eb438e2b60aedd8750))
+
 ## [1.3.5](https://github.com/powerhouse-inc/renown-package/compare/v1.3.4...v1.3.5) (2026-03-25)
 
 
