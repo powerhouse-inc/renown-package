@@ -1,3 +1,10 @@
+## [1.3.7](https://github.com/powerhouse-inc/renown-package/compare/v1.3.6...v1.3.7) (2026-03-26)
+
+
+### Bug Fixes
+
+* handle duplicate keys and missing resultingState in processors ([1003058](https://github.com/powerhouse-inc/renown-package/commit/1003058be1bb67d6fc29d650ebbb856d0e79b73c))
+
 ## [1.3.6](https://github.com/powerhouse-inc/renown-package/compare/v1.3.5...v1.3.6) (2026-03-26)
 
 
