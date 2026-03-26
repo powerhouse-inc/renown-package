@@ -1,3 +1,10 @@
+## [1.3.8](https://github.com/powerhouse-inc/renown-package/compare/v1.3.7...v1.3.8) (2026-03-26)
+
+
+### Bug Fixes
+
+* prefer action.input over resultingState for credential INIT ([390878a](https://github.com/powerhouse-inc/renown-package/commit/390878a0e3cd4e130ad68feafeb9ee91e78648f5))
+
 ## [1.3.7](https://github.com/powerhouse-inc/renown-package/compare/v1.3.6...v1.3.7) (2026-03-26)
 
 
