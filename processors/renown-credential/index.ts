@@ -54,11 +54,15 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
 
       switch (operation.action.type) {
         case "INIT": {
-          // Try resultingState first, fall back to action input
-          const stateStr = operation.resultingState ?? context.resultingState;
-          const state = stateStr
-            ? (JSON.parse(stateStr) as RenownCredentialState | undefined)
-            : (operation.action.input as RenownCredentialState | undefined);
+          // Prefer action.input (the actual INIT payload) over resultingState
+          // which may be the empty initial state from UPGRADE_DOCUMENT
+          const input = operation.action.input as RenownCredentialState | undefined;
+          const state = (input?.id || input?.issuer)
+            ? input
+            : (() => {
+                const stateStr = operation.resultingState ?? context.resultingState;
+                return stateStr ? (JSON.parse(stateStr) as RenownCredentialState | undefined) : undefined;
+              })();
 
           if (state) {
             await this.relationalDb
@@ -105,6 +109,19 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
                 updated_at: new Date(),
               })
               .onConflict((oc) => oc.column("document_id").doUpdateSet({
+                context: state.context ? JSON.stringify(state.context) : "[]",
+                credential_id: state.id || "",
+                type: state.type ? JSON.stringify(state.type) : "[]",
+                issuer_id: state.issuer?.id || "",
+                issuer_ethereum_address: state.issuer?.ethereumAddress || "",
+                credential_subject_id: state.credentialSubject?.id || null,
+                credential_subject_app: state.credentialSubject?.app || "",
+                proof_verification_method: state.proof?.verificationMethod || "",
+                proof_ethereum_address: state.proof?.ethereumAddress || "",
+                proof_type: state.proof?.type || "",
+                proof_value: state.proof?.proofValue || "",
+                proof_eip712_domain: state.proof?.eip712?.domain ? JSON.stringify(state.proof.eip712.domain) : "{}",
+                proof_eip712_primary_type: state.proof?.eip712?.primaryType || "",
                 updated_at: new Date(),
               }))
               .execute();
