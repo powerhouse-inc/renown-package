@@ -100,7 +100,7 @@
     "@powerhousedao/builder-tools": "6.0.1-staging.0",
     "@powerhousedao/common": "6.0.1-staging.0",
     "@powerhousedao/design-system": "6.0.1-staging.0",
-    "@powerhousedao/document-engineering": "^1.40.3",
+    "@powerhousedao/document-engineering": "^1.40.5",
     "@powerhousedao/vetra": "6.0.1-staging.0",
     "document-model": "6.0.1-staging.0",
     "graphql": "^16.10.0",
