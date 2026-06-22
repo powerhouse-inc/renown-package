@@ -24,12 +24,21 @@
       "documentTypes": ["powerhouse/renown-user"]
     },
     {
-      "name": "Renown Credential Editor",
       "id": "renown-credential-editor",
+      "name": "Renown Credential Editor",
       "documentTypes": ["powerhouse/renown-credential"]
     }
   ],
-  "processors": [],
+  "processors": [
+    {
+      "id": "renown-user",
+      "name": "renown-user"
+    },
+    {
+      "name": "renown-credential",
+      "id": "renown-credential"
+    }
+  ],
   "subgraphs": [],
   "config": []
 }
