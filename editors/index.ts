@@ -1,4 +1,2 @@
-/**
- * WARNING: DO NOT EDIT
- * This file is auto-generated and updated by codegen
- */
+export { RenownCredentialEditor } from "./renown-credential-editor/module.js";
+export { RenownUserEditor } from "./renown-user-editor/module.js";

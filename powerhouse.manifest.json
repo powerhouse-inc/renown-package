@@ -17,7 +17,18 @@
     }
   ],
   "apps": [],
-  "editors": [],
+  "editors": [
+    {
+      "id": "renown-user-editor",
+      "name": "Renown User Editor",
+      "documentTypes": ["powerhouse/renown-user"]
+    },
+    {
+      "name": "Renown Credential Editor",
+      "id": "renown-credential-editor",
+      "documentTypes": ["powerhouse/renown-credential"]
+    }
+  ],
   "processors": [],
   "subgraphs": [],
   "config": []
