@@ -1,7 +1,20 @@
 {
   "name": "@powerhousedao/renown-package",
+  "description": "Renown document models, editors, and processors for the Powerhouse ecosystem",
   "version": "0.0.33-staging.4",
   "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/powerhouse-inc/renown-package.git"
+  },
+  "bugs": {
+    "url": "https://github.com/powerhouse-inc/renown-package/issues"
+  },
+  "keywords": [
+    "powerhouse",
+    "document-model",
+    "renown"
+  ],
   "type": "module",
   "files": [
     "/dist"
@@ -29,9 +42,9 @@
       "node": "./dist/node/editors/index.mjs"
     },
     "./editors/*": {
-      "types": "./dist/types/editors/*/editor.d.ts",
-      "browser": "./dist/browser/editors/*/editor.js",
-      "node": "./dist/node/editors/*/editor.mjs"
+      "types": "./dist/types/editors/*/module.d.ts",
+      "browser": "./dist/browser/editors/*/module.js",
+      "node": "./dist/node/editors/*/module.mjs"
     },
     "./subgraphs": {
       "types": "./dist/types/subgraphs/index.d.ts",
@@ -58,6 +71,7 @@
     "generate": "ph-cli generate",
     "connect": "ph-cli connect",
     "build": "ph-cli build",
+    "prepublishOnly": "npm run build",
     "reactor": "ph-cli reactor",
     "service": "ph-cli service",
     "vetra": "ph-cli vetra",
