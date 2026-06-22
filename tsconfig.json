@@ -29,5 +29,12 @@
     "skipLibCheck": true
   },
   "include": ["**/*", "./powerhouse.manifest.json"],
-  "exclude": ["dist", "node_modules", ".ph", "vitest.config.ts", "main.tsx", "reference"]
+  "exclude": [
+    "dist",
+    "node_modules",
+    ".ph",
+    "vitest.config.ts",
+    "main.tsx",
+    "reference"
+  ]
 }
