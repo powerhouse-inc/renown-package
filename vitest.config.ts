@@ -1,9 +1,10 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, configDefaults } from "vitest/config";
 import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
   test: {
     globals: true,
+    exclude: [...configDefaults.exclude, "**/reference/**"],
     coverage: {
       provider: "v8",
       include: ["document-models/**/src/reducers/**"],

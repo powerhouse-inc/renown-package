@@ -46,9 +46,9 @@ describe("RenownUser Document Model", () => {
     }
   });
   const wrongState = utils.createDocument();
-  // @ts-expect-error - we are testing the error case
   wrongState.state.global = {
-    ...{ notWhat: "you want" },
+    // @ts-expect-error - we are testing the error case (username must be a string)
+    username: 123,
   };
   try {
     expect(isRenownUserState(wrongState.state)).toBe(false);
@@ -59,14 +59,18 @@ describe("RenownUser Document Model", () => {
     expect(error).toBeInstanceOf(ZodError);
   }
 
+  // NOTE: RenownUserState is all-optional, so a weak fixture like { notWhat: "..." }
+  // is zod-stripped to a valid {} — use a type-invalid value to actually fail the
+  // guard. This block corrupts .initialState (the previous scaffold checked the
+  // untouched .state, which could never fail).
   const wrongInitialState = utils.createDocument();
-  // @ts-expect-error - we are testing the error case
   wrongInitialState.initialState.global = {
-    ...{ notWhat: "you want" },
+    // @ts-expect-error - we are testing the error case (username must be a string)
+    username: 123,
   };
   try {
-    expect(isRenownUserState(wrongInitialState.state)).toBe(false);
-    expect(assertIsRenownUserState(wrongInitialState.state)).toThrow();
+    expect(isRenownUserState(wrongInitialState.initialState)).toBe(false);
+    expect(assertIsRenownUserState(wrongInitialState.initialState)).toThrow();
     expect(isRenownUserDocument(wrongInitialState)).toBe(false);
     expect(assertIsRenownUserDocument(wrongInitialState)).toThrow();
   } catch (error) {
