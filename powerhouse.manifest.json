@@ -35,10 +35,19 @@
       "name": "renown-user"
     },
     {
-      "name": "renown-credential",
-      "id": "renown-credential"
+      "id": "renown-credential",
+      "name": "renown-credential"
     }
   ],
-  "subgraphs": [],
+  "subgraphs": [
+    {
+      "id": "renown-user",
+      "name": "renown-user"
+    },
+    {
+      "name": "renown-read-model",
+      "id": "renown-read-model"
+    }
+  ],
   "config": []
 }
