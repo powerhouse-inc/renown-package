@@ -17,3 +17,4 @@ projects-import.js
 .plans
 reference
 .branches
+*.tsbuildinfo
