@@ -1,8 +1,6 @@
-import type { DocumentModelModule } from "document-model";
-import { RenownCredential } from "./renown-credential/module.js";
-import { RenownUser } from "./renown-user/module.js";
+/**
+ * WARNING: DO NOT EDIT
+ * This file is auto-generated and updated by codegen
+ */
 
-export const documentModels: DocumentModelModule<any>[] = [
-  RenownCredential,
-  RenownUser,
-];
+export const documentModels = [] as const;

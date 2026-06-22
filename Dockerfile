@@ -12,7 +12,7 @@
 # -----------------------------------------------------------------------------
 FROM node:24-alpine AS base
 
-WORKDIR /app/project
+WORKDIR /app
 
 # Install build dependencies
 RUN apk add --no-cache python3 make g++ git bash \
@@ -20,30 +20,43 @@ RUN apk add --no-cache python3 make g++ git bash \
 
 # Setup pnpm
 ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
+ENV PATH="$PNPM_HOME/bin:$PNPM_HOME:$PATH"
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Configure JSR registry
 RUN pnpm config set @jsr:registry https://npm.jsr.io
 
 # Build arguments
-ARG TAG=dev
+ARG TAG=latest
 ARG PH_CONNECT_BASE_PATH="/"
 
-# Install ph-cmd globally
-RUN pnpm add -g ph-cmd@$TAG
+# Install ph-cmd, prisma, and prettier globally
+RUN pnpm add -g ph-cmd@$TAG prisma@5.17.0 prettier
 
-# Copy project source
-COPY . ./
+# Initialize project based on tag (dev/staging/latest)
+RUN case "$TAG" in \
+        *dev*) ph init project --dev --package-manager pnpm ;; \
+        *staging*) ph init project --staging --package-manager pnpm ;; \
+        *) ph init project --package-manager pnpm ;; \
+    esac
 
-# Install dependencies
-ENV CI=true
-RUN pnpm install
-RUN pnpm add -D package-manager-detector
+WORKDIR /app/project
 
-# Build the project
-RUN pnpm build || true
+# Copy package files for the current package
+COPY package.json pnpm-lock.yaml ./
 
+# Install the current package (this package)
+ARG PACKAGE_NAME
+RUN if [ -n "$PACKAGE_NAME" ]; then \
+        echo "Installing package: $PACKAGE_NAME"; \
+        ph install "$PACKAGE_NAME"; \
+    else \
+        echo "Warning: PACKAGE_NAME not provided, using local build"; \
+        pnpm install; \
+    fi
+
+# Regenerate Prisma client for Alpine Linux
+RUN prisma generate --schema node_modules/document-drive/dist/prisma/schema.prisma || true
 
 # -----------------------------------------------------------------------------
 # Connect build stage
@@ -96,15 +109,15 @@ RUN apk add --no-cache curl openssl
 
 # Setup pnpm
 ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
+ENV PATH="$PNPM_HOME/bin:$PNPM_HOME:$PATH"
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Configure JSR registry
 RUN pnpm config set @jsr:registry https://npm.jsr.io
 
-# Install ph-cmd globally (needed at runtime)
-ARG TAG=dev
-RUN pnpm add -g ph-cmd@$TAG
+# Install ph-cmd and prisma globally (needed at runtime)
+ARG TAG=latest
+RUN pnpm add -g ph-cmd@$TAG prisma@5.17.0
 
 # Copy built project from build stage
 COPY --from=base /app/project /app/project

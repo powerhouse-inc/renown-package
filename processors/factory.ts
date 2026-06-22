@@ -1,35 +1,35 @@
+/**
+ * WARNING: DO NOT EDIT
+ * This file is auto-generated and updated by codegen
+ */
 import type {
-  ProcessorRecord,
   IProcessorHostModule,
+  ProcessorRecord,
 } from "@powerhousedao/reactor-browser";
 import type { PHDocumentHeader } from "document-model";
 
-import { renownUserProcessorFactory } from "./renown-user/factory.js";
-import {
-  renownCredentialProcessorFactory,
-  type IProcessorHostModuleWithReactor,
-} from "./renown-credential/factory.js";
+export const processorFactory = async (module: IProcessorHostModule) => {
+  const { processorFactoryBuilders } =
+    module.processorApp === "connect"
+      ? await import("./connect.js")
+      : await import("./switchboard.js");
 
-export const processorFactory = (
-  module: IProcessorHostModule | IProcessorHostModuleWithReactor,
-) => {
-  const factories: Array<
-    (driveHeader: PHDocumentHeader) => Promise<ProcessorRecord[]>
-  > = [];
-
-  factories.push(renownUserProcessorFactory(module));
-  factories.push(
-    renownCredentialProcessorFactory(
-      module as IProcessorHostModuleWithReactor,
+  const factories = await Promise.all(
+    processorFactoryBuilders.map(
+      async (buildFactory) => await buildFactory(module),
     ),
   );
 
+  // Return the inner function that will be called for each drive
   return async (driveHeader: PHDocumentHeader): Promise<ProcessorRecord[]> => {
     const processors: ProcessorRecord[] = [];
+
+    // Call each cached factory with the driveHeader
     for (const factory of factories) {
-      const factoryProcessors = await factory(driveHeader);
+      const factoryProcessors = await factory(driveHeader, module.processorApp);
       processors.push(...factoryProcessors);
     }
+
     return processors;
   };
 };
