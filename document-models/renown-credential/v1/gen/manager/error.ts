@@ -1,0 +1,64 @@
+export type ErrorCode =
+  | "MissingContextError"
+  | "InvalidJwtPayloadError"
+  | "JwtVerificationError"
+  | "InvalidClaimsError"
+  | "MissingTypeError"
+  | "AlreadyRevokedError";
+
+export interface ReducerError {
+  errorCode: ErrorCode;
+}
+
+export class MissingContextError extends Error implements ReducerError {
+  errorCode = "MissingContextError" as ErrorCode;
+  constructor(message = "MissingContextError") {
+    super(message);
+  }
+}
+
+export class InvalidJwtPayloadError extends Error implements ReducerError {
+  errorCode = "InvalidJwtPayloadError" as ErrorCode;
+  constructor(message = "InvalidJwtPayloadError") {
+    super(message);
+  }
+}
+
+export class JwtVerificationError extends Error implements ReducerError {
+  errorCode = "JwtVerificationError" as ErrorCode;
+  constructor(message = "JwtVerificationError") {
+    super(message);
+  }
+}
+
+export class InvalidClaimsError extends Error implements ReducerError {
+  errorCode = "InvalidClaimsError" as ErrorCode;
+  constructor(message = "InvalidClaimsError") {
+    super(message);
+  }
+}
+
+export class MissingTypeError extends Error implements ReducerError {
+  errorCode = "MissingTypeError" as ErrorCode;
+  constructor(message = "MissingTypeError") {
+    super(message);
+  }
+}
+
+export class AlreadyRevokedError extends Error implements ReducerError {
+  errorCode = "AlreadyRevokedError" as ErrorCode;
+  constructor(message = "AlreadyRevokedError") {
+    super(message);
+  }
+}
+
+export const errors = {
+  Init: {
+    MissingContextError,
+    InvalidJwtPayloadError,
+    JwtVerificationError,
+    InvalidClaimsError,
+    MissingTypeError,
+  },
+  Revoke: { AlreadyRevokedError },
+};

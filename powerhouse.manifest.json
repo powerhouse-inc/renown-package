@@ -6,7 +6,16 @@
     "name": "Powerhouse Inc.",
     "url": "https://www.powerhouse.inc"
   },
-  "documentModels": [],
+  "documentModels": [
+    {
+      "id": "powerhouse/renown-user",
+      "name": "RenownUser"
+    },
+    {
+      "id": "powerhouse/renown-credential",
+      "name": "RenownCredential"
+    }
+  ],
   "apps": [],
   "editors": [],
   "processors": [],

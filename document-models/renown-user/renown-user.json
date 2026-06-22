@@ -1,0 +1,70 @@
+{
+  "id": "powerhouse/renown-user",
+  "name": "RenownUser",
+  "author": {
+    "name": "Powerhouse Inc.",
+    "website": "https://www.powerhouse.inc"
+  },
+  "extension": "phru",
+  "description": "A renown user",
+  "specifications": [
+    {
+      "state": {
+        "local": {
+          "schema": "",
+          "examples": [],
+          "initialValue": ""
+        },
+        "global": {
+          "schema": "type RenownUserState {\n  \"Add your global state fields here\"\n  username: String\n  ethAddress: EthereumAddress\n  userImage: String\n}",
+          "examples": [],
+          "initialValue": "{\n  \"username\": null,\n  \"ethAddress\": null,\n  \"userImage\": null\n}"
+        }
+      },
+      "modules": [
+        {
+          "id": "72dcc8b4-dcb1-4d12-b202-ef37f8837c0d",
+          "name": "profile",
+          "description": "",
+          "operations": [
+            {
+              "id": "a838e278-512c-455f-bc76-fdb67d787ed3",
+              "name": "SET_USERNAME",
+              "description": "",
+              "schema": "input SetUsernameInput {\n  \"Add your inputs here\"\n  username: String!\n}",
+              "template": "",
+              "reducer": "state.username = action.input.username;",
+              "errors": [],
+              "examples": [],
+              "scope": "global"
+            },
+            {
+              "id": "dd4f3288-1172-41bd-b689-7853b67bab1d",
+              "name": "SET_ETH_ADDRESS",
+              "description": "",
+              "schema": "input SetEthAddressInput {\n  \"Add your inputs here\"\n  ethAddress: EthereumAddress!\n}",
+              "template": "",
+              "reducer": "state.ethAddress = action.input.ethAddress;",
+              "errors": [],
+              "examples": [],
+              "scope": "global"
+            },
+            {
+              "id": "a63ce76c-d01b-4be6-9b37-7c1d252966fc",
+              "name": "SET_USER_IMAGE",
+              "description": "",
+              "schema": "input SetUserImageInput {\n  \"Add your inputs here\"\n  userImage: String!\n}",
+              "template": "",
+              "reducer": "state.userImage = action.input.userImage;",
+              "errors": [],
+              "examples": [],
+              "scope": "global"
+            }
+          ]
+        }
+      ],
+      "version": 1,
+      "changeLog": []
+    }
+  ]
+}
