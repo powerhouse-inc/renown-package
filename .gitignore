@@ -18,3 +18,4 @@ projects-import.js
 reference
 .branches
 *.tsbuildinfo
+.playwright-mcp
