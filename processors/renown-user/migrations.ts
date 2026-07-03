@@ -1,4 +1,5 @@
 import type { IRelationalDb } from "@powerhousedao/reactor-browser";
+import { sql } from "kysely";
 
 export async function up(db: IRelationalDb<any>): Promise<void> {
   // Create renown_user table
@@ -22,17 +23,29 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
     .ifNotExists()
     .execute();
 
-  // Create index on eth_address for faster lookups
+  // Expression index matching the resolver's LOWER(eth_address) lookup so the
+  // case-insensitive match stays an index scan.
   await db.schema
-    .createIndex("idx_renown_user_eth_address")
+    .createIndex("idx_renown_user_eth_address_lower")
     .on("renown_user")
-    .column("eth_address")
+    .expression(sql`LOWER(eth_address)`)
     .ifNotExists()
+    .execute();
+
+  // Drop the plain-column eth_address index superseded by the LOWER() one above;
+  // resolvers filter eth_address only via LOWER, so the raw index is unused.
+  await db.schema
+    .dropIndex("idx_renown_user_eth_address")
+    .ifExists()
     .execute();
 }
 
 export async function down(db: IRelationalDb<any>): Promise<void> {
   // Drop renown_user indexes
+  await db.schema
+    .dropIndex("idx_renown_user_eth_address_lower")
+    .ifExists()
+    .execute();
   await db.schema.dropIndex("idx_renown_user_eth_address").ifExists().execute();
   await db.schema.dropIndex("idx_renown_user_username").ifExists().execute();
 

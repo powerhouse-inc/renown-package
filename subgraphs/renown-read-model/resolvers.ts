@@ -173,7 +173,12 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
         if (phid) {
           query = query.where("renown_user.document_id", "=", phid);
         } else if (ethAddress) {
-          query = query.where("renown_user.eth_address", "=", ethAddress);
+          // Match case-insensitively so clients that send checksummed or
+          // lowercase addresses resolve to the same user.
+          const addr = ethAddress.toLowerCase();
+          query = query.where((eb) =>
+            eb(eb.fn("LOWER", ["renown_user.eth_address"]), "=", addr),
+          );
         } else if (username) {
           query = query.where("renown_user.username", "=", username);
         } else {
@@ -182,7 +187,13 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           );
         }
 
-        const result = await query.selectAll().executeTakeFirst();
+        // Deterministic order (newest first) so a stable, current row is
+        // returned even if duplicate documents exist for the same address.
+        const result = await query
+          .selectAll()
+          .orderBy("renown_user.created_at", "desc")
+          .orderBy("renown_user.document_id", "desc")
+          .executeTakeFirst();
 
         return result ? mapToUser(result) : null;
       },
@@ -217,7 +228,14 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           }
 
           if (hasEthAddresses) {
-            conditions.push(eb("renown_user.eth_address", "in", ethAddresses));
+            // Match case-insensitively (see renownUser above).
+            conditions.push(
+              eb(
+                eb.fn("LOWER", ["renown_user.eth_address"]),
+                "in",
+                ethAddresses.map((a) => a.toLowerCase()),
+              ),
+            );
           }
 
           if (hasUsernames) {
@@ -227,7 +245,11 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           return eb.or(conditions);
         });
 
-        const results = await query.selectAll().execute();
+        const results = await query
+          .selectAll()
+          .orderBy("renown_user.created_at", "desc")
+          .orderBy("renown_user.document_id", "desc")
+          .execute();
 
         return results.map(mapToUser);
       },
