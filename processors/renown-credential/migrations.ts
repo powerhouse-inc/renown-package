@@ -1,4 +1,5 @@
 import type { IRelationalDb } from "@powerhousedao/reactor-browser";
+import { sql } from "kysely";
 
 export async function up(db: IRelationalDb<any>): Promise<void> {
   // Create renown_credential table with EIP-712 signed credential schema
@@ -85,10 +86,34 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
     .column("revoked")
     .ifNotExists()
     .execute();
+
+  // Expression indexes matching the resolver's LOWER(address) filters; plain
+  // column indexes can't serve them, so without these the lookup seq-scans.
+  await db.schema
+    .createIndex("idx_renown_credential_issuer_eth_lower")
+    .on("renown_credential")
+    .expression(sql`LOWER(issuer_ethereum_address)`)
+    .ifNotExists()
+    .execute();
+
+  await db.schema
+    .createIndex("idx_renown_credential_proof_eth_lower")
+    .on("renown_credential")
+    .expression(sql`LOWER(proof_ethereum_address)`)
+    .ifNotExists()
+    .execute();
 }
 
 export async function down(db: IRelationalDb<any>): Promise<void> {
   // Drop renown_credential indexes
+  await db.schema
+    .dropIndex("idx_renown_credential_proof_eth_lower")
+    .ifExists()
+    .execute();
+  await db.schema
+    .dropIndex("idx_renown_credential_issuer_eth_lower")
+    .ifExists()
+    .execute();
   await db.schema
     .dropIndex("idx_renown_credential_revoked")
     .ifExists()
