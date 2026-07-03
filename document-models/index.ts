@@ -1,2 +1,2 @@
-export { RenownCredential } from "./renown-credential/module.js";
-export { RenownUser } from "./renown-user/module.js";
+export { RenownCredential as RenownCredentialV1 } from "./renown-credential/v1/module.js";
+export { RenownUser as RenownUserV1 } from "./renown-user/v1/module.js";

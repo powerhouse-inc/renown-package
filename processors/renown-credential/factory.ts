@@ -1,28 +1,29 @@
 import type {
-  ProcessorRecord,
   IProcessorHostModule,
+  ProcessorApp,
+  ProcessorFactoryBuilder,
   ProcessorFilter,
 } from "@powerhousedao/reactor-browser";
 import type { PHDocumentHeader } from "document-model";
-import { RenownCredentialProcessor, type IReactor } from "./index.js";
-import { up } from "./migrations.js";
+import { RenownCredential, type IReactor } from "./processor.js";
 
-export interface IProcessorHostModuleWithReactor extends IProcessorHostModule {
+// The host module optionally exposes a reactor so the processor can delete a
+// document when its credential is revoked (preserved from the original impl).
+interface IProcessorHostModuleWithReactor extends IProcessorHostModule {
   reactor?: IReactor;
 }
 
-export const renownCredentialProcessorFactory =
-  (module: IProcessorHostModuleWithReactor) =>
-  async (driveHeader: PHDocumentHeader): Promise<ProcessorRecord[]> => {
-    const namespace =
-      RenownCredentialProcessor.getNamespace("renown-credential");
+export const renownCredentialFactoryBuilder: ProcessorFactoryBuilder =
+  (module: IProcessorHostModule) =>
+  async (driveHeader: PHDocumentHeader, processorApp?: ProcessorApp) => {
+    // Create a namespace for the processor and the provided drive id
+    const namespace = RenownCredential.getNamespace(driveHeader.id);
+
+    // Create a namespaced db for the processor
     const store =
-      await module.relationalDb.createNamespace<RenownCredentialProcessor>(
-        namespace,
-      );
+      await module.relationalDb.createNamespace<RenownCredential>(namespace);
 
-    await up(store);
-
+    // Create a filter for the processor
     const filter: ProcessorFilter = {
       branch: ["main"],
       documentId: ["*"],
@@ -30,11 +31,13 @@ export const renownCredentialProcessorFactory =
       scope: ["global"],
     };
 
-    const processor = new RenownCredentialProcessor(
-      namespace,
-      filter,
-      store,
-      module.reactor,
-    );
-    return [{ processor, filter }];
+    // Create the processor (wire the optional reactor for revoke-time deletion)
+    const reactor = (module as IProcessorHostModuleWithReactor).reactor;
+    const processor = new RenownCredential(namespace, filter, store, reactor);
+    return [
+      {
+        processor,
+        filter,
+      },
+    ];
   };

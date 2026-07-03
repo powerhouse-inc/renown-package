@@ -34,10 +34,7 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
 
   // Drop the plain-column eth_address index superseded by the LOWER() one above;
   // resolvers filter eth_address only via LOWER, so the raw index is unused.
-  await db.schema
-    .dropIndex("idx_renown_user_eth_address")
-    .ifExists()
-    .execute();
+  await db.schema.dropIndex("idx_renown_user_eth_address").ifExists().execute();
 }
 
 export async function down(db: IRelationalDb<any>): Promise<void> {

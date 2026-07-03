@@ -1,41 +1,53 @@
 {
-    "name": "Renown",
-    "description": "All document models, editors, processors and subgraphs related to renown.",
-    "category": "People & Culture",
-    "publisher": {
-        "name": "Powerhouse Inc.",
-        "url": "https://www.powerhouse.inc"
+  "name": "Renown",
+  "description": "All document models, editors, processors and subgraphs related to renown.",
+  "category": "People & Culture",
+  "publisher": {
+    "name": "Powerhouse Inc.",
+    "url": "https://www.powerhouse.inc"
+  },
+  "documentModels": [
+    {
+      "id": "powerhouse/renown-user",
+      "name": "RenownUser"
     },
-    "documentModels": [
-        {
-            "id": "powerhouse/renown-user",
-            "name": "RenownUser"
-        },
-        {
-            "id": "renown/credential",
-            "name": "RenownCredential"
-        },
-        {
-            "id": "powerhouse/renown-credential",
-            "name": "RenownCredential"
-        }
-    ],
-    "editors": [
-        {
-            "id": "renown-user-editor",
-            "name": "Renown User Editor",
-            "documentTypes": [
-                "powerhouse/renown-user"
-            ]
-        }
-    ],
-    "apps": [],
-    "subgraphs": [
-        {
-            "id": "renown-read-model",
-            "name": "Renown Read Model",
-            "documentTypes": []
-        }
-    ],
-    "importScripts": []
+    {
+      "id": "powerhouse/renown-credential",
+      "name": "RenownCredential"
+    }
+  ],
+  "apps": [],
+  "editors": [
+    {
+      "id": "renown-user-editor",
+      "name": "Renown User Editor",
+      "documentTypes": ["powerhouse/renown-user"]
+    },
+    {
+      "id": "renown-credential-editor",
+      "name": "Renown Credential Editor",
+      "documentTypes": ["powerhouse/renown-credential"]
+    }
+  ],
+  "processors": [
+    {
+      "id": "renown-user",
+      "name": "renown-user"
+    },
+    {
+      "id": "renown-credential",
+      "name": "renown-credential"
+    }
+  ],
+  "subgraphs": [
+    {
+      "id": "renown-user",
+      "name": "renown-user"
+    },
+    {
+      "name": "renown-read-model",
+      "id": "renown-read-model"
+    }
+  ],
+  "config": []
 }

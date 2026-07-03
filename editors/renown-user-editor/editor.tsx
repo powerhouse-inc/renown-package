@@ -1,38 +1,23 @@
+import { DocumentToolbar } from "@powerhousedao/design-system/connect";
 import {
-  useDocumentById,
-  useSelectedDocument,
-} from "@powerhousedao/reactor-browser";
-import type { EditorProps } from "document-model";
-import { useCallback, useState } from "react";
-import {
-  type RenownUserDocument,
-  actions,
-} from "../../document-models/renown-user/index.js";
-import {
+  Button,
   Form,
   StringField,
   UrlField,
-  Button,
 } from "@powerhousedao/document-engineering";
+import { useCallback, useState } from "react";
+import {
+  actions,
+  useSelectedRenownUserDocument,
+} from "document-models/renown-user";
 
-export type IProps = EditorProps;
-
-export function Editor(props: IProps) {
-  const [document, dispatch] = useSelectedDocument();
-
-  if (!document) {
-    return <div>Loading...</div>;
-  }
-
-  const typedDocument = document as RenownUserDocument;
+export default function Editor() {
+  const [document, dispatch] = useSelectedRenownUserDocument();
 
   // Local form state
   const [isEditingUser, setIsEditingUser] = useState(false);
 
-  const {
-    state: { global },
-  } = typedDocument;
-  const { username, ethAddress, userImage } = global;
+  const { username, ethAddress, userImage } = document.state.global;
 
   // User handlers
   const handleSetUsername = useCallback(
@@ -41,7 +26,7 @@ export function Editor(props: IProps) {
         dispatch(actions.setUsername({ username: newUsername.trim() }));
       }
     },
-    [username, dispatch]
+    [username, dispatch],
   );
 
   const handleSetEthAddress = useCallback(
@@ -50,7 +35,7 @@ export function Editor(props: IProps) {
         dispatch(actions.setEthAddress({ ethAddress: address.trim() }));
       }
     },
-    [ethAddress, dispatch]
+    [ethAddress, dispatch],
   );
 
   const handleSetUserImage = useCallback(
@@ -59,11 +44,12 @@ export function Editor(props: IProps) {
         dispatch(actions.setUserImage({ userImage: imageUrl.trim() }));
       }
     },
-    [userImage, dispatch]
+    [userImage, dispatch],
   );
 
   return (
     <div className="html-defaults-container min-h-screen bg-gray-50">
+      <DocumentToolbar />
       {/* Header */}
       <div>
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -185,7 +171,7 @@ export function Editor(props: IProps) {
             </div>
             <div className="p-6">
               {isEditingUser ? (
-                <Form onSubmit={(e: React.FormEvent) => e.preventDefault()}>
+                <Form onSubmit={() => setIsEditingUser(false)}>
                   <div className="space-y-6">
                     <StringField
                       name="username"

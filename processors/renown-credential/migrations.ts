@@ -11,7 +11,9 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
     .addColumn("credential_id", "varchar(255)", (col) => col.notNull())
     .addColumn("type", "text", (col) => col.notNull()) // JSON array
     .addColumn("issuer_id", "varchar(255)", (col) => col.notNull())
-    .addColumn("issuer_ethereum_address", "varchar(255)", (col) => col.notNull())
+    .addColumn("issuer_ethereum_address", "varchar(255)", (col) =>
+      col.notNull(),
+    )
     .addColumn("issuance_date", "timestamp", (col) => col.notNull())
     .addColumn("expiration_date", "timestamp")
     .addColumn("credential_subject_id", "varchar(255)")
@@ -28,7 +30,9 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
     .addColumn("proof_type", "varchar(255)", (col) => col.notNull())
     .addColumn("proof_value", "text", (col) => col.notNull()) // EIP-712 signature
     .addColumn("proof_eip712_domain", "text", (col) => col.notNull()) // JSON object
-    .addColumn("proof_eip712_primary_type", "varchar(255)", (col) => col.notNull())
+    .addColumn("proof_eip712_primary_type", "varchar(255)", (col) =>
+      col.notNull(),
+    )
     // Revocation
     .addColumn("revoked", "boolean", (col) => col.notNull().defaultTo(false))
     .addColumn("revoked_at", "timestamp")

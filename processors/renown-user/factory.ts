@@ -1,21 +1,23 @@
 import type {
-  ProcessorRecord,
   IProcessorHostModule,
+  ProcessorApp,
+  ProcessorFactoryBuilder,
   ProcessorFilter,
 } from "@powerhousedao/reactor-browser";
 import type { PHDocumentHeader } from "document-model";
-import { RenownUserProcessor } from "./index.js";
-import { up } from "./migrations.js";
+import { RenownUser } from "./processor.js";
 
-export const renownUserProcessorFactory =
+export const renownUserFactoryBuilder: ProcessorFactoryBuilder =
   (module: IProcessorHostModule) =>
-  async (driveHeader: PHDocumentHeader): Promise<ProcessorRecord[]> => {
-    const namespace = RenownUserProcessor.getNamespace("renown-user");
+  async (driveHeader: PHDocumentHeader, processorApp?: ProcessorApp) => {
+    // Create a namespace for the processor and the provided drive id
+    const namespace = RenownUser.getNamespace(driveHeader.id);
+
+    // Create a namespaced db for the processor
     const store =
-      await module.relationalDb.createNamespace<RenownUserProcessor>(namespace);
+      await module.relationalDb.createNamespace<RenownUser>(namespace);
 
-    await up(store);
-
+    // Create a filter for the processor
     const filter: ProcessorFilter = {
       branch: ["main"],
       documentId: ["*"],
@@ -23,6 +25,12 @@ export const renownUserProcessorFactory =
       scope: ["global"],
     };
 
-    const processor = new RenownUserProcessor(namespace, filter, store);
-    return [{ processor, filter }];
+    // Create the processor
+    const processor = new RenownUser(namespace, filter, store);
+    return [
+      {
+        processor,
+        filter,
+      },
+    ];
   };

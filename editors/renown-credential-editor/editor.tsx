@@ -1,22 +1,26 @@
+import { DocumentToolbar } from "@powerhousedao/design-system/connect";
+import { Button } from "@powerhousedao/document-engineering";
 import { useSelectedDocument } from "@powerhousedao/reactor-browser";
-import type { EditorProps } from "document-model";
 import { useCallback } from "react";
 import {
   type RenownCredentialDocument,
   actions,
-} from "../../document-models/renown-credential/index.js";
-import { Button } from "@powerhousedao/document-engineering";
+} from "document-models/renown-credential";
 
-export type IProps = EditorProps;
-
-export function Editor(props: IProps) {
+export default function Editor() {
+  // NOTE (kept 1:1 with main): the generated useSelectedRenownCredentialDocument
+  // hook asserts the document against the zod guard, which rejects EVERY
+  // credential document because the model's initialState is schema-invalid by
+  // design (issuanceDate "" vs DateTime!). We therefore use the generic
+  // useSelectedDocument + a cast. If the model's initial state is ever fixed,
+  // switch to the generated hook.
   const [document, dispatch] = useSelectedDocument();
 
   if (!document) {
     return <div>Loading...</div>;
   }
 
-  const typedDocument = document as RenownCredentialDocument;
+  const typedDocument = document as unknown as RenownCredentialDocument;
 
   const {
     state: { global },
@@ -30,7 +34,6 @@ export function Editor(props: IProps) {
     issuanceDate,
     credentialSubject,
     credentialSchema,
-    credentialStatus,
     expirationDate,
     proof,
     revoked,
@@ -48,15 +51,16 @@ export function Editor(props: IProps) {
           actions.revoke({
             revokedAt: new Date().toISOString(),
             reason,
-          })
+          }),
         );
       }
     },
-    [dispatch]
+    [dispatch],
   );
 
   return (
     <div className="html-defaults-container min-h-screen bg-gray-50">
+      <DocumentToolbar />
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -89,7 +93,7 @@ export function Editor(props: IProps) {
                   color="danger"
                   onClick={() => {
                     const reason = window.prompt(
-                      "Enter revocation reason (optional):"
+                      "Enter revocation reason (optional):",
                     );
                     if (reason !== null) {
                       handleRevoke(reason || undefined);
@@ -194,14 +198,15 @@ export function Editor(props: IProps) {
                       Context
                     </label>
                     <div className="flex flex-wrap gap-2">
-                      {context && context.map((ctx, i) => (
-                        <span
-                          key={i}
-                          className="inline-block px-2 py-1 text-xs font-mono bg-blue-100 text-blue-800 rounded"
-                        >
-                          {ctx}
-                        </span>
-                      ))}
+                      {context &&
+                        context.map((ctx, i) => (
+                          <span
+                            key={i}
+                            className="inline-block px-2 py-1 text-xs font-mono bg-blue-100 text-blue-800 rounded"
+                          >
+                            {ctx}
+                          </span>
+                        ))}
                     </div>
                   </div>
 
@@ -210,14 +215,15 @@ export function Editor(props: IProps) {
                       Type
                     </label>
                     <div className="flex flex-wrap gap-2">
-                      {type && type.map((t, i) => (
-                        <span
-                          key={i}
-                          className="inline-block px-2 py-1 text-xs font-mono bg-green-100 text-green-800 rounded"
-                        >
-                          {t}
-                        </span>
-                      ))}
+                      {type &&
+                        type.map((t, i) => (
+                          <span
+                            key={i}
+                            className="inline-block px-2 py-1 text-xs font-mono bg-green-100 text-green-800 rounded"
+                          >
+                            {t}
+                          </span>
+                        ))}
                     </div>
                   </div>
                 </div>
@@ -284,16 +290,16 @@ export function Editor(props: IProps) {
                         Created
                       </label>
                       <p className="text-sm text-gray-900">
-                        {proof?.created ? new Date(proof.created).toLocaleString() : "N/A"}
+                        {proof?.created
+                          ? new Date(proof.created).toLocaleString()
+                          : "N/A"}
                       </p>
                     </div>
                     <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                       <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                         Type
                       </label>
-                      <p className="text-sm text-gray-900">
-                        {proof?.type}
-                      </p>
+                      <p className="text-sm text-gray-900">{proof?.type}</p>
                     </div>
                   </div>
 

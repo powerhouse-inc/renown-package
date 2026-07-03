@@ -1,7 +1,7 @@
 {
   "name": "@powerhousedao/renown-package",
   "description": "Renown document models, editors, and processors for the Powerhouse ecosystem",
-  "version": "1.3.9",
+  "version": "0.0.33-staging.4",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
@@ -19,144 +19,111 @@
   "files": [
     "/dist"
   ],
+  "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./dist/types/index.d.ts",
+      "browser": "./dist/browser/index.js",
+      "node": "./dist/node/index.mjs"
     },
     "./document-models": {
-      "types": "./dist/document-models/index.d.ts",
-      "import": "./dist/document-models/index.js"
+      "types": "./dist/types/document-models/index.d.ts",
+      "browser": "./dist/browser/document-models/index.js",
+      "node": "./dist/node/document-models/index.mjs"
     },
     "./document-models/*": {
-      "types": "./dist/document-models/*/index.d.ts",
-      "import": "./dist/document-models/*/index.js"
+      "types": "./dist/types/document-models/*/index.d.ts",
+      "browser": "./dist/browser/document-models/*/index.js",
+      "node": "./dist/node/document-models/*/index.mjs"
     },
     "./editors": {
-      "types": "./dist/editors/index.d.ts",
-      "import": "./dist/editors/index.js"
+      "types": "./dist/types/editors/index.d.ts",
+      "browser": "./dist/browser/editors/index.js",
+      "node": "./dist/node/editors/index.mjs"
     },
     "./editors/*": {
-      "types": "./dist/editors/*/index.d.ts",
-      "import": "./dist/editors/*/index.js"
+      "types": "./dist/types/editors/*/module.d.ts",
+      "browser": "./dist/browser/editors/*/module.js",
+      "node": "./dist/node/editors/*/module.mjs"
     },
     "./subgraphs": {
-      "types": "./dist/subgraphs/index.d.ts",
-      "import": "./dist/subgraphs/index.js"
+      "types": "./dist/types/subgraphs/index.d.ts",
+      "browser": "./dist/browser/subgraphs/index.js",
+      "node": "./dist/node/subgraphs/index.mjs"
     },
     "./processors": {
-      "types": "./dist/processors/index.d.ts",
-      "import": "./dist/processors/index.js"
+      "types": "./dist/types/processors/index.d.ts",
+      "browser": "./dist/browser/processors/index.js",
+      "node": "./dist/node/processors/index.mjs"
     },
     "./manifest": "./dist/powerhouse.manifest.json",
     "./style.css": "./dist/style.css"
   },
-  "release": {
-    "branches": [
-      "main",
-      {
-        "name": "staging",
-        "prerelease": "staging"
-      },
-      {
-        "name": "dev",
-        "prerelease": "dev"
-      }
-    ],
-    "plugins": [
-      "@semantic-release/changelog",
-      "@semantic-release/git",
-      "@semantic-release/commit-analyzer",
-      "@semantic-release/release-notes-generator",
-      [
-        "@semantic-release/npm",
-        {
-          "npmPublish": false
-        }
-      ],
-      "@semantic-release/github"
-    ]
-  },
   "scripts": {
-    "lint": "eslint . --cache",
-    "lint:fix": "eslint . --fix --cache",
-    "build:tsc": "tsc",
-    "build:tsc:watch": "tsc --watch",
-    "build:css": "npx @tailwindcss/cli -i ./style.css -o ./dist/style.css",
-    "build:css:watch": "npx @tailwindcss/cli -i ./style.css -o ./dist/style.css --watch",
-    "build": "npm run build:tsc && npm run build:css",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint --config eslint.config.js --cache --cache-strategy content",
+    "lint:fix": "npm run lint -- --fix",
+    "tsc": "tsc",
+    "tsc:watch": "tsc --watch",
+    "check-circular-imports": "npx dpdm -T ./index.ts",
     "generate": "ph-cli generate",
     "connect": "ph-cli connect",
+    "build": "ph-cli build",
+    "prepublishOnly": "npm run build",
     "reactor": "ph-cli reactor",
     "service": "ph-cli service",
+    "vetra": "ph-cli vetra",
     "service-startup": "bash ./node_modules/@powerhousedao/ph-cli/dist/scripts/service-startup.sh",
     "service-unstartup": "bash ./node_modules/@powerhousedao/ph-cli/dist/scripts/service-unstartup.sh"
   },
-  "dependencies": {
-    "@powerhousedao/builder-tools": "6.0.1-staging.0",
-    "@powerhousedao/common": "6.0.1-staging.0",
-    "@powerhousedao/design-system": "6.0.1-staging.0",
-    "@powerhousedao/document-engineering": "^1.40.5",
-    "@powerhousedao/vetra": "6.0.1-staging.0",
-    "document-model": "6.0.1-staging.0",
-    "graphql": "^16.10.0",
-    "graphql-request": "^7.2.0",
-    "graphql-tag": "^2.12.6",
-    "kysely": "^0.28.7",
-    "luxon": "^3.7.2",
-    "nanoid": "^5.1.6",
-    "uuid": "^11.1.0",
-    "zod": "^4.3.6"
+  "peerDependencies": {
+    "@powerhousedao/reactor-browser": "6.1.0-staging.0",
+    "document-model": "6.1.0-staging.0",
+    "graphql": "^16",
+    "graphql-tag": "^2",
+    "react": "^19",
+    "react-dom": "^19",
+    "zod": "^4"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.2.17",
-    "@eslint/js": "^9.37.0",
-    "@openfeature/core": "^1.9.1",
-    "@powerhousedao/analytics-engine-core": "^0.5.0",
-    "@powerhousedao/codegen": "6.0.1-staging.0",
-    "@powerhousedao/connect": "6.0.1-staging.0",
-    "@powerhousedao/ph-cli": "6.0.1-staging.0",
-    "@powerhousedao/reactor-api": "6.0.0-dev.111",
-    "@powerhousedao/reactor-browser": "6.0.1-staging.0",
-    "@powerhousedao/reactor-local": "6.0.1-staging.0",
-    "@powerhousedao/scalars": "^2.0.1",
-    "@powerhousedao/switchboard": "6.0.0-dev.111",
-    "@semantic-release/changelog": "^6.0.3",
-    "@semantic-release/git": "^10.0.1",
-    "@tailwindcss/cli": "^4.1.14",
-    "@types/node": "^22.13.11",
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
-    "@vitejs/plugin-react": "^5.0.4",
-    "adm-zip": "^0.5.16",
-    "document-drive": "6.0.1-staging.0",
-    "eslint": "^9.37.0",
-    "eslint-plugin-react": "^7.37.4",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "globals": "^16.0.0",
-    "pkh-did-resolver": "^2.0.0",
-    "pm2": "^5.4.3",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "semantic-release": "^25.0.2",
-    "storybook": "^8.6.14",
-    "tailwindcss": "^4.1.14",
+    "@electric-sql/pglite": "0.3.15",
+    "@electric-sql/pglite-tools": "0.2.20",
+    "@eslint/js": "^9.38.0",
+    "@powerhousedao/connect": "6.1.0-staging.0",
+    "@powerhousedao/design-system": "6.1.0-staging.0",
+    "@powerhousedao/document-engineering": "1.40.5",
+    "@powerhousedao/ph-cli": "6.1.0-staging.0",
+    "@powerhousedao/reactor": "6.1.0-staging.0",
+    "@powerhousedao/reactor-api": "6.1.0-staging.0",
+    "@powerhousedao/reactor-browser": "6.1.0-staging.0",
+    "@powerhousedao/shared": "6.1.0-staging.0",
+    "@tailwindcss/cli": "^4.1.18",
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/node": "^24.9.2",
+    "@types/react": "^19.2.3",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "4.1.1",
+    "document-model": "6.1.0-staging.0",
+    "eslint": "^9.38.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "^16.4.0",
+    "graphql": "16.12.0",
+    "graphql-tag": "2.12.6",
+    "kysely": "^0.28.16",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "tailwindcss": "^4.1.16",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.46.0",
-    "vite": "^7.1.9",
-    "vite-plugin-node-polyfills": "^0.24.0",
-    "vitest": "^3.0.9"
-  },
-  "peerDependencies": {
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
-  },
-  "overrides": {
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "typescript-eslint": "^8.46.2",
+    "vite": "^8.0.8",
+    "vite-tsconfig-paths": "6.1.1",
+    "vitest": "4.1.1",
+    "zod": "4.3.6"
   }
 }

@@ -12,3 +12,10 @@ projects-import.js
 # Sensitive files
 .auth.json
 .keypair.json
+
+
+.plans
+reference
+.branches
+*.tsbuildinfo
+.playwright-mcp

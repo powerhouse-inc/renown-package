@@ -5,7 +5,7 @@ import {
   type SetEthAddressInput,
   type SetUserImageInput,
   type RenownUserDocument,
-} from "../../document-models/renown-user/index.js";
+} from "document-models/renown-user";
 import { setName } from "document-model";
 
 export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
@@ -23,8 +23,9 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
             }
 
             if (driveId) {
-              const { results: children } =
-                await reactor.getChildren(driveId);
+              const { results: children } = await reactor.find({
+                parentId: driveId,
+              });
               const childIds = children.map((c) => c.header.id);
               if (!childIds.includes(docId)) {
                 throw new Error(
@@ -47,7 +48,9 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           },
           getDocuments: async (args: { driveId: string }) => {
             const { driveId } = args;
-            const { results: children } = await reactor.getChildren(driveId);
+            const { results: children } = await reactor.find({
+              parentId: driveId,
+            });
             const docs = await Promise.all(
               children.map(async (child) => {
                 const doc = await reactor.get<RenownUserDocument>(
