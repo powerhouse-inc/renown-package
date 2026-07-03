@@ -28,8 +28,10 @@ export class RenownCredential extends RelationalDbProcessor<DB> {
     this.reactor = reactor;
   }
 
-  static override getNamespace(driveId: string): string {
-    return super.getNamespace(driveId);
+  static override getNamespace(_driveId: string): string {
+    // Pin to the legacy namespace so reads/writes resolve to the pre-existing
+    // schema regardless of class name or drive (preserves data across migration).
+    return "RenownCredentialProcessor_renown_credential";
   }
 
   override async initAndUpgrade(): Promise<void> {

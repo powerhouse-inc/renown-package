@@ -4,8 +4,10 @@ import { up } from "./migrations.js";
 import type { DB } from "./schema.js";
 
 export class RenownUser extends RelationalDbProcessor<DB> {
-  static override getNamespace(driveId: string): string {
-    return super.getNamespace(driveId);
+  static override getNamespace(_driveId: string): string {
+    // Pin to the legacy namespace so reads/writes resolve to the pre-existing
+    // schema regardless of class name or drive (preserves data across migration).
+    return "RenownUserProcessor_renown_user";
   }
 
   override async initAndUpgrade(): Promise<void> {
