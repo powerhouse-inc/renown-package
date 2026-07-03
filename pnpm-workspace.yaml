@@ -1,0 +1,12 @@
+allowBuilds:
+  '@apollo/protobufjs': true
+  '@datadog/pprof': true
+  '@parcel/watcher': true
+  '@prisma/client': true
+  '@prisma/engines': true
+  bufferutil: true
+  esbuild: true
+  prisma: true
+  protobufjs: true
+  sqlite3: true
+  utf-8-validate: true

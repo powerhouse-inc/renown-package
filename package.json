@@ -1,7 +1,7 @@
 {
   "name": "@powerhousedao/renown-package",
   "description": "Renown document models, editors, and processors for the Powerhouse ecosystem",
-  "version": "0.0.33-staging.4",
+  "version": "1.3.9",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
