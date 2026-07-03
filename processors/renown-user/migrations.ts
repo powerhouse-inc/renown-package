@@ -23,14 +23,6 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
     .ifNotExists()
     .execute();
 
-  // Create index on eth_address for faster lookups
-  await db.schema
-    .createIndex("idx_renown_user_eth_address")
-    .on("renown_user")
-    .column("eth_address")
-    .ifNotExists()
-    .execute();
-
   // Expression index matching the resolver's LOWER(eth_address) lookup so the
   // case-insensitive match stays an index scan.
   await db.schema
@@ -38,6 +30,13 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
     .on("renown_user")
     .expression(sql`LOWER(eth_address)`)
     .ifNotExists()
+    .execute();
+
+  // Drop the plain-column eth_address index superseded by the LOWER() one above;
+  // resolvers filter eth_address only via LOWER, so the raw index is unused.
+  await db.schema
+    .dropIndex("idx_renown_user_eth_address")
+    .ifExists()
     .execute();
 }
 

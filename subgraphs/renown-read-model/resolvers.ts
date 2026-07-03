@@ -187,11 +187,12 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           );
         }
 
-        // Deterministic order so a stable row is returned even if duplicates exist.
+        // Deterministic order (newest first) so a stable, current row is
+        // returned even if duplicate documents exist for the same address.
         const result = await query
           .selectAll()
-          .orderBy("renown_user.created_at", "asc")
-          .orderBy("renown_user.document_id", "asc")
+          .orderBy("renown_user.created_at", "desc")
+          .orderBy("renown_user.document_id", "desc")
           .executeTakeFirst();
 
         return result ? mapToUser(result) : null;
@@ -246,8 +247,8 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
 
         const results = await query
           .selectAll()
-          .orderBy("renown_user.created_at", "asc")
-          .orderBy("renown_user.document_id", "asc")
+          .orderBy("renown_user.created_at", "desc")
+          .orderBy("renown_user.document_id", "desc")
           .execute();
 
         return results.map(mapToUser);
