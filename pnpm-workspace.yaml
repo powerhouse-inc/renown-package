@@ -4,8 +4,11 @@ allowBuilds:
   '@parcel/watcher': true
   '@prisma/client': true
   '@prisma/engines': true
+  '@reown/appkit': set this to true or false
+  '@sentry/cli': set this to true or false
   bufferutil: true
   esbuild: true
+  keccak: set this to true or false
   prisma: true
   protobufjs: true
   sqlite3: true

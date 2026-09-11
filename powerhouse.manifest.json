@@ -1,5 +1,5 @@
 {
-    "name": "Renown",
+    "name": "@powerhousedao/renown-package",
     "description": "All document models, editors, processors and subgraphs related to renown.",
     "category": "People & Culture",
     "publisher": {

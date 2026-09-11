@@ -12,3 +12,4 @@ projects-import.js
 # Sensitive files
 .auth.json
 .keypair.json
+.claude/
