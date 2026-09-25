@@ -17,15 +17,29 @@ import {
 
 export type IProps = EditorProps;
 
-export function Editor(props: IProps) {
+export default function Editor(props: IProps) {
   const [document, dispatch] = useSelectedDocument();
 
   if (!document) {
     return <div>Loading...</div>;
   }
 
-  const typedDocument = document as RenownUserDocument;
+  return (
+    <EditorContent
+      document={document as RenownUserDocument}
+      dispatch={dispatch}
+    />
+  );
+}
 
+// Hooks live here so they run unconditionally.
+function EditorContent({
+  document: typedDocument,
+  dispatch,
+}: {
+  document: RenownUserDocument;
+  dispatch: ReturnType<typeof useSelectedDocument>[1];
+}) {
   // Local form state
   const [isEditingUser, setIsEditingUser] = useState(false);
 
@@ -41,7 +55,7 @@ export function Editor(props: IProps) {
         dispatch(actions.setUsername({ username: newUsername.trim() }));
       }
     },
-    [username, dispatch]
+    [username, dispatch],
   );
 
   const handleSetEthAddress = useCallback(
@@ -50,7 +64,7 @@ export function Editor(props: IProps) {
         dispatch(actions.setEthAddress({ ethAddress: address.trim() }));
       }
     },
-    [ethAddress, dispatch]
+    [ethAddress, dispatch],
   );
 
   const handleSetUserImage = useCallback(
@@ -59,7 +73,7 @@ export function Editor(props: IProps) {
         dispatch(actions.setUserImage({ userImage: imageUrl.trim() }));
       }
     },
-    [userImage, dispatch]
+    [userImage, dispatch],
   );
 
   return (
