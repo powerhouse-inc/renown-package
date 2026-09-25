@@ -61,7 +61,7 @@ export function createGlobalState(
   return {
     ...defaultGlobalState(),
     ...(state || {}),
-  } as RenownCredentialGlobalState;
+  };
 }
 
 export function createLocalState(

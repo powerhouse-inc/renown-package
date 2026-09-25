@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { generateMock } from "@powerhousedao/codegen";
+import { generateMock } from "document-model/mock";
 import { utils } from "../../gen/utils.js";
 import type { InitInput, RevokeInput } from "../../gen/schema/index.js";
 import { InitInputSchema, RevokeInputSchema } from "../../gen/schema/zod.js";
