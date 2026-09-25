@@ -159,8 +159,8 @@
     "zod": "4.3.6"
   },
   "peerDependencies": {
-    "@powerhousedao/reactor-browser": "6.2.3-dev.24",
-    "document-model": "6.2.3-dev.24",
+    "@powerhousedao/reactor-browser": "^6.2.3-dev.24",
+    "document-model": "^6.2.3-dev.24",
     "graphql": "^16",
     "graphql-tag": "^2",
     "react": "^19",
