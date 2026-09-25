@@ -4,7 +4,6 @@ import {
   baseSaveToFileHandle,
   baseLoadFromInput,
   defaultBaseState,
-  generateId,
 } from "document-model/core";
 import type {
   RenownCredentialGlobalState,
@@ -61,14 +60,11 @@ export const utils: DocumentModelUtils<RenownCredentialPHState> = {
     };
   },
   createDocument(state) {
-    const document = baseCreateDocument(utils.createState, state);
-
-    document.header.documentType = renownCredentialDocumentType;
-
-    // for backwards compatibility, but this is NOT a valid signed document id
-    document.header.id = generateId();
-
-    return document;
+    return baseCreateDocument(
+      utils.createState,
+      state,
+      renownCredentialDocumentType,
+    );
   },
   saveToFileHandle(document, input) {
     return baseSaveToFileHandle(document, input);
