@@ -20,7 +20,7 @@ export const processorFactory = (
   factories.push(renownUserProcessorFactory(module));
   factories.push(
     renownCredentialProcessorFactory(
-      module as IProcessorHostModuleWithReactor,
+      module,
     ),
   );
 

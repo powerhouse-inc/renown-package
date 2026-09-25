@@ -37,7 +37,7 @@ export function createGlobalState(
   return {
     ...defaultGlobalState(),
     ...(state || {}),
-  } as RenownUserGlobalState;
+  };
 }
 
 export function createLocalState(
