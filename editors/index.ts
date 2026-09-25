@@ -1,3 +1,2 @@
-export {};
-export { module as RenownUserEditor } from "./renown-user-editor/index.js";
-export { module as RenownCredentialEditor } from "./renown-credential-editor/index.js";
+export { RenownCredentialEditor } from "./renown-credential-editor/module.js";
+export { RenownUserEditor } from "./renown-user-editor/module.js";

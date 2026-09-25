@@ -1,27 +1,19 @@
 import type {
-  ProcessorRecord,
   IProcessorHostModule,
+  ProcessorFactoryBuilder,
   ProcessorFilter,
 } from "@powerhousedao/reactor-browser";
-import type { PHDocumentHeader } from "document-model";
-import { RenownCredentialProcessor, type IReactor } from "./index.js";
-import { up } from "./migrations.js";
+import { RenownCredentialProcessor } from "./processor.js";
 
-export interface IProcessorHostModuleWithReactor extends IProcessorHostModule {
-  reactor?: IReactor;
-}
-
-export const renownCredentialProcessorFactory =
-  (module: IProcessorHostModuleWithReactor) =>
-  async (driveHeader: PHDocumentHeader): Promise<ProcessorRecord[]> => {
+// One namespace for all drives: the renown read model is global.
+export const renownCredentialFactoryBuilder: ProcessorFactoryBuilder =
+  (module: IProcessorHostModule) => async () => {
     const namespace =
       RenownCredentialProcessor.getNamespace("renown-credential");
     const store =
       await module.relationalDb.createNamespace<RenownCredentialProcessor>(
         namespace,
       );
-
-    await up(store);
 
     const filter: ProcessorFilter = {
       branch: ["main"],
@@ -34,7 +26,8 @@ export const renownCredentialProcessorFactory =
       namespace,
       filter,
       store,
-      module.reactor,
+      module.client,
     );
+    await processor.initAndUpgrade();
     return [{ processor, filter }];
   };
