@@ -4,7 +4,6 @@ import {
   baseSaveToFileHandle,
   baseLoadFromInput,
   defaultBaseState,
-  generateId,
 } from "document-model/core";
 import type { RenownUserGlobalState, RenownUserLocalState } from "./types.js";
 import type { RenownUserPHState } from "./types.js";
@@ -34,14 +33,7 @@ export const utils: DocumentModelUtils<RenownUserPHState> = {
     };
   },
   createDocument(state) {
-    const document = baseCreateDocument(utils.createState, state);
-
-    document.header.documentType = renownUserDocumentType;
-
-    // for backwards compatibility, but this is NOT a valid signed document id
-    document.header.id = generateId();
-
-    return document;
+    return baseCreateDocument(utils.createState, state, renownUserDocumentType);
   },
   saveToFileHandle(document, input) {
     return baseSaveToFileHandle(document, input);
