@@ -1,5 +1,5 @@
 import type { ColumnType, Kysely } from "kysely";
-import type { AccessToken, AuthCode, LoginRequest } from "../core/types.js";
+import type { AccessToken, AuthCode, LoginRequest, OidcClient } from "../core/types.js";
 
 /** A `timestamptz` column: the driver returns a `Date`, but accepts either on write. */
 export type Timestamp = Date | string;
@@ -43,13 +43,40 @@ export interface AccessTokenRow {
   revoked: boolean;
 }
 
+/**
+ * A registered OIDC client. This table — not the mirrored `renown/oidc-client`
+ * document — is the source of truth for sign-in: the renown switchboard's
+ * access policy is open, so document state is audit-only.
+ */
+export interface OidcClientRow {
+  client_id: string;
+  name: string;
+  /** JSON array of redirect URIs. */
+  redirect_uris: string;
+  /** JSON array of lowercase 0x addresses. */
+  allowed_subjects: string;
+  allow_any: ColumnType<boolean, boolean | undefined, boolean>;
+  secret_hash: string | null;
+  status: "ACTIVE" | "DISABLED";
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 export interface OidcDB {
+  oidc_clients: OidcClientRow;
   login_requests: LoginRequestRow;
   auth_codes: AuthCodeRow;
   access_tokens: AccessTokenRow;
 }
 
+/** The mutable fields of a client; `id` never changes. */
+export type OidcClientPatch = Partial<Omit<OidcClient, "id">>;
+
 export interface OidcStore {
+  createClient(client: OidcClient, now: Date): Promise<void>;
+  getClient(clientId: string): Promise<OidcClient | undefined>;
+  /** Applies `patch` and returns the updated client, or undefined when it doesn't exist. */
+  updateClient(clientId: string, patch: OidcClientPatch, now: Date): Promise<OidcClient | undefined>;
   createLoginRequest(r: LoginRequest): Promise<void>;
   getLoginRequest(id: string): Promise<LoginRequest | undefined>;
   deleteLoginRequest(id: string): Promise<void>;

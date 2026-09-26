@@ -1,15 +1,34 @@
 import type { Selectable } from "kysely";
-import type { AccessToken, AuthCode, LoginRequest } from "../core/types.js";
-import type {
-  AccessTokenRow,
-  AuthCodeRow,
-  LoginRequestRow,
-  OidcKysely,
-  OidcStore,
+import type { AccessToken, AuthCode, LoginRequest, OidcClient } from "../core/types.js";
+import {
+  type AccessTokenRow,
+  type AuthCodeRow,
+  type LoginRequestRow,
+  type OidcClientPatch,
+  type OidcClientRow,
+  type OidcKysely,
+  type OidcStore,
 } from "./types.js";
 
 function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
+}
+
+function parseStringArray(json: string): string[] {
+  const value: unknown = JSON.parse(json);
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function toClient(row: Selectable<OidcClientRow>): OidcClient {
+  return {
+    id: row.client_id,
+    name: row.name,
+    redirectUris: parseStringArray(row.redirect_uris),
+    allowedSubjects: parseStringArray(row.allowed_subjects),
+    allowAnySubject: row.allow_any,
+    clientSecretHash: row.secret_hash,
+    status: row.status,
+  };
 }
 
 function toLoginRequest(row: LoginRequestRow): LoginRequest {
@@ -59,6 +78,50 @@ function toAccessToken(row: AccessTokenRow): AccessToken {
 /** Kysely-backed `OidcStore`. The `db` passed in is already namespace-scoped. */
 export class KyselyOidcStore implements OidcStore {
   constructor(private readonly db: OidcKysely) {}
+
+  async createClient(c: OidcClient, now: Date): Promise<void> {
+    await this.db
+      .insertInto("oidc_clients")
+      .values({
+        client_id: c.id,
+        name: c.name,
+        redirect_uris: JSON.stringify(c.redirectUris),
+        allowed_subjects: JSON.stringify(c.allowedSubjects),
+        allow_any: c.allowAnySubject,
+        secret_hash: c.clientSecretHash,
+        status: c.status,
+        created_at: now,
+        updated_at: now,
+      })
+      .execute();
+  }
+
+  async getClient(clientId: string): Promise<OidcClient | undefined> {
+    const row = await this.db
+      .selectFrom("oidc_clients")
+      .selectAll()
+      .where("client_id", "=", clientId)
+      .executeTakeFirst();
+    return row ? toClient(row) : undefined;
+  }
+
+  async updateClient(clientId: string, patch: OidcClientPatch, now: Date): Promise<OidcClient | undefined> {
+    const row = await this.db
+      .updateTable("oidc_clients")
+      .set({
+        ...(patch.name !== undefined && { name: patch.name }),
+        ...(patch.redirectUris !== undefined && { redirect_uris: JSON.stringify(patch.redirectUris) }),
+        ...(patch.allowedSubjects !== undefined && { allowed_subjects: JSON.stringify(patch.allowedSubjects) }),
+        ...(patch.allowAnySubject !== undefined && { allow_any: patch.allowAnySubject }),
+        ...(patch.clientSecretHash !== undefined && { secret_hash: patch.clientSecretHash }),
+        ...(patch.status !== undefined && { status: patch.status }),
+        updated_at: now,
+      })
+      .where("client_id", "=", clientId)
+      .returningAll()
+      .executeTakeFirst();
+    return row ? toClient(row) : undefined;
+  }
 
   async createLoginRequest(r: LoginRequest): Promise<void> {
     await this.db

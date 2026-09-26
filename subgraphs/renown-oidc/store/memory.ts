@@ -1,9 +1,33 @@
-import type { AccessToken, AuthCode, LoginRequest } from "../core/types.js";
-import type { OidcStore } from "./types.js";
+import type { AccessToken, AuthCode, LoginRequest, OidcClient } from "../core/types.js";
+import type { OidcClientPatch, OidcStore } from "./types.js";
+
+function cloneClient(c: OidcClient): OidcClient {
+  return { ...c, redirectUris: [...c.redirectUris], allowedSubjects: [...c.allowedSubjects] };
+}
 
 /** In-memory `OidcStore`, backed by Maps. For tests and local dev only. */
 export class MemoryOidcStore implements OidcStore {
+  private readonly clients = new Map<string, OidcClient>();
   private readonly loginRequests = new Map<string, LoginRequest>();
+
+  async createClient(c: OidcClient, _now: Date): Promise<void> {
+    if (this.clients.has(c.id)) throw new Error(`Client ${c.id} already exists`);
+    this.clients.set(c.id, cloneClient(c));
+  }
+
+  async getClient(clientId: string): Promise<OidcClient | undefined> {
+    const client = this.clients.get(clientId);
+    return client ? cloneClient(client) : undefined;
+  }
+
+  async updateClient(clientId: string, patch: OidcClientPatch, _now: Date): Promise<OidcClient | undefined> {
+    const existing = this.clients.get(clientId);
+    if (!existing) return undefined;
+    const defined = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    const updated = cloneClient({ ...existing, ...defined });
+    this.clients.set(clientId, updated);
+    return cloneClient(updated);
+  }
   private readonly authCodes = new Map<string, AuthCode>();
   private readonly accessTokens = new Map<string, AccessToken>();
 

@@ -1,7 +1,21 @@
 import type { Kysely } from "kysely";
 
-/** Creates the `login_requests`, `auth_codes` and `access_tokens` tables. Idempotent. */
+/** Creates the `oidc_clients`, `login_requests`, `auth_codes` and `access_tokens` tables. Idempotent. */
 export async function migrate(db: Kysely<any>): Promise<void> {
+  await db.schema
+    .createTable("oidc_clients")
+    .ifNotExists()
+    .addColumn("client_id", "text", (col) => col.primaryKey())
+    .addColumn("name", "text", (col) => col.notNull())
+    .addColumn("redirect_uris", "text", (col) => col.notNull())
+    .addColumn("allowed_subjects", "text", (col) => col.notNull())
+    .addColumn("allow_any", "boolean", (col) => col.notNull().defaultTo(false))
+    .addColumn("secret_hash", "text")
+    .addColumn("status", "text", (col) => col.notNull())
+    .addColumn("created_at", "timestamptz", (col) => col.notNull())
+    .addColumn("updated_at", "timestamptz", (col) => col.notNull())
+    .execute();
+
   await db.schema
     .createTable("login_requests")
     .ifNotExists()
