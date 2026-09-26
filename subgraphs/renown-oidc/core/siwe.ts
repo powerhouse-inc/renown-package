@@ -37,9 +37,11 @@ export function buildSiweTemplate(req: LoginRequest, client: OidcClient, cfg: Oi
  * expired (and not outlive the request's own expiry), and the signature must
  * verify offline (EOA only). `issuedAt` is deliberately not compared — the
  * handler re-derives the template with a fresh `issuedAt` at verification
- * time. Throws `OidcError("invalid_request")` for a structurally incomplete
- * message and `OidcError("access_denied")` for anything that doesn't match
- * or fails to verify.
+ * time. Every failure — structurally incomplete message, a binding field
+ * that doesn't match, an expired message, or a signature that doesn't
+ * verify (including a malformed signature, which `viem`'s `verifyMessage`
+ * throws on rather than returning `false` for) — throws
+ * `OidcError("access_denied", ..., 403)`.
  */
 export async function verifySiweLogin(
   message: string,
@@ -50,13 +52,13 @@ export async function verifySiweLogin(
   const parsed = parseSiweMessage(message);
 
   if (!parsed.address || parsed.chainId === undefined) {
-    throw new OidcError("invalid_request", "SIWE message is missing an address or chain id");
+    throw new OidcError("access_denied", "SIWE message is missing an address or chain id", 403);
   }
   if (parsed.version !== "1") {
-    throw new OidcError("invalid_request", "SIWE message has an unsupported version");
+    throw new OidcError("access_denied", "SIWE message has an unsupported version", 403);
   }
   if (!parsed.expirationTime) {
-    throw new OidcError("invalid_request", "SIWE message has no expiration time");
+    throw new OidcError("access_denied", "SIWE message has no expiration time", 403);
   }
 
   if (parsed.domain !== expected.domain) {
@@ -79,7 +81,13 @@ export async function verifySiweLogin(
   }
 
   const { address, chainId } = parsed;
-  const verified = await verifyMessage({ address, message, signature });
+  let verified = false;
+  try {
+    verified = await verifyMessage({ address, message, signature });
+  } catch {
+    // viem's verifyMessage throws on a structurally malformed signature
+    // (wrong length, invalid r/s, ...) instead of returning false.
+  }
   if (!verified) {
     throw new OidcError("access_denied", "SIWE signature is invalid", 403);
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateKeyPair, exportJWK, jwtVerify, createLocalJWKSet } from "jose";
+import { generateKeyPair, exportJWK, importJWK, jwtVerify, createLocalJWKSet } from "jose";
 import { createSiweMessage } from "viem/siwe";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { getAddress } from "viem";
@@ -68,6 +68,26 @@ describe("keys", () => {
   it("rejects keys without kid or non-EC keys", async () => {
     await expect(loadSigningKeys(JSON.stringify([{ kty: "oct", k: "x" }]), cfg.issuer)).rejects.toThrow();
   });
+  it("publishes an allowlisted, importable JWKS entry even when the source JWK carries key_ops/ext", async () => {
+    const { privateKey } = await generateKeyPair("ES256", { extractable: true });
+    const rawJwk = await exportJWK(privateKey);
+    const jwk = { ...rawJwk, kid: "k2", key_ops: ["sign"], ext: true };
+    const keys = (await loadSigningKeys(JSON.stringify([jwk]), cfg.issuer))!;
+    const pub = keys.jwks().keys[0];
+    expect(Object.keys(pub).sort()).toEqual(["alg", "crv", "kid", "kty", "use", "x", "y"]);
+    await expect(importJWK(pub as never, "ES256")).resolves.toBeDefined();
+  });
+  it("does not leak the raw value when RENOWN_OIDC_SIGNING_KEYS is invalid JSON", async () => {
+    const raw = "{not-json:::supersecret";
+    let caught: unknown;
+    try {
+      await loadSigningKeys(raw, cfg.issuer);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).not.toContain("supersecret");
+  });
 });
 
 describe("siwe", () => {
@@ -85,12 +105,22 @@ describe("siwe", () => {
   it("rejects another request id, nonce, domain, expiry or a forged signature", async () => {
     for (const over of [{ requestId: "other" }, { nonce: "zzzzzzzzzzzzzzzz" }, { domain: "evil.example" }, { expirationTime: new Date(now.getTime() - 1) }]) {
       const { message, signature } = await sign(account, t, over as never);
-      await expect(verifySiweLogin(message, signature, t, now)).rejects.toBeInstanceOf(OidcError);
+      const rejection = verifySiweLogin(message, signature, t, now);
+      await expect(rejection).rejects.toBeInstanceOf(OidcError);
+      await expect(rejection).rejects.toMatchObject({ code: "access_denied", status: 403 });
     }
     const other = privateKeyToAccount(generatePrivateKey());
     const { message } = await sign(account, t);
     const forged = await other.signMessage({ message });
-    await expect(verifySiweLogin(message, forged, t, now)).rejects.toBeInstanceOf(OidcError);
+    const forgedRejection = verifySiweLogin(message, forged, t, now);
+    await expect(forgedRejection).rejects.toBeInstanceOf(OidcError);
+    await expect(forgedRejection).rejects.toMatchObject({ code: "access_denied", status: 403 });
+  });
+  it("rejects a structurally malformed signature with access_denied/403", async () => {
+    const { message } = await sign(account, t);
+    const rejection = verifySiweLogin(message, "0x1234", t, now);
+    await expect(rejection).rejects.toBeInstanceOf(OidcError);
+    await expect(rejection).rejects.toMatchObject({ code: "access_denied", status: 403 });
   });
 });
 
