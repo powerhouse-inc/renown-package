@@ -28,7 +28,7 @@ existing wallet and Privy sign-in for the interactive step.
 | Issuer | `https://switchboard.renown.vetra.io/api/@powerhousedao/renown-package/oidc`, overridable with `RENOWN_OIDC_ISSUER` | the route namespace is fixed by the host; a prettier `auth.vetra.io` can later be a Traefik rewrite plus `RENOWN_OIDC_ISSUER` |
 | Proof of identity | a sign-in-with-Ethereum (EIP-4361) message, signed in the Renown app, that binds the login request id | works for wagmi and Privy (embedded EOA) wallets; verified with viem, no dependency on Renown JWT or credential internals |
 | Subject (`sub`) | `did:pkh:eip155:<chainId>:<checksummed address>` | the identity vetra.io already uses for owners |
-| Clients | a `renown/oidc-client` document each | registrations are auditable, event-sourced and editable in Connect |
+| Clients | a `renown/oidc-client` document each; `client_id` = document id | registrations are auditable, event-sourced and editable in Connect; lookup is `reactorClient.get` |
 | Short-lived state | subgraph relational namespace `renown_oidc` | login requests, codes and access tokens are ephemeral and must not be document history |
 | Signing key | ES256 private JWK from env `RENOWN_OIDC_SIGNING_KEYS` (JSON array: first key signs, all are published in JWKS) | a private key never goes into document state; rotation means prepend a new key and later drop the old one |
 | Library | `jose` for JWT and JWK; the protocol handlers are written here and kept small | `oidc-provider` assumes it owns a Koa/Express app and a persistence adapter, which does not fit the host-owned route scope |
@@ -39,7 +39,6 @@ Global state:
 
 ```graphql
 type RenownOidcClientState {
-  clientId: String            # set once; defaults to the document id
   name: String                # shown on the Renown consent screen
   redirectUris: [URL!]!       # exact match, https only (http://localhost allowed)
   allowedSubjects: [String!]! # DIDs or 0x addresses; empty = nobody
@@ -50,7 +49,9 @@ type RenownOidcClientState {
 ```
 
 Operations (module `client`):
-- `SET_CLIENT_INFO` {name, clientId?}. clientId is only settable while empty.
+- `SET_CLIENT_INFO` {name}. The OIDC `client_id` **is the document id**, so a
+  lookup is a single `reactorClient.get(clientId)`, with no read model and no
+  indexing lag right after registration.
 - `ADD_REDIRECT_URI`, `REMOVE_REDIRECT_URI` {uri}
 - `ADD_ALLOWED_SUBJECT`, `REMOVE_ALLOWED_SUBJECT` {subject}. Addresses are
   normalised to lowercase `0x…`; a DID `did:pkh:eip155:<n>:<addr>` is reduced to
@@ -163,6 +164,17 @@ A `pages/oidc/login.tsx` page:
 3. POSTs to `/complete` and navigates to the returned redirect.
 
 A 403 shows "This account is not allowed to sign in to <client>".
+
+## Configuration (switchboard env)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `RENOWN_OIDC_SIGNING_KEYS` | none; if unset, the OIDC routes are not registered | JSON array of private ES256 JWKs, each with a `kid`; the first one signs |
+| `RENOWN_OIDC_REGISTRATION_TOKEN` | none; if unset, `registerOidcClient` is disabled | bearer token for automated registration |
+| `RENOWN_OIDC_ISSUER` | `this.http.baseUrl + "/oidc"` | public issuer URL |
+| `RENOWN_OIDC_LOGIN_URL` | `https://renown.vetra.io/oidc/login` | sign-in page in the Renown app |
+| `RENOWN_OIDC_DRIVE_ID` | none | drive that registered client documents are added to |
+| `PUBLIC_URL` | none | must be `https://switchboard.renown.vetra.io`, or `this.http.baseUrl` is localhost |
 
 ## Security notes
 
