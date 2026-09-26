@@ -14,9 +14,14 @@ export class OidcError extends Error {
   }
 }
 
-/** `did:pkh:eip155:<chainId>:<EIP-55 checksummed address>`. */
-export function subjectFor(address: string, chainId: number): string {
-  return `did:pkh:eip155:${chainId}:${getAddress(address)}`;
+/**
+ * `did:pkh:eip155:1:<EIP-55 checksummed address>`. Always chain 1, whatever
+ * chain the SIWE message named: an EOA is the same account on every EVM
+ * chain, and relying parties key users on `sub`, so it must not change when
+ * a wallet happens to be connected to another network.
+ */
+export function subjectFor(address: string): string {
+  return `did:pkh:eip155:1:${getAddress(address)}`;
 }
 
 /**
@@ -37,12 +42,11 @@ export function isSubjectAllowed(client: OidcClient, address: string): boolean {
 
 export function buildClaims(
   address: string,
-  chainId: number,
   profile: Profile | undefined,
   scope: string,
 ): Record<string, unknown> {
   const scopes = new Set(scope.split(/\s+/).filter(Boolean));
-  const claims: Record<string, unknown> = { sub: subjectFor(address, chainId) };
+  const claims: Record<string, unknown> = { sub: subjectFor(address) };
 
   if (scopes.has("profile")) {
     const shortAddress = `${address.slice(0, 6)}…${address.slice(-4)}`;

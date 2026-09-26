@@ -30,14 +30,14 @@ beforeEach(async () => {
   h = createOidcHandlers({ config, keys, store: new MemoryOidcStore(), clients: { getClient: async (id) => clients.get(id) }, profiles: { getProfile: async () => ({ username: "frank", userImage: null }) }, now: () => clock });
 });
 
-async function login(clientId: string, account = user, extra: Record<string, string> = {}) {
+async function login(clientId: string, account = user, extra: Record<string, string> = {}, chainId = 1) {
   const q = new URLSearchParams({ client_id: clientId, redirect_uri: "https://s.example/auth/oidc/callback", response_type: "code", scope: "openid profile email", state: "st8", nonce: "nn", ...extra });
   const a = await h.authorize(new Request(`${issuer}/authorize?${q}`));
   expect(a.status).toBe(302);
   const id = new URL(a.headers.get("location")!).searchParams.get("request")!;
   const i = await (await h.interaction(new Request(`${issuer}/interaction/${id}`), id)).json();
   const t = i.siwe;
-  const message = createSiweMessage({ address: account.address, chainId: 1, domain: t.domain, uri: t.uri, version: "1", nonce: t.nonce, issuedAt: new Date(t.issuedAt), expirationTime: new Date(t.expirationTime), statement: t.statement, requestId: t.requestId, resources: t.resources });
+  const message = createSiweMessage({ address: account.address, chainId, domain: t.domain, uri: t.uri, version: "1", nonce: t.nonce, issuedAt: new Date(t.issuedAt), expirationTime: new Date(t.expirationTime), statement: t.statement, requestId: t.requestId, resources: t.resources });
   const signature = await account.signMessage({ message });
   return h.complete(new Request(`${issuer}/interaction/${id}/complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, signature }) }), id);
 }
@@ -63,6 +63,16 @@ describe("OIDC flow", () => {
     const jwks = await (await h.jwks(new Request(`${issuer}/jwks`))).json();
     const { payload } = await jwtVerify(tok.id_token, createLocalJWKSet(jwks), { issuer, audience: "conf" });
     expect(payload).toMatchObject({ sub: `did:pkh:eip155:1:${getAddress(user.address)}`, nonce: "nn", name: "frank", email: `${user.address.toLowerCase()}@renown.vetra.io`, email_verified: false });
+    const u = await h.userinfo(new Request(`${issuer}/userinfo`, { headers: { authorization: `Bearer ${tok.access_token}` } }));
+    expect((await u.json()).sub).toBe(payload.sub);
+  });
+
+  it("sub is the same did:pkh on chain 1 whatever chain the SIWE message names", async () => {
+    const code = await codeOf(await login("conf", user, {}, 137));
+    const tok = await (await h.token(tokenReq({ grant_type: "authorization_code", code, redirect_uri: "https://s.example/auth/oidc/callback" }, `conf:${SECRET}`))).json();
+    const jwks = await (await h.jwks(new Request(`${issuer}/jwks`))).json();
+    const { payload } = await jwtVerify(tok.id_token, createLocalJWKSet(jwks), { issuer, audience: "conf" });
+    expect(payload.sub).toBe(`did:pkh:eip155:1:${getAddress(user.address)}`);
     const u = await h.userinfo(new Request(`${issuer}/userinfo`, { headers: { authorization: `Bearer ${tok.access_token}` } }));
     expect((await u.json()).sub).toBe(payload.sub);
   });

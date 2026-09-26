@@ -48,14 +48,6 @@ function isActive(client: OidcClient | undefined): client is OidcClient {
   return client !== undefined && client.status === "ACTIVE";
 }
 
-/** `did:pkh:eip155:<chainId>:<address>` → chainId. */
-function chainIdFromSubject(sub: string): number | undefined {
-  const parts = sub.split(":");
-  if (parts.length !== 5 || parts[0] !== "did" || parts[1] !== "pkh" || parts[2] !== "eip155") return undefined;
-  const chainId = Number(parts[3]);
-  return Number.isSafeInteger(chainId) && chainId > 0 ? chainId : undefined;
-}
-
 interface ClientCredentials {
   clientId: string;
   clientSecret: string | undefined;
@@ -279,8 +271,9 @@ export function createOidcHandlers(deps: OidcDeps) {
         codeHash: await sha256Hex(code),
         clientId: client.id,
         redirectUri: loginRequest.redirectUri,
-        sub: subjectFor(address, chainId),
+        sub: subjectFor(address),
         address,
+        // Kept for audit only; the subject is chain-independent.
         chainId,
         nonce: loginRequest.nonce,
         codeChallenge: loginRequest.codeChallenge,
@@ -351,7 +344,7 @@ export function createOidcHandlers(deps: OidcDeps) {
 
       const profile = await profiles.getProfile(grant.address);
       const claims: Record<string, unknown> = {
-        ...buildClaims(grant.address, grant.chainId, profile, grant.scope),
+        ...buildClaims(grant.address, profile, grant.scope),
         auth_time: Math.floor(grant.authTime.getTime() / 1000),
       };
       if (grant.nonce !== null) claims.nonce = grant.nonce;
@@ -390,11 +383,9 @@ export function createOidcHandlers(deps: OidcDeps) {
 
       const token = await store.getAccessToken(await sha256Hex(match[1]));
       if (!token || token.revoked || isExpired(token.expiresAt, deps.now())) return invalidToken();
-      const chainId = chainIdFromSubject(token.sub);
-      if (chainId === undefined) return invalidToken();
 
       const profile = await profiles.getProfile(token.address);
-      return json(buildClaims(token.address, chainId, profile, token.scope), 200, { "cache-control": "no-store" });
+      return json(buildClaims(token.address, profile, token.scope), 200, { "cache-control": "no-store" });
     },
   };
 }

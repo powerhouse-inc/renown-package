@@ -142,8 +142,9 @@ describe("siwe", () => {
 
 describe("claims", () => {
   const a = "0xabc0000000000000000000000000000000000001";
-  it("subject is a checksummed did:pkh", () => {
-    expect(subjectFor(a, 1)).toBe(`did:pkh:eip155:1:${getAddress(a)}`);
+  it("subject is a checksummed did:pkh on chain 1", () => {
+    expect(subjectFor(a)).toBe(`did:pkh:eip155:1:${getAddress(a)}`);
+    expect(subjectFor(a.toLowerCase())).toBe(subjectFor(getAddress(a)));
   });
   it("allowed subjects", () => {
     expect(isSubjectAllowed({ ...client, allowedSubjects: [a] }, a.toUpperCase().replace("0X", "0x"))).toBe(true);
@@ -151,10 +152,10 @@ describe("claims", () => {
     expect(isSubjectAllowed({ ...client, allowAnySubject: true }, a)).toBe(true);
   });
   it("claims by scope", () => {
-    const c = buildClaims(a, 1, { username: "frank", userImage: "https://i/x.png" }, "openid profile email");
+    const c = buildClaims(a, { username: "frank", userImage: "https://i/x.png" }, "openid profile email");
     expect(c).toMatchObject({ name: "frank", preferred_username: "frank", picture: "https://i/x.png", email: `${a}@renown.vetra.io`, email_verified: false });
-    const bare = buildClaims(a, 1, undefined, "openid");
+    const bare = buildClaims(a, undefined, "openid");
     expect(bare).not.toHaveProperty("email"); expect(bare).not.toHaveProperty("name");
-    expect(buildClaims(a, 1, undefined, "openid profile").name).toBe("0xabc0…0001");
+    expect(buildClaims(a, undefined, "openid profile").name).toBe("0xabc0…0001");
   });
 });
