@@ -35,6 +35,13 @@
       "documentTypes": [
         "powerhouse/renown-user"
       ]
+    },
+    {
+      "name": "Renown OIDC Client Editor",
+      "id": "renown-oidc-client-editor",
+      "documentTypes": [
+        "renown/oidc-client"
+      ]
     }
   ],
   "processors": [
