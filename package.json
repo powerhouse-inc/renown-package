@@ -145,6 +145,7 @@
     "graphql-tag": "2.12.6",
     "jose": "^6.2.12",
     "kysely": "^0.28.7",
+    "kysely-pglite-dialect": "1.2.0",
     "oxfmt": "0.68.0",
     "oxlint": "1.70.0",
     "oxlint-tsgolint": "0.23.0",
