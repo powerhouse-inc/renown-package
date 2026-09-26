@@ -41,6 +41,8 @@ export class RenownOidcSubgraph extends BaseSubgraph {
   }
 
   async onSetup() {
+    // Idempotent: a second setup must not register duplicate routes or timers.
+    if (this.#routes.length > 0) return;
     const config = this.#getConfig();
 
     // A missing or broken signing key disables only the OIDC endpoints: never
@@ -59,9 +61,16 @@ export class RenownOidcSubgraph extends BaseSubgraph {
       return;
     }
 
-    const db = (await this.relationalDb.createNamespace("renown-oidc")) as unknown as OidcKysely;
-    await migrate(db);
-    const store = new KyselyOidcStore(db);
+    let store: KyselyOidcStore;
+    try {
+      const db = (await this.relationalDb.createNamespace("renown-oidc")) as unknown as OidcKysely;
+      await migrate(db);
+      store = new KyselyOidcStore(db);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unknown error";
+      console.error(`[renown-oidc] relational namespace/migration failed (${reason}) — OIDC endpoints disabled`);
+      return;
+    }
 
     const handlers = createOidcHandlers({
       config,

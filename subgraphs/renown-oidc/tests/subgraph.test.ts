@@ -165,6 +165,50 @@ describe("RenownOidcSubgraph", () => {
     expect(clearIntervalSpy).toHaveBeenCalledWith(timer);
   });
 
+  it("registers no routes and does not throw when the relational namespace cannot be created", async () => {
+    process.env.RENOWN_OIDC_SIGNING_KEYS = await signingKeysEnv();
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+    const { subgraph, routes, createNamespace } = makeSubgraph();
+    createNamespace.mockRejectedValueOnce(new Error("db down"));
+    await expect(subgraph.onSetup()).resolves.toBeUndefined();
+    expect(routes).toHaveLength(0);
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(
+      "[renown-oidc] relational namespace/migration failed (db down) — OIDC endpoints disabled",
+    );
+  });
+
+  it("registers no routes and does not throw when the migration fails", async () => {
+    process.env.RENOWN_OIDC_SIGNING_KEYS = await signingKeysEnv();
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+    const { subgraph, routes, createNamespace } = makeSubgraph();
+    const failingDb = {
+      schema: {
+        createTable: () => {
+          throw new Error("permission denied for schema");
+        },
+      },
+    };
+    createNamespace.mockResolvedValueOnce(failingDb as never);
+    await expect(subgraph.onSetup()).resolves.toBeUndefined();
+    expect(routes).toHaveLength(0);
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(
+      "[renown-oidc] relational namespace/migration failed (permission denied for schema) — OIDC endpoints disabled",
+    );
+  });
+
+  it("is idempotent: a second onSetup registers no duplicate routes or timers", async () => {
+    process.env.RENOWN_OIDC_SIGNING_KEYS = await signingKeysEnv();
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+    const { subgraph, routes } = makeSubgraph();
+    await subgraph.onSetup();
+    await subgraph.onSetup();
+    expect(routes).toHaveLength(8);
+    expect(setIntervalSpy).toHaveBeenCalledOnce();
+    await subgraph.onDisconnect();
+  });
+
   describe("GraphQL", () => {
     type Resolver = (parent: unknown, args: unknown, ctx: unknown) => Promise<unknown>;
     const resolver = (subgraph: RenownOidcSubgraph, type: "Query" | "Mutation", field: string) =>
