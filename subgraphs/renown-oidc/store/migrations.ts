@@ -24,7 +24,7 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("redirect_uri", "varchar(2048)", (col) => col.notNull())
     .addColumn("sub", "varchar(255)", (col) => col.notNull())
     .addColumn("address", "varchar(255)", (col) => col.notNull())
-    .addColumn("chain_id", "integer", (col) => col.notNull())
+    .addColumn("chain_id", "bigint", (col) => col.notNull())
     .addColumn("nonce", "varchar(1024)")
     .addColumn("code_challenge", "varchar(1024)")
     .addColumn("scope", "varchar(1024)", (col) => col.notNull())

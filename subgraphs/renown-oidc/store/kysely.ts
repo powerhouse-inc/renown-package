@@ -1,3 +1,4 @@
+import type { Selectable } from "kysely";
 import type { AccessToken, AuthCode, LoginRequest } from "../core/types.js";
 import type {
   AccessTokenRow,
@@ -25,14 +26,14 @@ function toLoginRequest(row: LoginRequestRow): LoginRequest {
   };
 }
 
-function toAuthCode(row: AuthCodeRow): AuthCode {
+function toAuthCode(row: Selectable<AuthCodeRow>): AuthCode {
   return {
     codeHash: row.code_hash,
     clientId: row.client_id,
     redirectUri: row.redirect_uri,
     sub: row.sub,
     address: row.address,
-    chainId: row.chain_id,
+    chainId: Number(row.chain_id),
     nonce: row.nonce,
     codeChallenge: row.code_challenge,
     scope: row.scope,

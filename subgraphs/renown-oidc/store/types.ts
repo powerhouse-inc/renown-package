@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import type { ColumnType, Kysely } from "kysely";
 import type { AccessToken, AuthCode, LoginRequest } from "../core/types.js";
 
 /** A `timestamptz` column: the driver returns a `Date`, but accepts either on write. */
@@ -22,7 +22,8 @@ export interface AuthCodeRow {
   redirect_uri: string;
   sub: string;
   address: string;
-  chain_id: number;
+  /** `bigint`: EIP-155 chain ids can exceed int4. Drivers return int8 as a string, bigint or number. */
+  chain_id: ColumnType<string | number | bigint, number, number>;
   nonce: string | null;
   code_challenge: string | null;
   scope: string;
