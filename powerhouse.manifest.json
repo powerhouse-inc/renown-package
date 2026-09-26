@@ -14,6 +14,10 @@
     {
       "id": "powerhouse/renown-credential",
       "name": "RenownCredential"
+    },
+    {
+      "id": "renown/oidc-client",
+      "name": "RenownOidcClient"
     }
   ],
   "apps": [],
@@ -31,6 +35,13 @@
       "documentTypes": [
         "powerhouse/renown-user"
       ]
+    },
+    {
+      "name": "Renown OIDC Client Editor",
+      "id": "renown-oidc-client-editor",
+      "documentTypes": [
+        "renown/oidc-client"
+      ]
     }
   ],
   "processors": [
@@ -39,8 +50,8 @@
       "name": "renown-credential"
     },
     {
-      "name": "renown-user",
-      "id": "renown-user"
+      "id": "renown-user",
+      "name": "renown-user"
     }
   ],
   "subgraphs": [
@@ -51,6 +62,10 @@
     {
       "id": "renown-user",
       "name": "renown-user"
+    },
+    {
+      "id": "renown-oidc",
+      "name": "renown-oidc"
     }
   ],
   "config": []

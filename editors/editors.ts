@@ -4,9 +4,11 @@
  */
 import type { EditorModule } from "document-model";
 import { RenownCredentialEditor } from "./renown-credential-editor/module.js";
+import { RenownOidcClientEditor } from "./renown-oidc-client-editor/module.js";
 import { RenownUserEditor } from "./renown-user-editor/module.js";
 
 export const editors: EditorModule[] = [
   RenownCredentialEditor,
+  RenownOidcClientEditor,
   RenownUserEditor,
 ];

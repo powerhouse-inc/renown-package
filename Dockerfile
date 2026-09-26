@@ -21,7 +21,9 @@ RUN apk add --no-cache python3 make g++ git bash \
 # Setup pnpm
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Pinned: pnpm@latest (12.x) fails `pnpm add -g` with ERR_PNPM_GLOBAL_BIN_DIR_NOT_IN_PATH.
+ARG PNPM_VERSION=10.33.0
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 
 # Configure JSR registry
 RUN pnpm config set @jsr:registry https://npm.jsr.io
@@ -42,7 +44,7 @@ RUN pnpm install
 RUN pnpm add -D package-manager-detector
 
 # Build the project
-RUN pnpm build || true
+RUN pnpm build
 
 
 # -----------------------------------------------------------------------------
@@ -97,7 +99,9 @@ RUN apk add --no-cache curl openssl
 # Setup pnpm
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Pinned: pnpm@latest (12.x) fails `pnpm add -g` with ERR_PNPM_GLOBAL_BIN_DIR_NOT_IN_PATH.
+ARG PNPM_VERSION=10.33.0
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 
 # Configure JSR registry
 RUN pnpm config set @jsr:registry https://npm.jsr.io
