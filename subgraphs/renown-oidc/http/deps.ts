@@ -2,7 +2,7 @@ import type { SigningKeys } from "../core/keys.js";
 import type { OidcClient, OidcConfig, Profile } from "../core/types.js";
 import type { OidcStore } from "../store/types.js";
 
-/** Looks up registered OIDC clients by `client_id` (the client document id). */
+/** Looks up registered OIDC clients by `client_id` in the `oidc_clients` table. */
 export interface ClientDirectory {
   getClient(clientId: string): Promise<OidcClient | undefined>;
 }

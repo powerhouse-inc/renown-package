@@ -17,21 +17,25 @@ const PUBLIC = { auth: "public" } as const;
 /**
  * Renown as an OpenID Connect provider. Serves the OIDC endpoints as public
  * HTTP routes under `<http.baseUrl>/oidc` (only when `RENOWN_OIDC_SIGNING_KEYS`
- * is configured) and a GraphQL API to register clients, which are
- * `renown/oidc-client` documents. Short-lived login state lives in the
- * `renown-oidc` relational namespace and is swept every 5 minutes.
+ * is configured) and a token-gated GraphQL API to register and manage
+ * clients. Clients live in the `oidc_clients` table of the `renown-oidc`
+ * relational namespace — the source of truth — and are mirrored to
+ * `renown/oidc-client` documents for audit only. Short-lived login state
+ * lives in the same namespace and is swept every 5 minutes.
  */
 export class RenownOidcSubgraph extends BaseSubgraph {
   name = "renown-oidc";
   typeDefs: DocumentNode = schema;
   resolvers: Record<string, unknown> = createResolvers({
     config: () => this.#getConfig(),
-    clients: createClientDirectory(this.reactorClient),
+    store: () => this.#store,
     reactorClient: this.reactorClient,
   });
   additionalContextFields = {};
 
   #config: OidcConfig | undefined;
+  #setUp = false;
+  #store: KyselyOidcStore | undefined;
   #routes: { dispose(): void }[] = [];
   #cleanupTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -42,12 +46,29 @@ export class RenownOidcSubgraph extends BaseSubgraph {
 
   async onSetup() {
     // Idempotent: a second setup must not register duplicate routes or timers.
-    if (this.#routes.length > 0) return;
+    if (this.#setUp) return;
+    this.#setUp = true;
     const config = this.#getConfig();
 
-    // A missing or broken signing key disables only the OIDC endpoints: never
-    // throw here, or the host's other subgraphs go down with this one. Never
-    // log the key itself either (loadSigningKeys' errors don't contain it).
+    // Never throw from here, or the host's other subgraphs go down with this
+    // one: a failure disables only what depends on it.
+    let store: KyselyOidcStore;
+    try {
+      const db = (await this.relationalDb.createNamespace("renown-oidc")) as unknown as OidcKysely;
+      await migrate(db);
+      store = new KyselyOidcStore(db);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unknown error";
+      console.error(
+        `[renown-oidc] relational namespace/migration failed (${reason}) — OIDC endpoints and client registry disabled`,
+      );
+      return;
+    }
+    this.#store = store;
+
+    // A missing or broken signing key disables only the OIDC endpoints (the
+    // registry keeps working). Never log the key itself either
+    // (loadSigningKeys' errors don't contain it).
     let keys: SigningKeys | null;
     try {
       keys = await loadSigningKeys(process.env.RENOWN_OIDC_SIGNING_KEYS, config.issuer);
@@ -61,22 +82,11 @@ export class RenownOidcSubgraph extends BaseSubgraph {
       return;
     }
 
-    let store: KyselyOidcStore;
-    try {
-      const db = (await this.relationalDb.createNamespace("renown-oidc")) as unknown as OidcKysely;
-      await migrate(db);
-      store = new KyselyOidcStore(db);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "unknown error";
-      console.error(`[renown-oidc] relational namespace/migration failed (${reason}) — OIDC endpoints disabled`);
-      return;
-    }
-
     const handlers = createOidcHandlers({
       config,
       keys,
       store,
-      clients: createClientDirectory(this.reactorClient),
+      clients: createClientDirectory(store),
       profiles: createProfileDirectory(this.relationalDb),
       now: () => new Date(),
     });
@@ -105,6 +115,8 @@ export class RenownOidcSubgraph extends BaseSubgraph {
   onDisconnect(): Promise<void> {
     for (const route of this.#routes) route.dispose();
     this.#routes = [];
+    this.#store = undefined;
+    this.#setUp = false;
     if (this.#cleanupTimer !== undefined) {
       clearInterval(this.#cleanupTimer);
       this.#cleanupTimer = undefined;

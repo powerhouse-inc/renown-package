@@ -1,16 +1,18 @@
-import type { IReactorClient } from "@powerhousedao/reactor";
 import type { BaseSubgraph } from "@powerhousedao/reactor-api";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
 import type { ClientDirectory, ProfileDirectory } from "./http/deps.js";
-import { documentToClient } from "./register.js";
+import type { OidcStore } from "./store/types.js";
 
-/** Clients are `renown/oidc-client` documents; the `client_id` is the document id. */
-export function createClientDirectory(reactorClient: Pick<IReactorClient, "get">): ClientDirectory {
+/**
+ * Clients come only from the `oidc_clients` table — never from the mirrored
+ * `renown/oidc-client` documents, which anyone can edit on an open switchboard.
+ */
+export function createClientDirectory(store: Pick<OidcStore, "getClient">): ClientDirectory {
   return {
     async getClient(clientId) {
       try {
-        return documentToClient(await reactorClient.get(clientId));
+        return await store.getClient(clientId);
       } catch {
         return undefined;
       }

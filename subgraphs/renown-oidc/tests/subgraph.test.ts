@@ -7,6 +7,8 @@ import {
   PostgresIntrospector,
   PostgresQueryCompiler,
 } from "kysely";
+import { PGlite } from "@electric-sql/pglite";
+import { PGliteDialect } from "kysely-pglite-dialect";
 import type { RouteContext, RouteHandler, RouteOptions } from "@powerhousedao/reactor-api";
 import { RenownOidcSubgraph } from "../index.js";
 
@@ -93,11 +95,11 @@ describe("RenownOidcSubgraph", () => {
     expect(makeSubgraph().subgraph.name).toBe("renown-oidc");
   });
 
-  it("registers no routes and does not throw when signing keys are unset", async () => {
+  it("registers no routes and does not throw when signing keys are unset (the registry still gets its namespace)", async () => {
     const { subgraph, routes, createNamespace } = makeSubgraph();
     await expect(subgraph.onSetup()).resolves.toBeUndefined();
     expect(routes).toHaveLength(0);
-    expect(createNamespace).not.toHaveBeenCalled();
+    expect(createNamespace).toHaveBeenCalledWith("renown-oidc");
     expect(warn).toHaveBeenCalledWith("[renown-oidc] RENOWN_OIDC_SIGNING_KEYS unset — OIDC endpoints disabled");
     await expect(subgraph.onDisconnect()).resolves.toBeUndefined();
   });
@@ -174,7 +176,7 @@ describe("RenownOidcSubgraph", () => {
     expect(routes).toHaveLength(0);
     expect(setIntervalSpy).not.toHaveBeenCalled();
     expect(error).toHaveBeenCalledWith(
-      "[renown-oidc] relational namespace/migration failed (db down) — OIDC endpoints disabled",
+      "[renown-oidc] relational namespace/migration failed (db down) — OIDC endpoints and client registry disabled",
     );
   });
 
@@ -194,7 +196,7 @@ describe("RenownOidcSubgraph", () => {
     expect(routes).toHaveLength(0);
     expect(setIntervalSpy).not.toHaveBeenCalled();
     expect(error).toHaveBeenCalledWith(
-      "[renown-oidc] relational namespace/migration failed (permission denied for schema) — OIDC endpoints disabled",
+      "[renown-oidc] relational namespace/migration failed (permission denied for schema) — OIDC endpoints and client registry disabled",
     );
   });
 
@@ -213,32 +215,61 @@ describe("RenownOidcSubgraph", () => {
     type Resolver = (parent: unknown, args: unknown, ctx: unknown) => Promise<unknown>;
     const resolver = (subgraph: RenownOidcSubgraph, type: "Query" | "Mutation", field: string) =>
       (subgraph.resolvers as Record<string, Record<string, Resolver>>)[type][field];
-    const registerArgs = { input: { name: "x", redirectUris: [], allowedSubjects: [], confidential: true } };
+    const registerArgs = {
+      input: { name: "Speckle", redirectUris: ["https://a.example/cb"], allowedSubjects: [], confidential: true },
+    };
+    const TOKEN_HEADER = "x-renown-oidc-registration-token";
+    const authorized = { headers: { [TOKEN_HEADER]: "right-token" } };
+
+    /** A subgraph whose relational namespace is a real (in-memory) Postgres. */
+    async function pgliteSubgraph() {
+      process.env.RENOWN_OIDC_REGISTRATION_TOKEN = "right-token";
+      const made = makeSubgraph();
+      const db = new Kysely<any>({ dialect: new PGliteDialect(new PGlite()) });
+      made.createNamespace.mockResolvedValue(db);
+      let ids = 0;
+      made.reactorClient.createEmpty.mockImplementation(() =>
+        Promise.resolve({ header: { id: `doc-${++ids}`, documentType: "renown/oidc-client" } }),
+      );
+      made.reactorClient.execute.mockResolvedValue({ operations: { global: [] } });
+      await made.subgraph.onSetup();
+      return { ...made, db };
+    }
 
     it("serves the resolvers even when signing keys are unset", async () => {
       const { subgraph } = makeSubgraph();
       await subgraph.onSetup();
+      for (const field of ["registerOidcClient", "updateOidcClient", "rotateOidcClientSecret"]) {
+        expect(resolver(subgraph, "Mutation", field)).toBeTypeOf("function");
+      }
       expect(resolver(subgraph, "Query", "oidcClient")).toBeTypeOf("function");
-      expect(resolver(subgraph, "Mutation", "registerOidcClient")).toBeTypeOf("function");
     });
 
-    it("rejects registration when the registration token is unset", async () => {
+    it("rejects every mutation when the registration token is unset", async () => {
       const { subgraph, reactorClient } = makeSubgraph();
       await subgraph.onSetup();
+      const ctx = { headers: { [TOKEN_HEADER]: "" } };
+      await expect(resolver(subgraph, "Mutation", "registerOidcClient")(null, registerArgs, ctx)).rejects.toThrow(
+        "Unauthorized",
+      );
       await expect(
-        resolver(subgraph, "Mutation", "registerOidcClient")(null, registerArgs, { headers: { "x-renown-oidc-registration-token": "" } }),
+        resolver(subgraph, "Mutation", "updateOidcClient")(null, { clientId: "c", input: { name: "x" } }, ctx),
+      ).rejects.toThrow("Unauthorized");
+      await expect(
+        resolver(subgraph, "Mutation", "rotateOidcClientSecret")(null, { clientId: "c" }, ctx),
       ).rejects.toThrow("Unauthorized");
       expect(reactorClient.createEmpty).not.toHaveBeenCalled();
+      expect(reactorClient.execute).not.toHaveBeenCalled();
     });
 
-    it("rejects registration with a wrong or misplaced registration token", async () => {
+    it("rejects a wrong or misplaced registration token", async () => {
       process.env.RENOWN_OIDC_REGISTRATION_TOKEN = "right-token";
       const { subgraph, reactorClient } = makeSubgraph();
       await subgraph.onSetup();
       const register = resolver(subgraph, "Mutation", "registerOidcClient");
-      await expect(
-        register(null, registerArgs, { headers: { "x-renown-oidc-registration-token": "wrong-token" } }),
-      ).rejects.toThrow("Unauthorized");
+      await expect(register(null, registerArgs, { headers: { [TOKEN_HEADER]: "wrong-token" } })).rejects.toThrow(
+        "Unauthorized",
+      );
       // The token is only honoured in its own header, never as a bearer token.
       await expect(register(null, registerArgs, { headers: { authorization: "Bearer right-token" } })).rejects.toThrow(
         "Unauthorized",
@@ -247,48 +278,79 @@ describe("RenownOidcSubgraph", () => {
       expect(reactorClient.createEmpty).not.toHaveBeenCalled();
     });
 
-    it("registers a client with the right registration token", async () => {
+    it("reports the registry as unavailable when the relational namespace failed", async () => {
       process.env.RENOWN_OIDC_REGISTRATION_TOKEN = "right-token";
-      const { subgraph, reactorClient } = makeSubgraph();
-      reactorClient.createEmpty.mockResolvedValue({ header: { id: "doc-7" } });
-      reactorClient.execute.mockResolvedValue({ operations: { global: [] } });
+      const { subgraph, createNamespace, reactorClient } = makeSubgraph();
+      createNamespace.mockRejectedValueOnce(new Error("db down"));
       await subgraph.onSetup();
-      const result = await resolver(subgraph, "Mutation", "registerOidcClient")(
-        null,
-        { input: { ...registerArgs.input, confidential: false } },
-        { headers: { "x-renown-oidc-registration-token": "right-token" } },
+      await expect(resolver(subgraph, "Mutation", "registerOidcClient")(null, registerArgs, authorized)).rejects.toThrow(
+        "The OIDC client registry is unavailable",
       );
-      expect(result).toEqual({ clientId: "doc-7", clientSecret: null });
+      await expect(resolver(subgraph, "Query", "oidcClient")(null, { clientId: "c" }, {})).rejects.toThrow(
+        "The OIDC client registry is unavailable",
+      );
+      expect(reactorClient.createEmpty).not.toHaveBeenCalled();
     });
 
-    it("oidcClient returns public info only, and null for a missing or foreign document", async () => {
-      const { subgraph, reactorClient } = makeSubgraph();
-      await subgraph.onSetup();
-      const query = resolver(subgraph, "Query", "oidcClient");
-      expect(await query(null, { clientId: "missing" }, {})).toBeNull();
+    it("registers, updates, rotates and reads clients from the oidc_clients table", async () => {
+      const { subgraph, db, reactorClient } = await pgliteSubgraph();
+      const registered = (await resolver(subgraph, "Mutation", "registerOidcClient")(null, registerArgs, authorized)) as {
+        clientId: string;
+        clientSecret: string;
+      };
+      expect(registered.clientId).toBe("doc-1");
+      expect(registered.clientSecret).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(reactorClient.execute).toHaveBeenCalledWith("doc-1", "main", expect.any(Array));
 
-      reactorClient.get.mockResolvedValueOnce({
-        header: { id: "doc-1", documentType: "renown/oidc-client" },
-        state: {
-          global: {
-            name: "Speckle",
-            redirectUris: ["https://a.example/cb"],
-            allowedSubjects: ["0xabc"],
-            allowAnySubject: false,
-            clientSecretHash: "sha256:00",
-            status: "ACTIVE",
-          },
-        },
-      });
-      expect(await query(null, { clientId: "doc-1" }, {})).toEqual({
+      const updated = await resolver(subgraph, "Mutation", "updateOidcClient")(
+        null,
+        { clientId: "doc-1", input: { addRedirectUris: ["https://b.example/cb"], status: "DISABLED" } },
+        authorized,
+      );
+      expect(updated).toEqual({
         clientId: "doc-1",
         name: "Speckle",
-        redirectUris: ["https://a.example/cb"],
-        status: "ACTIVE",
+        redirectUris: ["https://a.example/cb", "https://b.example/cb"],
+        status: "DISABLED",
       });
 
-      reactorClient.get.mockResolvedValueOnce({ header: { id: "u", documentType: "powerhouse/renown-user" }, state: { global: {} } });
-      expect(await query(null, { clientId: "u" }, {})).toBeNull();
+      const rotated = (await resolver(subgraph, "Mutation", "rotateOidcClientSecret")(
+        null,
+        { clientId: "doc-1", confidential: false },
+        authorized,
+      )) as { clientSecret: string | null };
+      expect(rotated).toEqual({ clientId: "doc-1", clientSecret: null });
+
+      const row = await db
+        .withSchema("public")
+        .selectFrom("oidc_clients")
+        .selectAll()
+        .where("client_id", "=", "doc-1")
+        .executeTakeFirstOrThrow();
+      expect(row).toMatchObject({ name: "Speckle", secret_hash: null, status: "DISABLED", allow_any: false });
+
+      const query = resolver(subgraph, "Query", "oidcClient");
+      expect(await query(null, { clientId: "doc-1" }, {})).toEqual(updated);
+      expect(await query(null, { clientId: "missing" }, {})).toBeNull();
+      // Document state is never consulted.
+      expect(reactorClient.get).not.toHaveBeenCalled();
+      await subgraph.onDisconnect();
+    });
+
+    it("turns invalid input and unknown clients into GraphQL errors without writing", async () => {
+      const { subgraph, reactorClient } = await pgliteSubgraph();
+      await expect(
+        resolver(subgraph, "Mutation", "registerOidcClient")(
+          null,
+          { input: { ...registerArgs.input, redirectUris: ["http://evil.example/cb"] } },
+          authorized,
+        ),
+      ).rejects.toMatchObject({ message: "Invalid redirect URI: http://evil.example/cb", extensions: { code: "BAD_USER_INPUT" } });
+      expect(reactorClient.createEmpty).not.toHaveBeenCalled();
+      await expect(
+        resolver(subgraph, "Mutation", "updateOidcClient")(null, { clientId: "ghost", input: { name: "x" } }, authorized),
+      ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
+      await subgraph.onDisconnect();
     });
   });
 });
