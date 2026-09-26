@@ -123,19 +123,23 @@ export function describeOidcStoreContract(name: string, makeStore: () => Promise
       expect(await s.getAccessToken("missing")).toBeUndefined();
     });
 
-    it("sweeps expired rows", async () => {
+    it("sweeps expired rows but keeps auth codes for an hour past expiry", async () => {
       const s = await makeStore();
       await s.createLoginRequest({ ...loginRequest, id: "old", expiresAt: at(-1) });
       await s.createLoginRequest(loginRequest);
       await s.createAccessToken(token("old", "h1", at(-1)));
       await s.createAccessToken(token("live", "h1", at(3600_000)));
-      await s.createAuthCode({ ...code, codeHash: "ancient", expiresAt: at(-1) });
+      await s.createAuthCode({ ...code, codeHash: "recent", expiresAt: at(-60_000) });
+      await s.createAuthCode({ ...code, codeHash: "ancient", expiresAt: at(-3600_001) });
 
       expect(await s.deleteExpired(now)).toBe(3);
       expect(await s.getLoginRequest("old")).toBeUndefined();
       expect(await s.getLoginRequest("req-1")).toBeDefined();
       expect(await s.getAccessToken("old")).toBeUndefined();
       expect(await s.getAccessToken("live")).toBeDefined();
+      // A code that expired a minute ago is still recognised as a replay…
+      expect((await s.consumeAuthCode("recent", now))?.firstUse).toBe(true);
+      // …one past the retention window is gone.
       expect(await s.consumeAuthCode("ancient", now)).toBeUndefined();
     });
   });

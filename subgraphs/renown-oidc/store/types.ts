@@ -89,7 +89,15 @@ export interface OidcStore {
   createAccessToken(t: AccessToken): Promise<void>;
   getAccessToken(tokenHash: string): Promise<AccessToken | undefined>;
   revokeAccessTokensForCode(codeHash: string): Promise<void>;
+  /**
+   * Deletes expired login requests and access tokens, and auth codes that
+   * expired more than `AUTH_CODE_RETENTION_MS` ago — kept that long so a
+   * replayed code is still recognised (and its tokens revoked) after a sweep.
+   */
   deleteExpired(now: Date): Promise<number>;
 }
 
 export type OidcKysely = Kysely<OidcDB>;
+
+/** How long past `expires_at` a (used or unused) auth code is retained for replay detection. */
+export const AUTH_CODE_RETENTION_MS = 3600 * 1000;

@@ -1,6 +1,7 @@
 import type { Selectable } from "kysely";
 import type { AccessToken, AuthCode, LoginRequest, OidcClient } from "../core/types.js";
 import {
+  AUTH_CODE_RETENTION_MS,
   type AccessTokenRow,
   type AuthCodeRow,
   type LoginRequestRow,
@@ -231,7 +232,10 @@ export class KyselyOidcStore implements OidcStore {
   async deleteExpired(now: Date): Promise<number> {
     const results = await Promise.all([
       this.db.deleteFrom("login_requests").where("expires_at", "<", now).executeTakeFirst(),
-      this.db.deleteFrom("auth_codes").where("expires_at", "<", now).executeTakeFirst(),
+      this.db
+        .deleteFrom("auth_codes")
+        .where("expires_at", "<", new Date(now.getTime() - AUTH_CODE_RETENTION_MS))
+        .executeTakeFirst(),
       this.db.deleteFrom("access_tokens").where("expires_at", "<", now).executeTakeFirst(),
     ]);
     return results.reduce((sum, r) => sum + Number(r.numDeletedRows), 0);

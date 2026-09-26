@@ -1,5 +1,5 @@
 import type { AccessToken, AuthCode, LoginRequest, OidcClient } from "../core/types.js";
-import type { OidcClientPatch, OidcStore } from "./types.js";
+import { AUTH_CODE_RETENTION_MS, type OidcClientPatch, type OidcStore } from "./types.js";
 
 function cloneClient(c: OidcClient): OidcClient {
   return { ...c, redirectUris: [...c.redirectUris], allowedSubjects: [...c.allowedSubjects] };
@@ -85,8 +85,9 @@ export class MemoryOidcStore implements OidcStore {
         deleted++;
       }
     }
+    const codeCutoff = new Date(now.getTime() - AUTH_CODE_RETENTION_MS);
     for (const [hash, c] of this.authCodes) {
-      if (c.expiresAt < now) {
+      if (c.expiresAt < codeCutoff) {
         this.authCodes.delete(hash);
         deleted++;
       }
