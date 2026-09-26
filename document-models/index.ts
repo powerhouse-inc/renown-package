@@ -1,3 +1,4 @@
 export { RenownCredential as RenownCredentialV1 } from "./renown-credential/v1/module.js";
+export { RenownOidcClient as RenownOidcClientV1 } from "./renown-oidc-client/v1/module.js";
 export { RenownUser as RenownUserV1 } from "./renown-user/v1/module.js";
 export { upgradeManifests } from "./upgrade-manifests.js";

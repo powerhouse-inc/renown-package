@@ -14,6 +14,10 @@
     {
       "id": "powerhouse/renown-credential",
       "name": "RenownCredential"
+    },
+    {
+      "id": "renown/oidc-client",
+      "name": "RenownOidcClient"
     }
   ],
   "apps": [],
@@ -39,8 +43,8 @@
       "name": "renown-credential"
     },
     {
-      "name": "renown-user",
-      "id": "renown-user"
+      "id": "renown-user",
+      "name": "renown-user"
     }
   ],
   "subgraphs": [

@@ -5,6 +5,9 @@
     "paths": {
       "document-models": ["./document-models/index.ts"],
       "document-models/*": ["./document-models/*/index.ts"],
+      "document-models/renown-oidc-client/v1/src/utils.js": [
+        "./document-models/renown-oidc-client/v1/src/utils.ts"
+      ],
       "editors": ["./editors/index.ts"],
       "editors/*": ["./editors/*/index.ts"],
       "pieces": ["./pieces/index.ts"],
