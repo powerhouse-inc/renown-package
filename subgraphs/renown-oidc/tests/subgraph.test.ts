@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
-import { exportJWK, generateKeyPair } from "jose";
 import {
   DummyDriver,
   Kysely,
@@ -11,6 +10,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGliteDialect } from "kysely-pglite-dialect";
 import type { RouteContext, RouteHandler, RouteOptions } from "@powerhousedao/reactor-api";
 import { RenownOidcSubgraph } from "../index.js";
+import { testSigningKeysEnv } from "./signing-key.js";
 
 const baseUrl = "https://sb.example/api/@powerhousedao/renown-package";
 
@@ -61,10 +61,7 @@ function makeSubgraph() {
   return { subgraph, routes, createNamespace, reactorClient };
 }
 
-async function signingKeysEnv(): Promise<string> {
-  const { privateKey } = await generateKeyPair("ES256", { extractable: true });
-  return JSON.stringify([{ ...(await exportJWK(privateKey)), kid: "k1" }]);
-}
+const signingKeysEnv = testSigningKeysEnv;
 
 const ctx = (params: Record<string, string> = {}) => ({ params }) as unknown as RouteContext;
 

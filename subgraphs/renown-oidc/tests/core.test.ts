@@ -10,6 +10,7 @@ import { loadSigningKeys } from "../core/keys.js";
 import { buildSiweTemplate, verifySiweLogin } from "../core/siwe.js";
 import { subjectFor, isSubjectAllowed, buildClaims, OidcError } from "../core/claims.js";
 import type { LoginRequest, OidcClient } from "../core/types.js";
+import { testSigningJwk } from "./signing-key.js";
 
 const cfg = { issuer: "https://sb.example/api/@powerhousedao/renown-package/oidc", loginUrl: "https://renown.example/oidc/login", registrationToken: null, driveId: null };
 const client: OidcClient = { id: "c1", name: "Speckle", redirectUris: ["https://s.example/cb"], allowedSubjects: [], allowAnySubject: false, clientSecretHash: null, status: "ACTIVE" };
@@ -53,40 +54,55 @@ describe("config", () => {
 });
 
 describe("keys", () => {
-  it("returns null when unset and signs verifiable ES256 tokens with the first key", async () => {
+  it("returns null when unset and signs verifiable RS256 tokens with the first key", async () => {
     expect(await loadSigningKeys(undefined, cfg.issuer)).toBeNull();
-    const { privateKey } = await generateKeyPair("ES256", { extractable: true });
-    const jwk = { ...(await exportJWK(privateKey)), kid: "k1" };
-    const keys = (await loadSigningKeys(JSON.stringify([jwk]), cfg.issuer))!;
+    const jwk = await testSigningJwk();
+    const { privateKey: second } = await generateKeyPair("RS256", { extractable: true, modulusLength: 2048 });
+    const keys = (await loadSigningKeys(JSON.stringify([jwk, { ...(await exportJWK(second)), kid: "k2" }]), cfg.issuer))!;
+    expect(keys.jwks().keys.map((k) => k.kid)).toEqual(["k1", "k2"]);
     const pub = keys.jwks().keys[0];
-    expect(pub).toMatchObject({ kid: "k1", kty: "EC", crv: "P-256", alg: "ES256", use: "sig" });
-    expect(pub).not.toHaveProperty("d");
+    expect(pub).toEqual({ kty: "RSA", n: jwk.n, e: jwk.e, kid: "k1", alg: "RS256", use: "sig" });
     const token = await keys.sign({ sub: "s" }, { audience: "c1", expiresInSec: 600 });
     const { payload, protectedHeader } = await jwtVerify(token, createLocalJWKSet(keys.jwks() as never), { issuer: cfg.issuer, audience: "c1" });
-    expect(protectedHeader).toMatchObject({ alg: "ES256", kid: "k1" }); expect(payload.sub).toBe("s");
+    expect(protectedHeader).toMatchObject({ alg: "RS256", kid: "k1" }); expect(payload.sub).toBe("s");
   });
-  it("rejects keys without kid or non-EC keys", async () => {
-    await expect(loadSigningKeys(JSON.stringify([{ kty: "oct", k: "x" }]), cfg.issuer)).rejects.toThrow();
+  it("rejects EC keys, symmetric keys, RSA keys without CRT parameters or kid, and short moduli", async () => {
+    const jwk = await testSigningJwk();
+    const { privateKey: ec } = await generateKeyPair("ES256", { extractable: true });
+    // jose refuses to generate < 2048-bit RSA keys, so go through WebCrypto.
+    const short = await crypto.subtle.generateKey(
+      { name: "RSASSA-PKCS1-v1_5", modulusLength: 1024, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+      true,
+      ["sign", "verify"],
+    );
+    const { p: _p, ...noCrt } = jwk;
+    const { kid: _kid, ...noKid } = jwk;
+    for (const bad of [{ ...(await exportJWK(ec)), kid: "ec" }, { kty: "oct", k: "x", kid: "o" }, noCrt, noKid, { ...(await exportJWK(short.privateKey)), kid: "short" }]) {
+      await expect(loadSigningKeys(JSON.stringify([bad]), cfg.issuer)).rejects.toThrow(/RENOWN_OIDC_SIGNING_KEYS/);
+    }
   });
   it("publishes an allowlisted, importable JWKS entry even when the source JWK carries key_ops/ext", async () => {
-    const { privateKey } = await generateKeyPair("ES256", { extractable: true });
-    const rawJwk = await exportJWK(privateKey);
-    const jwk = { ...rawJwk, kid: "k2", key_ops: ["sign"], ext: true };
+    const jwk = { ...(await testSigningJwk()), key_ops: ["sign"], ext: true };
     const keys = (await loadSigningKeys(JSON.stringify([jwk]), cfg.issuer))!;
     const pub = keys.jwks().keys[0];
-    expect(Object.keys(pub).sort()).toEqual(["alg", "crv", "kid", "kty", "use", "x", "y"]);
-    await expect(importJWK(pub as never, "ES256")).resolves.toBeDefined();
+    expect(Object.keys(pub).sort()).toEqual(["alg", "e", "kid", "kty", "n", "use"]);
+    await expect(importJWK(pub as never, "RS256")).resolves.toBeDefined();
   });
-  it("does not leak the raw value when RENOWN_OIDC_SIGNING_KEYS is invalid JSON", async () => {
-    const raw = "{not-json:::supersecret";
-    let caught: unknown;
-    try {
-      await loadSigningKeys(raw, cfg.issuer);
-    } catch (err) {
-      caught = err;
+  it("does not leak key material in its errors", async () => {
+    const jwk = await testSigningJwk();
+    for (const raw of ["{not-json:::supersecret", JSON.stringify([{ ...jwk, n: jwk.n!.slice(0, 100) }]), JSON.stringify([{ ...jwk, kty: "EC" }])]) {
+      let caught: unknown;
+      try {
+        await loadSigningKeys(raw, cfg.issuer);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      const message = (caught as Error).message;
+      expect(message).not.toContain("supersecret");
+      expect(message).not.toContain(jwk.d);
+      expect(message).not.toContain(jwk.n);
     }
-    expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).not.toContain("supersecret");
   });
 });
 

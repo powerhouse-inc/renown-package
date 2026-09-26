@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument -- untyped Response.json() bodies */
 import { describe, expect, it, beforeEach } from "vitest";
-import { generateKeyPair, exportJWK, jwtVerify, createLocalJWKSet } from "jose";
+import { jwtVerify, createLocalJWKSet } from "jose";
 import { createSiweMessage } from "viem/siwe";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { getAddress } from "viem";
@@ -10,6 +10,7 @@ import { MemoryOidcStore } from "../store/memory.js";
 import { loadSigningKeys } from "../core/keys.js";
 import { hashSecret, sha256B64url } from "../core/crypto.js";
 import type { OidcClient } from "../core/types.js";
+import { testSigningKeysEnv } from "./signing-key.js";
 
 const issuer = "https://sb.example/api/@powerhousedao/renown-package/oidc";
 const config = { issuer, loginUrl: "https://renown.example/oidc/login", registrationToken: null, driveId: null };
@@ -22,8 +23,7 @@ let confidential: OidcClient, publicClient: OidcClient;
 
 beforeEach(async () => {
   clock = new Date("2026-09-26T12:00:00Z");
-  const { privateKey } = await generateKeyPair("ES256", { extractable: true });
-  const keys = (await loadSigningKeys(JSON.stringify([{ ...(await exportJWK(privateKey)), kid: "k1" }]), issuer))!;
+  const keys = (await loadSigningKeys(await testSigningKeysEnv(), issuer))!;
   confidential = { id: "conf", name: "Speckle", redirectUris: ["https://s.example/auth/oidc/callback"], allowedSubjects: [user.address.toLowerCase()], allowAnySubject: false, clientSecretHash: await hashSecret(SECRET), status: "ACTIVE" };
   publicClient = { ...confidential, id: "pub", clientSecretHash: null };
   const clients = new Map([[confidential.id, confidential], [publicClient.id, publicClient]]);
@@ -47,8 +47,9 @@ const tokenReq = (form: Record<string, string>, basic?: string) => new Request(`
 describe("OIDC flow", () => {
   it("discovery and jwks", async () => {
     const d = await (await h.discovery(new Request(`${issuer}/.well-known/openid-configuration`))).json();
-    expect(d).toMatchObject({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`, jwks_uri: `${issuer}/jwks`, code_challenge_methods_supported: ["S256"] });
+    expect(d).toMatchObject({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`, jwks_uri: `${issuer}/jwks`, code_challenge_methods_supported: ["S256"], id_token_signing_alg_values_supported: ["RS256"] });
     const j = await (await h.jwks(new Request(`${issuer}/jwks`))).json();
+    expect(j.keys[0]).toMatchObject({ kty: "RSA", alg: "RS256", use: "sig", kid: "k1" });
     expect(j.keys[0]).not.toHaveProperty("d");
   });
 
