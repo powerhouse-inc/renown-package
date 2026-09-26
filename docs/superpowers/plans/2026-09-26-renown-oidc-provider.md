@@ -17,13 +17,21 @@ make the Speckle add-on use it.
 **Tech Stack:**
 - TypeScript
 - Powerhouse reactor-api 6.2.3-dev.24 (`BaseSubgraph`, `IHttpScope`, `IRelationalDb`/Kysely, `IReactorClient`)
-- `jose` ^6 (JWT/JWK, ES256)
+- `jose` ^6 (JWT/JWK, RS256)
 - `viem` ^2 (`viem/siwe`, `verifyMessage`)
 - Vitest
 - Next.js 16 (Renown app), Playwright
 - Helm (powerhouse-chart)
 
 **Spec:** `docs/superpowers/specs/2026-09-26-renown-oidc-provider-design.md` (read it first)
+
+> **Amended by the final review (rulings R9–R13).** Where this plan and the
+> spec disagree, the spec wins. In short: clients live in the `oidc_clients`
+> table (the switchboard is open, so documents are an audit mirror and the
+> editor is read-only); ID tokens are RS256; `sub` is always
+> `did:pkh:eip155:1:<address>`; the registration token travels in
+> `X-Renown-OIDC-Registration-Token`; `chain_id` is `bigint`; `/authorize`
+> also accepts form POSTs. Code snippets below show the original task text.
 
 ## Global Constraints
 
@@ -55,10 +63,10 @@ make the Speckle add-on use it.
     (any port). Matching is exact string equality.
   - Login request TTL 10 min, auth code TTL 60 s, access token TTL 3600 s, ID token
     exp +600 s.
-  - ID token alg: ES256. Code challenge method: S256 only.
+  - ID token alg: RS256. Code challenge method: S256 only.
 - **Subject:**
-  - `sub` = `did:pkh:eip155:<chainId>:<EIP-55 checksummed address>`. `chainId` comes
-    from the SIWE message.
+  - `sub` = `did:pkh:eip155:1:<EIP-55 checksummed address>`, whatever chain the
+    SIWE message names (the chain id is stored for audit only).
   - Allowed-subject matching compares lowercase addresses: a DID is reduced to its
     trailing address.
 - **Email claim:** `<lowercase address>@renown.vetra.io` with `email_verified: false`.
@@ -506,10 +514,11 @@ export function constantTimeEqual(a: string, b: string): boolean {
 with trailing `/` stripped. The loginUrl default is `https://renown.vetra.io/oidc/login`.
 Empty strings are treated as unset.
 
-`core/keys.ts`: parse the JSON array. Each entry must have `kty:"EC"`, `crv:"P-256"`,
-`d` and `kid`, else throw. Use `importJWK(jwk, "ES256")` for signing with the first
-key. `jwks()` returns every key's public part: strip `d`, add `alg:"ES256"` and
-`use:"sig"`. `sign()` uses `new SignJWT(claims).setProtectedHeader({alg:"ES256", kid, typ:"JWT"}).setIssuer(issuer).setAudience(audience).setIssuedAt().setExpirationTime(\`${expiresInSec}s\`).sign(key)`.
+`core/keys.ts`: parse the JSON array. Each entry must be an RSA private JWK
+(`kty:"RSA"`, `n`, `e`, `d`, `p`, `q`, `dp`, `dq`, `qi`, `kid`, modulus ≥ 2048
+bits), else throw; EC keys are rejected. Use `importJWK(jwk, "RS256")` for signing
+with the first key. `jwks()` returns every key's public part only:
+`{kty, n, e, kid, alg:"RS256", use:"sig"}`. `sign()` uses `new SignJWT(claims).setProtectedHeader({alg:"RS256", kid, typ:"JWT"}).setIssuer(issuer).setAudience(audience).setIssuedAt().setExpirationTime(\`${expiresInSec}s\`).sign(key)`.
 
 `core/siwe.ts`: `buildSiweTemplate` sets:
 - `domain` = `new URL(cfg.loginUrl).host`
@@ -684,7 +693,7 @@ export function createOidcHandlers(deps: OidcDeps): {
 - **`discovery`:** JSON with:
   - `issuer`, and the endpoints `${issuer}/authorize`, `/token`, `/userinfo`, `/jwks`
   - `response_types_supported:["code"]`, `grant_types_supported:["authorization_code"]`
-  - `subject_types_supported:["public"]`, `id_token_signing_alg_values_supported:["ES256"]`
+  - `subject_types_supported:["public"]`, `id_token_signing_alg_values_supported:["RS256"]`
   - `scopes_supported:["openid","profile","email"]`
   - `token_endpoint_auth_methods_supported:["client_secret_basic","client_secret_post","none"]`
   - `code_challenge_methods_supported:["S256"]`
@@ -1198,7 +1207,7 @@ gh pr create --base main --title "feat(oidc): /oidc/login sign-in page" --body "
   commit the output):
 
 ```bash
-node -e 'const {generateKeyPair,exportJWK}=require("jose");(async()=>{const {privateKey}=await generateKeyPair("ES256",{extractable:true});const j=await exportJWK(privateKey);j.kid="renown-oidc-"+new Date().toISOString().slice(0,10);console.log(JSON.stringify([j]))})()' > "$SCRATCH/keys.json"
+node -e 'const {generateKeyPair,exportJWK}=require("jose");(async()=>{const {privateKey}=await generateKeyPair("RS256",{extractable:true,modulusLength:2048});const j=await exportJWK(privateKey);j.kid="renown-oidc-"+new Date().toISOString().slice(0,10);console.log(JSON.stringify([j]))})()' > "$SCRATCH/keys.json"
 openssl rand -base64 48 | tr -d '\n=' | tr '+/' '-_' > "$SCRATCH/regtoken"
 bao kv patch secret/powerhouse/renown/oidc RENOWN_OIDC_SIGNING_KEYS=@"$SCRATCH/keys.json" RENOWN_OIDC_REGISTRATION_TOKEN=@"$SCRATCH/regtoken"
 bao kv patch secret/powerhouse/shared/renown-oidc-registration REGISTRATION_TOKEN=@"$SCRATCH/regtoken"
@@ -1263,7 +1272,7 @@ Delete the scratch files afterwards.
   - If Secret `<fn>-speckle-oidc` exists with a non-empty `OIDC_CLIENT_ID`, it exits 0.
   - Otherwise it POSTs `registerOidcClient` with
     `{name: "Speckle <subdomain>", redirectUris: ["https://<host>/auth/oidc/callback"], allowedSubjects, confidential: true}`
-    and `Authorization: Bearer $REGISTRATION_TOKEN`, then
+    and `X-Renown-OIDC-Registration-Token: $REGISTRATION_TOKEN`, then
     `kubectl create secret generic <fn>-speckle-oidc --from-literal=OIDC_CLIENT_ID=… --from-literal=OIDC_CLIENT_SECRET=…`.
   - RBAC: create secrets; get the one named secret.
   - Because the Secret is created by the Job, it survives resyncs.
