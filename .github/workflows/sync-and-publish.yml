@@ -34,7 +34,7 @@ on:
         default: false
 
 env:
-  NODE_VERSION: '22'
+  NODE_VERSION: '24'
   PNPM_VERSION: '10'
   HARBOR_REGISTRY: cr.vetra.io
 
