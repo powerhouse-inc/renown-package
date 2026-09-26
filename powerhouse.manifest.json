@@ -55,6 +55,10 @@
     {
       "id": "renown-user",
       "name": "renown-user"
+    },
+    {
+      "id": "renown-oidc",
+      "name": "renown-oidc"
     }
   ],
   "config": []
