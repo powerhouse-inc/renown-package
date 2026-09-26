@@ -48,6 +48,19 @@ function isActive(client: OidcClient | undefined): client is OidcClient {
   return client !== undefined && client.status === "ACTIVE";
 }
 
+/**
+ * The authorization request's parameters: the query string for GET, the
+ * form body for POST (OIDC Core §3.1.2.1 requires both).
+ */
+async function authorizationParams(req: Request): Promise<URLSearchParams | Response> {
+  if (req.method !== "POST") return new URL(req.url).searchParams;
+  const contentType = req.headers.get("content-type") ?? "";
+  if (!/^application\/x-www-form-urlencoded\b/i.test(contentType)) {
+    return htmlError(400, "Invalid request", "The authorization request body must be application/x-www-form-urlencoded.");
+  }
+  return new URLSearchParams(await req.text());
+}
+
 interface ClientCredentials {
   clientId: string;
   clientSecret: string | undefined;
@@ -120,12 +133,15 @@ export function createOidcHandlers(deps: OidcDeps) {
             userinfo_endpoint: `${issuer}/userinfo`,
             jwks_uri: `${issuer}/jwks`,
             response_types_supported: ["code"],
+            response_modes_supported: ["query"],
             grant_types_supported: ["authorization_code"],
             subject_types_supported: ["public"],
             id_token_signing_alg_values_supported: ["RS256"],
             scopes_supported: SUPPORTED_SCOPES,
             token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post", "none"],
             code_challenge_methods_supported: ["S256"],
+            request_parameter_supported: false,
+            claims_parameter_supported: false,
             claims_supported: [
               "sub",
               "name",
@@ -148,7 +164,8 @@ export function createOidcHandlers(deps: OidcDeps) {
     },
 
     async authorize(req: Request): Promise<Response> {
-      const q = new URL(req.url).searchParams;
+      const q = await authorizationParams(req);
+      if (q instanceof Response) return q;
 
       // Until client_id and redirect_uri are validated, nothing may redirect.
       const clientId = single(q, "client_id");

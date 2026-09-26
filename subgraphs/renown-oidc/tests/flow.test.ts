@@ -47,7 +47,7 @@ const tokenReq = (form: Record<string, string>, basic?: string) => new Request(`
 describe("OIDC flow", () => {
   it("discovery and jwks", async () => {
     const d = await (await h.discovery(new Request(`${issuer}/.well-known/openid-configuration`))).json();
-    expect(d).toMatchObject({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`, jwks_uri: `${issuer}/jwks`, code_challenge_methods_supported: ["S256"], id_token_signing_alg_values_supported: ["RS256"] });
+    expect(d).toMatchObject({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`, jwks_uri: `${issuer}/jwks`, code_challenge_methods_supported: ["S256"], id_token_signing_alg_values_supported: ["RS256"], response_modes_supported: ["query"], request_parameter_supported: false, claims_parameter_supported: false });
     const j = await (await h.jwks(new Request(`${issuer}/jwks`))).json();
     expect(j.keys[0]).toMatchObject({ kty: "RSA", alg: "RS256", use: "sig", kid: "k1" });
     expect(j.keys[0]).not.toHaveProperty("d");
@@ -194,6 +194,16 @@ describe("OIDC hardening", () => {
     clock = new Date(clock.getTime() + 3600_000);
     const u = await h.userinfo(new Request(`${issuer}/userinfo`, { headers: { authorization: `Bearer ${tok.access_token}` } }));
     expect(u.status).toBe(401); expect(u.headers.get("www-authenticate")).toBe('Bearer error="invalid_token"');
+  });
+
+  it("authorize accepts a form-encoded POST (OIDC Core §3.1.2.1) and nothing else as a POST body", async () => {
+    const form = new URLSearchParams({ client_id: "conf", redirect_uri: cb, response_type: "code", scope: "openid", state: "p1" });
+    const r = await h.authorize(new Request(`${issuer}/authorize`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: form }));
+    expect(r.status).toBe(302);
+    const id = new URL(r.headers.get("location")!).searchParams.get("request")!;
+    expect((await h.interaction(new Request("https://x"), id)).status).toBe(200);
+    const json = await h.authorize(new Request(`${issuer}/authorize`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.fromEntries(form)) }));
+    expect(json.status).toBe(400); expect(json.headers.get("location")).toBeNull();
   });
 
   it("redirect errors append to an existing query and keep state", async () => {

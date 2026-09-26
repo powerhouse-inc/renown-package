@@ -95,6 +95,7 @@ export class RenownOidcSubgraph extends BaseSubgraph {
       this.http.get("oidc/.well-known/openid-configuration", PUBLIC, (req) => handlers.discovery(req)),
       this.http.get("oidc/jwks", PUBLIC, (req) => handlers.jwks(req)),
       this.http.get("oidc/authorize", PUBLIC, (req) => handlers.authorize(req)),
+      this.http.post("oidc/authorize", PUBLIC, (req) => handlers.authorize(req)),
       this.http.get("oidc/interaction/:id", PUBLIC, (req, ctx) => handlers.interaction(req, ctx.params.id)),
       this.http.post("oidc/interaction/:id/complete", PUBLIC, (req, ctx) => handlers.complete(req, ctx.params.id)),
       this.http.post("oidc/token", PUBLIC, (req) => handlers.token(req)),

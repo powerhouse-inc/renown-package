@@ -110,7 +110,7 @@ describe("RenownOidcSubgraph", () => {
     expect(logged).not.toContain("c2VjcmV0LWtleS1tYXRlcmlhbA");
   });
 
-  it("registers the 8 public OIDC routes when a valid key is configured", async () => {
+  it("registers the 9 public OIDC routes when a valid key is configured", async () => {
     process.env.RENOWN_OIDC_SIGNING_KEYS = await signingKeysEnv();
     const { subgraph, routes, createNamespace } = makeSubgraph();
     await subgraph.onSetup();
@@ -119,6 +119,7 @@ describe("RenownOidcSubgraph", () => {
       "GET oidc/.well-known/openid-configuration",
       "GET oidc/jwks",
       "GET oidc/authorize",
+      "POST oidc/authorize",
       "GET oidc/interaction/:id",
       "POST oidc/interaction/:id/complete",
       "POST oidc/token",
@@ -203,7 +204,7 @@ describe("RenownOidcSubgraph", () => {
     const { subgraph, routes } = makeSubgraph();
     await subgraph.onSetup();
     await subgraph.onSetup();
-    expect(routes).toHaveLength(8);
+    expect(routes).toHaveLength(9);
     expect(setIntervalSpy).toHaveBeenCalledOnce();
     await subgraph.onDisconnect();
   });
