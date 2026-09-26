@@ -1,3 +1,41 @@
+# [1.4.0](https://github.com/powerhouse-inc/renown-package/compare/v1.3.8...v1.4.0) (2026-09-26)
+
+
+### Bug Fixes
+
+* accept any newer 6.x document-model and reactor-browser as peers ([2062cf5](https://github.com/powerhouse-inc/renown-package/commit/2062cf5febafb12e245a16c94979656b33b0c8cc))
+* derive document ids via baseCreateDocument instead of overwriting them ([302d209](https://github.com/powerhouse-inc/renown-package/commit/302d209038e930b8dd92e88009c1ad0e8a9c3a25))
+* **editors:** call hooks unconditionally ([4eac43a](https://github.com/powerhouse-inc/renown-package/commit/4eac43a8c46d92dc98a0423f6de30a65ce75437b))
+* import generateMock from document-model/mock and drop redundant assertions ([9bec240](https://github.com/powerhouse-inc/renown-package/commit/9bec240df13a71c2d27019244c340acd4be97fc7))
+* **renown-oidc:** 403 all SIWE mismatches, catch malformed-signature throw, allowlist JWKS fields, don't leak signing-key JSON ([8bf4325](https://github.com/powerhouse-inc/renown-package/commit/8bf4325e49d03acbddad3794a69df9b43578b4f6))
+* **renown-oidc:** chain-independent sub, always did:pkh:eip155:1 (I2) ([2bd31bd](https://github.com/powerhouse-inc/renown-package/commit/2bd31bda85f228e215c8965af464b737d1ddbb6c))
+* **renown-oidc:** disable OIDC endpoints instead of throwing on namespace/migration failure; idempotent onSetup ([5f4edf3](https://github.com/powerhouse-inc/renown-package/commit/5f4edf398269f1b96b5bcc285fd601f126bdf4e9))
+* **renown-oidc:** keep auth codes an hour past expiry so replays are still revoked ([be2da58](https://github.com/powerhouse-inc/renown-package/commit/be2da584d04ff39fcb45cb993dca378aab96d327))
+* **renown-oidc:** store chain_id as bigint (I3) ([f3adbf2](https://github.com/powerhouse-inc/renown-package/commit/f3adbf259ca8a4f0f0176924179abfa84ed98227))
+
+
+### Features
+
+* **oidc-client:** editor with one-time secret rotation ([647dd9f](https://github.com/powerhouse-inc/renown-package/commit/647dd9f264e3d2d1f1dd70912122f27bdef6f931))
+* **oidc-client:** read-only editor for the audit-mirror document (C1) ([d2f5de3](https://github.com/powerhouse-inc/renown-package/commit/d2f5de3ceae13dfddd0df1443d60d953cc8df08b))
+* **oidc-client:** renown/oidc-client document model ([75e88b3](https://github.com/powerhouse-inc/renown-package/commit/75e88b33b156c5745112101a71f27ad33fa67dab))
+* **renown-oidc:** authorize, interaction, token and userinfo handlers ([029ac62](https://github.com/powerhouse-inc/renown-package/commit/029ac620546f4cc647a5ec40674f8109ec354818))
+* **renown-oidc:** client registration and client/profile directories ([29d988a](https://github.com/powerhouse-inc/renown-package/commit/29d988ac719d74eba9cd341e837d46aca2193f76))
+* **renown-oidc:** client registry in the relational namespace, documents as audit mirror (C1) ([69bcec7](https://github.com/powerhouse-inc/renown-package/commit/69bcec7ec32e2dec8909c4914afc38005d4ed9e1))
+* **renown-oidc:** login-request, code and token store ([b4dfdcc](https://github.com/powerhouse-inc/renown-package/commit/b4dfdcc464d6c45ac2b28dd9fe02e1094d877932))
+* **renown-oidc:** oidc_clients table and client store methods (C1) ([a23a2ae](https://github.com/powerhouse-inc/renown-package/commit/a23a2aeeaa17e3b5765004898fd67e8d6022a88f))
+* **renown-oidc:** POST /authorize and explicit discovery capabilities ([03907d0](https://github.com/powerhouse-inc/renown-package/commit/03907d06c332b6c8da16f41e50deb05b4b02d29b))
+* **renown-oidc:** protocol core — keys, PKCE, SIWE, claims ([8dad27a](https://github.com/powerhouse-inc/renown-package/commit/8dad27a19fe3e326c5eb1ead7aeeb3e077557a15))
+* **renown-oidc:** sign ID tokens with RS256 (C2) ([ac069ea](https://github.com/powerhouse-inc/renown-package/commit/ac069eaa20b5213b62f6ea96f905100360499015))
+* **renown-oidc:** subgraph serving the OIDC endpoints and client registration ([5193216](https://github.com/powerhouse-inc/renown-package/commit/5193216d4a615ec9b068a0d598276bdd52ba0247))
+* **renown-oidc:** take the registration token from X-Renown-OIDC-Registration-Token (I1) ([929b667](https://github.com/powerhouse-inc/renown-package/commit/929b6678d90a7682c987136b5465c3239c2fe2a4))
+
+
+### Performance Improvements
+
+* **read-model:** drop superseded raw eth indexes; order newest-first ([332e29c](https://github.com/powerhouse-inc/renown-package/commit/332e29c3d1294d538dc692af68cc653c1e1a50ee))
+* **read-model:** index-backed, case-insensitive credential/user lookups ([64bcd5d](https://github.com/powerhouse-inc/renown-package/commit/64bcd5d26a6619930b948760b3a4a27999564b85))
+
 ## [1.3.8](https://github.com/powerhouse-inc/renown-package/compare/v1.3.7...v1.3.8) (2026-03-26)
 
 
