@@ -23,12 +23,19 @@ interface ResolverContext {
   headers?: Record<string, string | string[] | undefined>;
 }
 
-/** True only when the registration token is set and the request carries it as a bearer token. */
+/** The header carrying the registration token (Node lowercases incoming header names). */
+export const REGISTRATION_TOKEN_HEADER = "x-renown-oidc-registration-token";
+
+/**
+ * True only when the registration token is configured and the request carries
+ * it in `X-Renown-OIDC-Registration-Token`. A dedicated header, not
+ * `Authorization`, so the host's own bearer-token auth never sees it.
+ */
 function isAuthorizedRegistration(registrationToken: string | null, ctx: ResolverContext): boolean {
   if (registrationToken === null) return false;
-  const header = ctx.headers?.authorization;
+  const header = ctx.headers?.[REGISTRATION_TOKEN_HEADER];
   if (typeof header !== "string") return false;
-  return constantTimeEqual(header, `Bearer ${registrationToken}`);
+  return constantTimeEqual(header, registrationToken);
 }
 
 export function createResolvers(deps: ResolverDeps): Record<string, unknown> {

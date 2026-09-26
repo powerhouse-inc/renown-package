@@ -226,24 +226,28 @@ describe("RenownOidcSubgraph", () => {
       const { subgraph, reactorClient } = makeSubgraph();
       await subgraph.onSetup();
       await expect(
-        resolver(subgraph, "Mutation", "registerOidcClient")(null, registerArgs, { headers: { authorization: "Bearer " } }),
+        resolver(subgraph, "Mutation", "registerOidcClient")(null, registerArgs, { headers: { "x-renown-oidc-registration-token": "" } }),
       ).rejects.toThrow("Unauthorized");
       expect(reactorClient.createEmpty).not.toHaveBeenCalled();
     });
 
-    it("rejects registration with a wrong bearer token", async () => {
+    it("rejects registration with a wrong or misplaced registration token", async () => {
       process.env.RENOWN_OIDC_REGISTRATION_TOKEN = "right-token";
       const { subgraph, reactorClient } = makeSubgraph();
       await subgraph.onSetup();
       const register = resolver(subgraph, "Mutation", "registerOidcClient");
-      await expect(register(null, registerArgs, { headers: { authorization: "Bearer wrong-token" } })).rejects.toThrow(
+      await expect(
+        register(null, registerArgs, { headers: { "x-renown-oidc-registration-token": "wrong-token" } }),
+      ).rejects.toThrow("Unauthorized");
+      // The token is only honoured in its own header, never as a bearer token.
+      await expect(register(null, registerArgs, { headers: { authorization: "Bearer right-token" } })).rejects.toThrow(
         "Unauthorized",
       );
       await expect(register(null, registerArgs, { headers: {} })).rejects.toThrow("Unauthorized");
       expect(reactorClient.createEmpty).not.toHaveBeenCalled();
     });
 
-    it("registers a client with the right bearer token", async () => {
+    it("registers a client with the right registration token", async () => {
       process.env.RENOWN_OIDC_REGISTRATION_TOKEN = "right-token";
       const { subgraph, reactorClient } = makeSubgraph();
       reactorClient.createEmpty.mockResolvedValue({ header: { id: "doc-7" } });
@@ -252,7 +256,7 @@ describe("RenownOidcSubgraph", () => {
       const result = await resolver(subgraph, "Mutation", "registerOidcClient")(
         null,
         { input: { ...registerArgs.input, confidential: false } },
-        { headers: { authorization: "Bearer right-token" } },
+        { headers: { "x-renown-oidc-registration-token": "right-token" } },
       );
       expect(result).toEqual({ clientId: "doc-7", clientSecret: null });
     });
