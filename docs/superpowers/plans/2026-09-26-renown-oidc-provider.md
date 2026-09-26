@@ -1,0 +1,1351 @@
+# Renown OIDC Provider Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Deliver "Sign in with Renown" as a standard OpenID Connect provider and
+make the Speckle add-on use it.
+
+**Architecture:**
+- **renown-package:** a `renown/oidc-client` document model, its editor, and one
+  `renown-oidc` subgraph. The subgraph serves the OIDC endpoints through the
+  host's `this.http` route scope, keeps ephemeral state in its own relational
+  namespace, and exposes a `registerOidcClient` GraphQL mutation.
+- **Renown app:** a `/oidc/login` page where the user signs an EIP-4361 message.
+- **powerhouse-k8s-hosting:** deploys the release and signing keys, and wires
+  Speckle's `STRATEGY_OIDC` to it.
+
+**Tech Stack:**
+- TypeScript
+- Powerhouse reactor-api 6.2.3-dev.24 (`BaseSubgraph`, `IHttpScope`, `IRelationalDb`/Kysely, `IReactorClient`)
+- `jose` ^6 (JWT/JWK, ES256)
+- `viem` ^2 (`viem/siwe`, `verifyMessage`)
+- Vitest
+- Next.js 16 (Renown app), Playwright
+- Helm (powerhouse-chart)
+
+**Spec:** `docs/superpowers/specs/2026-09-26-renown-oidc-provider-design.md` (read it first)
+
+## Global Constraints
+
+- **Repos:**
+  - renown-package work happens in the worktree `/home/f/projects/renown-package-oidc`,
+    branch `feat/oidc-provider`, PR target `main`. Never touch `/home/f/projects/renown-package`,
+    which has the user's uncommitted work.
+  - Renown app work happens in `/home/f/projects/renown`: run `git fetch`, then branch
+    `feat/oidc-login` from `origin/main`, PR target `main`.
+  - Chart and Speckle work happens in `/home/f/projects/powerhouse-k8s-hosting`, branch
+    `feat/speckle-renown-oidc` from `main` (after #216 merges; until then, from
+    `feat/speckle-addon`). Cloud-package changes go on the existing PR #92 branch
+    `feat/speckle-service-type`.
+- **Git hygiene:**
+  - Commits: small and focused, conventional-commit style, **no Co-Authored-By or any
+    AI attribution line**.
+  - Stage explicit paths only; never `git add -A` or `git add .`.
+  - Never merge your own PR; the human merges.
+- **Codegen:** only `pnpm generate document-model --document <file>`,
+  `pnpm generate editor …` and `pnpm generate subgraph …`. **Never `generate all`**:
+  it clobbers tests and prunes the manifest.
+- **Routes:**
+  - Every OIDC route uses `{ auth: "public" }`.
+  - Route paths are relative with no leading `/`, e.g. `"oidc/token"`.
+- **Crypto:** WebCrypto (`globalThis.crypto`) only, no `node:crypto`. Subgraph code
+  is also bundled for the browser.
+- **Validity and lifetimes:**
+  - Redirect URIs must be https, except `http://localhost` and `http://127.0.0.1`
+    (any port). Matching is exact string equality.
+  - Login request TTL 10 min, auth code TTL 60 s, access token TTL 3600 s, ID token
+    exp +600 s.
+  - ID token alg: ES256. Code challenge method: S256 only.
+- **Subject:**
+  - `sub` = `did:pkh:eip155:<chainId>:<EIP-55 checksummed address>`. `chainId` comes
+    from the SIWE message.
+  - Allowed-subject matching compares lowercase addresses: a DID is reduced to its
+    trailing address.
+- **Email claim:** `<lowercase address>@renown.vetra.io` with `email_verified: false`.
+- **Env names:** exactly as in the spec's Configuration table: `RENOWN_OIDC_SIGNING_KEYS`,
+  `RENOWN_OIDC_REGISTRATION_TOKEN`, `RENOWN_OIDC_ISSUER`, `RENOWN_OIDC_LOGIN_URL`,
+  `RENOWN_OIDC_DRIVE_ID`, `PUBLIC_URL`.
+- **Verification before each commit:** `pnpm lint`, `pnpm tsc` and `pnpm test` pass in
+  the repo touched. Reducer coverage threshold is 95 %.
+
+## Review Focus
+
+1. **A replayed authorization code.** The second exchange must fail with
+   `invalid_grant`, and the access token from the first exchange must stop working
+   at userinfo. Pinned in Task 4.
+2. **A signature from a different address, a message for a different request id or
+   nonce, or an expired message** must be rejected with no code issued. Pinned in
+   Task 4.
+3. **An unknown client, a DISABLED client, or a redirect_uri not registered**
+   (including a trailing-slash variant) must render an error page and never
+   redirect. Pinned in Task 4.
+4. **A `/token` request with a wrong client secret, a missing PKCE verifier for a
+   public client, or a verifier that does not match** must return `invalid_client`
+   or `invalid_grant` with 400/401. Pinned in Task 4.
+5. **The switchboard starting without `RENOWN_OIDC_SIGNING_KEYS`** must boot normally
+   with the OIDC routes absent, and must not crash other subgraphs. Pinned in Task 5.
+
+---
+
+## Part A: renown-package
+
+### Task 1: Dependencies and the `renown/oidc-client` document model
+
+**Files:**
+- Modify: `package.json` (add `jose`, `viem` to `devDependencies`; bundled by ph-cli build)
+- Create: `specs/renown-oidc-client.json` (document model spec)
+- Generated by codegen: `document-models/renown-oidc-client/**`, `document-models/{document-models,index,upgrade-manifests}.ts`, manifest entry
+- Hand-write: `document-models/renown-oidc-client/v1/src/reducers/client.ts`, `document-models/renown-oidc-client/v1/src/utils.ts`
+- Test: `document-models/renown-oidc-client/v1/tests/client.test.ts`, `…/v1/tests/document-model.test.ts`
+
+**Interfaces:**
+- Produces:
+  - document type `renown/oidc-client`
+  - exports from `document-models/renown-oidc-client/v1`:
+    - `RenownOidcClientState`, `RenownOidcClientDocument`
+    - creators `setClientInfo`, `addRedirectUri`, `removeRedirectUri`,
+      `addAllowedSubject`, `removeAllowedSubject`, `setAllowAnySubject`,
+      `setClientSecretHash`, `setStatus`
+    - `reducer`, `utils`
+  - pure helpers exported from `v1/src/utils.ts`:
+    - `normalizeSubject(s: string): string`: lowercase `0x…`. Throws on anything
+      that is not an address or a `did:pkh:eip155:<n>:<addr>`.
+    - `isValidRedirectUri(u: string): boolean`
+
+- [ ] **Step 1: Add dependencies**
+
+Run: `cd /home/f/projects/renown-package-oidc && pnpm add -D jose@^6 viem@^2`
+Expected: `package.json` devDependencies contain `jose` and `viem`, and the lockfile updates.
+
+- [ ] **Step 2: Write the spec JSON**
+
+Model it on `document-models/renown-user/renown-user.json` (same top-level shape:
+`id, name, extension, description, author, specifications[0]{version:1, changeLog:[], state:{global:{schema, initialValue, examples:[]}, local:{schema:"", initialValue:"", examples:[]}}, modules:[…]}`).
+
+Values:
+- `"id": "renown/oidc-client"`, `"name": "RenownOidcClient"`, `"extension": "phdm"`.
+- Global state schema:
+
+```graphql
+type RenownOidcClientState {
+  name: String
+  redirectUris: [URL!]!
+  allowedSubjects: [String!]!
+  allowAnySubject: Boolean!
+  clientSecretHash: String
+  status: RenownOidcClientStatus!
+}
+enum RenownOidcClientStatus { ACTIVE DISABLED }
+```
+
+- Initial value: `{"name":null,"redirectUris":[],"allowedSubjects":[],"allowAnySubject":false,"clientSecretHash":null,"status":"ACTIVE"}`
+- One module `client` with these operations, each `scope: "global"`:
+
+| Operation | Input |
+|---|---|
+| `SET_CLIENT_INFO` | `input SetClientInfoInput { name: String! }` |
+| `ADD_REDIRECT_URI` | `input AddRedirectUriInput { uri: URL! }` |
+| `REMOVE_REDIRECT_URI` | `input RemoveRedirectUriInput { uri: URL! }` |
+| `ADD_ALLOWED_SUBJECT` | `input AddAllowedSubjectInput { subject: String! }` |
+| `REMOVE_ALLOWED_SUBJECT` | `input RemoveAllowedSubjectInput { subject: String! }` |
+| `SET_ALLOW_ANY_SUBJECT` | `input SetAllowAnySubjectInput { allow: Boolean! }` |
+| `SET_CLIENT_SECRET_HASH` | `input SetClientSecretHashInput { hash: String }` (null = public client) |
+| `SET_STATUS` | `input SetStatusInput { status: RenownOidcClientStatus! }` |
+
+- Declared errors (`errors` array on the operation):
+  - `InvalidRedirectUri` on ADD_REDIRECT_URI
+  - `InvalidSubject` on ADD_ALLOWED_SUBJECT
+  - `InvalidSecretHash` on SET_CLIENT_SECRET_HASH
+  - `EmptyName` on SET_CLIENT_INFO
+
+- [ ] **Step 3: Generate**
+
+Run: `pnpm generate document-model --document ./specs/renown-oidc-client.json`
+Expected: `document-models/renown-oidc-client/` exists, and `powerhouse.manifest.json`
+gains `{"id":"renown/oidc-client","name":"RenownOidcClient"}` while keeping its
+existing entries. Check with `git diff powerhouse.manifest.json`: additions only.
+If the codegen touched other models' test files, restore them with `git checkout -- <file>`.
+
+- [ ] **Step 4: Write the failing tests**
+
+`v1/tests/client.test.ts`, using the repo's test style (see
+`document-models/renown-user/v1/tests/profile.test.ts`). Errors are asserted via
+`updated.operations.global[i].error`, never `.toThrow()`.
+
+```ts
+import { describe, expect, it } from "vitest";
+import {
+  reducer, utils, setClientInfo, addRedirectUri, removeRedirectUri, addAllowedSubject,
+  removeAllowedSubject, setAllowAnySubject, setClientSecretHash, setStatus,
+} from "document-models/renown-oidc-client/v1";
+import { normalizeSubject, isValidRedirectUri } from "document-models/renown-oidc-client/v1/src/utils.js";
+
+const ADDR = "0xAbC0000000000000000000000000000000000001";
+
+describe("RenownOidcClient client module", () => {
+  it("sets the name and rejects an empty one", () => {
+    let d = reducer(utils.createDocument(), setClientInfo({ name: "Speckle cool-frog" }));
+    expect(d.state.global.name).toBe("Speckle cool-frog");
+    d = reducer(d, setClientInfo({ name: "   " }));
+    expect(d.operations.global[1].error).toMatch(/name/i);
+    expect(d.state.global.name).toBe("Speckle cool-frog");
+  });
+
+  it("adds https redirect URIs once and removes them", () => {
+    let d = utils.createDocument();
+    d = reducer(d, addRedirectUri({ uri: "https://x-speckle.vetra.io/auth/oidc/callback" }));
+    d = reducer(d, addRedirectUri({ uri: "https://x-speckle.vetra.io/auth/oidc/callback" }));
+    expect(d.state.global.redirectUris).toEqual(["https://x-speckle.vetra.io/auth/oidc/callback"]);
+    d = reducer(d, removeRedirectUri({ uri: "https://x-speckle.vetra.io/auth/oidc/callback" }));
+    expect(d.state.global.redirectUris).toEqual([]);
+  });
+
+  it("rejects non-https redirect URIs except localhost", () => {
+    let d = reducer(utils.createDocument(), addRedirectUri({ uri: "http://evil.example/cb" }));
+    expect(d.operations.global[0].error).toMatch(/redirect/i);
+    d = reducer(d, addRedirectUri({ uri: "http://localhost:3000/cb" }));
+    expect(d.state.global.redirectUris).toEqual(["http://localhost:3000/cb"]);
+    d = reducer(d, addRedirectUri({ uri: "https://ok.example/cb#frag" }));
+    expect(d.operations.global[2].error).toMatch(/redirect/i);
+  });
+
+  it("normalises subjects from DIDs and addresses, dedupes, removes", () => {
+    let d = utils.createDocument();
+    d = reducer(d, addAllowedSubject({ subject: `did:pkh:eip155:1:${ADDR}` }));
+    d = reducer(d, addAllowedSubject({ subject: ADDR.toLowerCase() }));
+    expect(d.state.global.allowedSubjects).toEqual([ADDR.toLowerCase()]);
+    d = reducer(d, removeAllowedSubject({ subject: ADDR }));
+    expect(d.state.global.allowedSubjects).toEqual([]);
+  });
+
+  it("rejects malformed subjects", () => {
+    const d = reducer(utils.createDocument(), addAllowedSubject({ subject: "alice" }));
+    expect(d.operations.global[0].error).toMatch(/subject/i);
+  });
+
+  it("toggles allowAnySubject and status", () => {
+    let d = reducer(utils.createDocument(), setAllowAnySubject({ allow: true }));
+    expect(d.state.global.allowAnySubject).toBe(true);
+    d = reducer(d, setStatus({ status: "DISABLED" }));
+    expect(d.state.global.status).toBe("DISABLED");
+  });
+
+  it("accepts only sha256:<64 hex> secret hashes, or null", () => {
+    let d = reducer(utils.createDocument(), setClientSecretHash({ hash: "sha256:" + "a".repeat(64) }));
+    expect(d.state.global.clientSecretHash).toBe("sha256:" + "a".repeat(64));
+    d = reducer(d, setClientSecretHash({ hash: "plaintext-secret" }));
+    expect(d.operations.global[1].error).toMatch(/hash/i);
+    d = reducer(d, setClientSecretHash({ hash: null }));
+    expect(d.state.global.clientSecretHash).toBeNull();
+  });
+});
+
+describe("utils", () => {
+  it("normalizeSubject", () => {
+    expect(normalizeSubject(`did:pkh:eip155:137:${ADDR}`)).toBe(ADDR.toLowerCase());
+    expect(() => normalizeSubject("did:key:z6Mk")).toThrow();
+  });
+  it("isValidRedirectUri", () => {
+    expect(isValidRedirectUri("https://a.b/c")).toBe(true);
+    expect(isValidRedirectUri("http://127.0.0.1:8080/cb")).toBe(true);
+    expect(isValidRedirectUri("http://a.b/c")).toBe(false);
+    expect(isValidRedirectUri("not a url")).toBe(false);
+    expect(isValidRedirectUri("https://a.b/c#x")).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 5: Run and confirm failure**
+
+Run: `pnpm vitest run document-models/renown-oidc-client`
+Expected: FAIL. The reducer stubs throw "Not implemented" and the utils are missing.
+
+- [ ] **Step 6: Implement the utils and reducers**
+
+`v1/src/utils.ts`:
+
+```ts
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const DID_PKH = /^did:pkh:eip155:\d+:(0x[0-9a-fA-F]{40})$/;
+
+export function normalizeSubject(subject: string): string {
+  const s = subject.trim();
+  if (ADDRESS.test(s)) return s.toLowerCase();
+  const m = DID_PKH.exec(s);
+  if (m) return m[1].toLowerCase();
+  throw new Error(`Invalid subject: ${subject}`);
+}
+
+export function isValidRedirectUri(uri: string): boolean {
+  let u: URL;
+  try { u = new URL(uri); } catch { return false; }
+  if (u.hash) return false;
+  if (u.protocol === "https:") return true;
+  return u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1");
+}
+```
+
+`v1/src/reducers/client.ts`: implement each generated `…Operation(state, action)`
+stub. Mutate in place and throw the generated error classes from
+`../../gen/client/error.js`:
+- `setClientInfoOperation`: trim; if empty, throw `EmptyName("Client name must not be empty")`; else set `state.name`.
+- `addRedirectUriOperation`: if `!isValidRedirectUri`, throw `InvalidRedirectUri(...)`; push if absent.
+- `removeRedirectUriOperation`: filter it out.
+- `addAllowedSubjectOperation`: `normalizeSubject` inside try/catch, rethrowing as `InvalidSubject(...)`; push if absent.
+- `removeAllowedSubjectOperation`: normalise the same way, then filter.
+- `setAllowAnySubjectOperation`: set.
+- `setClientSecretHashOperation`: `null`, or match `/^sha256:[0-9a-f]{64}$/`; else throw `InvalidSecretHash(...)`.
+- `setStatusOperation`: set.
+
+- [ ] **Step 7: Run the tests and coverage**
+
+Run: `pnpm vitest run document-models/renown-oidc-client && pnpm vitest run --coverage`
+Expected: PASS. Reducer coverage is at least 95 % on all four metrics.
+
+- [ ] **Step 8: Lint, typecheck, commit**
+
+```bash
+pnpm lint && pnpm tsc
+git add package.json pnpm-lock.yaml specs/renown-oidc-client.json document-models/renown-oidc-client document-models/document-models.ts document-models/index.ts document-models/upgrade-manifests.ts powerhouse.manifest.json
+git commit -m "feat(oidc-client): renown/oidc-client document model"
+```
+
+(Check `git status` first and stage any other generated file the codegen created
+under `document-models/`, by explicit path.)
+
+---
+
+### Task 2: OIDC protocol core (pure modules)
+
+**Files:**
+- Create: `subgraphs/renown-oidc/core/crypto.ts`, `core/pkce.ts`, `core/config.ts`, `core/keys.ts`, `core/siwe.ts`, `core/claims.ts`, `core/types.ts`
+- Test: `subgraphs/renown-oidc/tests/core.test.ts`
+
+**Interfaces:**
+- Produces (all exported):
+
+```ts
+// core/types.ts
+export interface OidcClient { id: string; name: string; redirectUris: string[]; allowedSubjects: string[]; allowAnySubject: boolean; clientSecretHash: string | null; status: "ACTIVE" | "DISABLED" }
+export interface LoginRequest { id: string; clientId: string; redirectUri: string; scope: string; state: string | null; nonce: string | null; codeChallenge: string | null; siweNonce: string; expiresAt: Date }
+export interface AuthCode { codeHash: string; clientId: string; redirectUri: string; sub: string; address: string; chainId: number; nonce: string | null; codeChallenge: string | null; scope: string; authTime: Date; expiresAt: Date; usedAt: Date | null }
+export interface AccessToken { tokenHash: string; codeHash: string; clientId: string; sub: string; address: string; scope: string; expiresAt: Date; revoked: boolean }
+export interface Profile { username: string | null; userImage: string | null }
+export interface OidcConfig { issuer: string; loginUrl: string; registrationToken: string | null; driveId: string | null }
+// core/crypto.ts
+export function randomToken(bytes?: number): string            // base64url, default 32 bytes
+export async function sha256Hex(input: string): Promise<string>
+export async function hashSecret(secret: string): Promise<string> // "sha256:<hex>"
+export function constantTimeEqual(a: string, b: string): boolean
+// core/pkce.ts
+export async function verifyPkceS256(verifier: string, challenge: string): Promise<boolean>
+// core/config.ts
+export function loadConfig(env: Record<string, string | undefined>, httpBaseUrl: string): OidcConfig
+// core/keys.ts
+export interface SigningKeys { sign(claims: Record<string, unknown>, opts: { audience: string; expiresInSec: number }): Promise<string>; jwks(): { keys: Record<string, unknown>[] } }
+export async function loadSigningKeys(raw: string | undefined, issuer: string): Promise<SigningKeys | null> // null when unset
+// core/siwe.ts
+export interface SiweTemplate { domain: string; uri: string; version: "1"; nonce: string; issuedAt: string; expirationTime: string; statement: string; requestId: string; resources: string[] }
+export function buildSiweTemplate(req: LoginRequest, client: OidcClient, cfg: OidcConfig, now: Date): SiweTemplate
+export async function verifySiweLogin(message: string, signature: `0x${string}`, expected: SiweTemplate, now: Date): Promise<{ address: `0x${string}`; chainId: number }> // throws OidcError("access_denied" | "invalid_request")
+// core/claims.ts
+export function subjectFor(address: string, chainId: number): string   // did:pkh:eip155:<chainId>:<checksum>
+export function isSubjectAllowed(client: OidcClient, address: string): boolean
+export function buildClaims(address: string, chainId: number, profile: Profile | undefined, scope: string): Record<string, unknown>
+export class OidcError extends Error { constructor(public code: string, message: string, public status = 400) }
+```
+
+- [ ] **Step 1: Write the failing tests**
+
+`subgraphs/renown-oidc/tests/core.test.ts`:
+
+```ts
+import { describe, expect, it } from "vitest";
+import { generateKeyPair, exportJWK, jwtVerify, createLocalJWKSet } from "jose";
+import { createSiweMessage } from "viem/siwe";
+import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
+import { getAddress } from "viem";
+import { randomToken, sha256Hex, hashSecret, constantTimeEqual } from "../core/crypto.js";
+import { verifyPkceS256 } from "../core/pkce.js";
+import { loadConfig } from "../core/config.js";
+import { loadSigningKeys } from "../core/keys.js";
+import { buildSiweTemplate, verifySiweLogin } from "../core/siwe.js";
+import { subjectFor, isSubjectAllowed, buildClaims, OidcError } from "../core/claims.js";
+import type { LoginRequest, OidcClient } from "../core/types.js";
+
+const cfg = { issuer: "https://sb.example/api/@powerhousedao/renown-package/oidc", loginUrl: "https://renown.example/oidc/login", registrationToken: null, driveId: null };
+const client: OidcClient = { id: "c1", name: "Speckle", redirectUris: ["https://s.example/cb"], allowedSubjects: [], allowAnySubject: false, clientSecretHash: null, status: "ACTIVE" };
+const now = new Date("2026-09-26T12:00:00Z");
+const req: LoginRequest = { id: "req1", clientId: "c1", redirectUri: "https://s.example/cb", scope: "openid email", state: "st", nonce: "n", codeChallenge: null, siweNonce: "abcdefgh12345678", expiresAt: new Date(now.getTime() + 600_000) };
+
+async function sign(account: ReturnType<typeof privateKeyToAccount>, t: ReturnType<typeof buildSiweTemplate>, over: Partial<Parameters<typeof createSiweMessage>[0]> = {}) {
+  const message = createSiweMessage({ address: account.address, chainId: 1, domain: t.domain, uri: t.uri, version: "1", nonce: t.nonce, issuedAt: new Date(t.issuedAt), expirationTime: new Date(t.expirationTime), statement: t.statement, requestId: t.requestId, resources: t.resources, ...over });
+  return { message, signature: await account.signMessage({ message }) };
+}
+
+describe("crypto", () => {
+  it("random tokens are base64url and distinct", () => {
+    const a = randomToken(); expect(a).toMatch(/^[A-Za-z0-9_-]{43}$/); expect(randomToken()).not.toBe(a);
+  });
+  it("hashes", async () => {
+    expect(await sha256Hex("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    expect(await hashSecret("abc")).toBe("sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    expect(constantTimeEqual("a", "a")).toBe(true); expect(constantTimeEqual("a", "b")).toBe(false); expect(constantTimeEqual("a", "ab")).toBe(false);
+  });
+});
+
+describe("pkce", () => {
+  it("verifies RFC 7636 appendix B", async () => {
+    expect(await verifyPkceS256("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")).toBe(true);
+    expect(await verifyPkceS256("wrong", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")).toBe(false);
+  });
+});
+
+describe("config", () => {
+  it("defaults issuer from the http base url and login url", () => {
+    const c = loadConfig({}, "https://sb.example/api/@powerhousedao/renown-package");
+    expect(c.issuer).toBe("https://sb.example/api/@powerhousedao/renown-package/oidc");
+    expect(c.loginUrl).toBe("https://renown.vetra.io/oidc/login");
+    expect(c.registrationToken).toBeNull();
+  });
+  it("honours overrides and strips trailing slashes", () => {
+    const c = loadConfig({ RENOWN_OIDC_ISSUER: "https://auth.vetra.io/", RENOWN_OIDC_LOGIN_URL: "https://r/x", RENOWN_OIDC_REGISTRATION_TOKEN: "t", RENOWN_OIDC_DRIVE_ID: "d" }, "https://ignored");
+    expect(c).toEqual({ issuer: "https://auth.vetra.io", loginUrl: "https://r/x", registrationToken: "t", driveId: "d" });
+  });
+});
+
+describe("keys", () => {
+  it("returns null when unset and signs verifiable ES256 tokens with the first key", async () => {
+    expect(await loadSigningKeys(undefined, cfg.issuer)).toBeNull();
+    const { privateKey } = await generateKeyPair("ES256", { extractable: true });
+    const jwk = { ...(await exportJWK(privateKey)), kid: "k1" };
+    const keys = (await loadSigningKeys(JSON.stringify([jwk]), cfg.issuer))!;
+    const pub = keys.jwks().keys[0];
+    expect(pub).toMatchObject({ kid: "k1", kty: "EC", crv: "P-256", alg: "ES256", use: "sig" });
+    expect(pub).not.toHaveProperty("d");
+    const token = await keys.sign({ sub: "s" }, { audience: "c1", expiresInSec: 600 });
+    const { payload, protectedHeader } = await jwtVerify(token, createLocalJWKSet(keys.jwks() as never), { issuer: cfg.issuer, audience: "c1" });
+    expect(protectedHeader).toMatchObject({ alg: "ES256", kid: "k1" }); expect(payload.sub).toBe("s");
+  });
+  it("rejects keys without kid or non-EC keys", async () => {
+    await expect(loadSigningKeys(JSON.stringify([{ kty: "oct", k: "x" }]), cfg.issuer)).rejects.toThrow();
+  });
+});
+
+describe("siwe", () => {
+  const account = privateKeyToAccount(generatePrivateKey());
+  const t = buildSiweTemplate(req, client, cfg, now);
+  it("builds a template bound to the request", () => {
+    expect(t).toMatchObject({ domain: "renown.example", uri: cfg.issuer, version: "1", nonce: req.siweNonce, requestId: "req1", resources: ["urn:renown-oidc:request:req1"] });
+    expect(t.statement).toContain("Speckle");
+    expect(new Date(t.expirationTime).getTime()).toBe(req.expiresAt.getTime());
+  });
+  it("accepts a correct signature", async () => {
+    const { message, signature } = await sign(account, t);
+    await expect(verifySiweLogin(message, signature, t, now)).resolves.toEqual({ address: account.address, chainId: 1 });
+  });
+  it("rejects another request id, nonce, domain, expiry or a forged signature", async () => {
+    for (const over of [{ requestId: "other" }, { nonce: "zzzzzzzzzzzzzzzz" }, { domain: "evil.example" }, { expirationTime: new Date(now.getTime() - 1) }]) {
+      const { message, signature } = await sign(account, t, over as never);
+      await expect(verifySiweLogin(message, signature, t, now)).rejects.toBeInstanceOf(OidcError);
+    }
+    const other = privateKeyToAccount(generatePrivateKey());
+    const { message } = await sign(account, t);
+    const forged = await other.signMessage({ message });
+    await expect(verifySiweLogin(message, forged, t, now)).rejects.toBeInstanceOf(OidcError);
+  });
+});
+
+describe("claims", () => {
+  const a = "0xabc0000000000000000000000000000000000001";
+  it("subject is a checksummed did:pkh", () => {
+    expect(subjectFor(a, 1)).toBe(`did:pkh:eip155:1:${getAddress(a)}`);
+  });
+  it("allowed subjects", () => {
+    expect(isSubjectAllowed({ ...client, allowedSubjects: [a] }, a.toUpperCase().replace("0X", "0x"))).toBe(true);
+    expect(isSubjectAllowed(client, a)).toBe(false);
+    expect(isSubjectAllowed({ ...client, allowAnySubject: true }, a)).toBe(true);
+  });
+  it("claims by scope", () => {
+    const c = buildClaims(a, 1, { username: "frank", userImage: "https://i/x.png" }, "openid profile email");
+    expect(c).toMatchObject({ name: "frank", preferred_username: "frank", picture: "https://i/x.png", email: `${a}@renown.vetra.io`, email_verified: false });
+    const bare = buildClaims(a, 1, undefined, "openid");
+    expect(bare).not.toHaveProperty("email"); expect(bare).not.toHaveProperty("name");
+    expect(buildClaims(a, 1, undefined, "openid profile").name).toBe("0xabc0…0001");
+  });
+});
+```
+
+- [ ] **Step 2: Run and confirm failure**
+
+Run: `pnpm vitest run subgraphs/renown-oidc`
+Expected: FAIL (modules not found).
+
+- [ ] **Step 3: Implement**
+
+`core/crypto.ts`:
+```ts
+const b64url = (buf: Uint8Array) => btoa(String.fromCharCode(...buf)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+export function randomToken(bytes = 32): string { const b = new Uint8Array(bytes); crypto.getRandomValues(b); return b64url(b); }
+export async function sha256Hex(input: string): Promise<string> {
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input)));
+  return Array.from(d, (x) => x.toString(16).padStart(2, "0")).join("");
+}
+export async function sha256B64url(input: string): Promise<string> {
+  return b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input))));
+}
+export async function hashSecret(secret: string): Promise<string> { return `sha256:${await sha256Hex(secret)}`; }
+export function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let r = 0; for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i); return r === 0;
+}
+```
+`core/pkce.ts`: `verifyPkceS256 = async (v, c) => /^[A-Za-z0-9._~-]{43,128}$/.test(v) && constantTimeEqual(await sha256B64url(v), c)`.
+
+`core/config.ts`: build `OidcConfig`. The issuer is `env.RENOWN_OIDC_ISSUER ?? \`${httpBaseUrl}/oidc\``
+with trailing `/` stripped. The loginUrl default is `https://renown.vetra.io/oidc/login`.
+Empty strings are treated as unset.
+
+`core/keys.ts`: parse the JSON array. Each entry must have `kty:"EC"`, `crv:"P-256"`,
+`d` and `kid`, else throw. Use `importJWK(jwk, "ES256")` for signing with the first
+key. `jwks()` returns every key's public part: strip `d`, add `alg:"ES256"` and
+`use:"sig"`. `sign()` uses `new SignJWT(claims).setProtectedHeader({alg:"ES256", kid, typ:"JWT"}).setIssuer(issuer).setAudience(audience).setIssuedAt().setExpirationTime(\`${expiresInSec}s\`).sign(key)`.
+
+`core/siwe.ts`: `buildSiweTemplate` sets:
+- `domain` = `new URL(cfg.loginUrl).host`
+- `uri` = `cfg.issuer`
+- `nonce` = `req.siweNonce`
+- `issuedAt` = `now.toISOString()`
+- `expirationTime` = `req.expiresAt.toISOString()`
+- `statement` = `Sign in to ${client.name} with Renown.` (strip newlines from the name)
+- `requestId` = `req.id`
+- `resources` = `[\`urn:renown-oidc:request:${req.id}\`]`
+
+`verifySiweLogin`:
+1. `parseSiweMessage(message)` from `viem/siwe`.
+2. Require `address`, `chainId`; `domain === expected.domain`, `uri === expected.uri`,
+   `nonce === expected.nonce`, `requestId === expected.requestId`, `version === "1"`.
+   `expirationTime` must be present and `> now`, and `<= new Date(expected.expirationTime)`.
+3. `verifyMessage({ address, message, signature })` from `viem`, which is offline
+   for EOAs, must be true.
+4. Any failure throws `new OidcError("access_denied", "<reason>", 403)`.
+
+`core/claims.ts`:
+- `subjectFor` uses `getAddress` from viem.
+- `isSubjectAllowed` = `client.allowAnySubject || client.allowedSubjects.includes(address.toLowerCase())`.
+- `buildClaims` always returns `sub`.
+  - Scope `profile` adds `name` and `preferred_username` (the username, or
+    `${addr.slice(0,6)}…${addr.slice(-4)}`) and `picture` when there is a userImage.
+  - Scope `email` adds the email claims.
+
+- [ ] **Step 4: Run and confirm pass**
+
+Run: `pnpm vitest run subgraphs/renown-oidc`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+pnpm lint && pnpm tsc
+git add subgraphs/renown-oidc/core subgraphs/renown-oidc/tests/core.test.ts
+git commit -m "feat(renown-oidc): protocol core — keys, PKCE, SIWE, claims"
+```
+
+---
+
+### Task 3: Store (interface, in-memory, Kysely)
+
+**Files:**
+- Create: `subgraphs/renown-oidc/store/types.ts`, `store/memory.ts`, `store/kysely.ts`, `store/migrations.ts`
+- Test: `subgraphs/renown-oidc/tests/store.test.ts`
+
+**Interfaces:**
+- Consumes: `LoginRequest`, `AuthCode`, `AccessToken` from `core/types.ts`.
+- Produces:
+
+```ts
+export interface OidcStore {
+  createLoginRequest(r: LoginRequest): Promise<void>;
+  getLoginRequest(id: string): Promise<LoginRequest | undefined>;
+  deleteLoginRequest(id: string): Promise<void>;
+  createAuthCode(c: AuthCode): Promise<void>;
+  /** Atomically marks the code used. `firstUse` is false when it had already been used (replay). */
+  consumeAuthCode(codeHash: string, now: Date): Promise<{ code: AuthCode; firstUse: boolean } | undefined>;
+  createAccessToken(t: AccessToken): Promise<void>;
+  getAccessToken(tokenHash: string): Promise<AccessToken | undefined>;
+  revokeAccessTokensForCode(codeHash: string): Promise<void>;
+  deleteExpired(now: Date): Promise<number>;
+}
+export class MemoryOidcStore implements OidcStore { /* Maps */ }
+export class KyselyOidcStore implements OidcStore { constructor(db: Kysely<OidcDB>) }
+export async function migrate(db: Kysely<any>): Promise<void>
+export interface OidcDB { login_requests: {...}; auth_codes: {...}; access_tokens: {...} }
+```
+
+- [ ] **Step 1: Write the failing tests**
+
+This is a shared contract suite run against `MemoryOidcStore`. The Kysely store is
+exercised live in Task 10; its SQL is covered by review. Tests to include:
+- create/get/delete a login request
+- `consumeAuthCode` returns `firstUse: true` once, then `firstUse: false`
+- an unknown code returns undefined
+- `revokeAccessTokensForCode` flips `revoked` for tokens with that code hash only
+- `deleteExpired` removes only rows with `expiresAt < now` and returns the count
+
+```ts
+import { describe, expect, it } from "vitest";
+import { MemoryOidcStore } from "../store/memory.js";
+const now = new Date("2026-09-26T12:00:00Z"), later = new Date(now.getTime() + 120_000);
+const code = { codeHash: "h1", clientId: "c", redirectUri: "https://s/cb", sub: "did:pkh:eip155:1:0x1", address: "0x1", chainId: 1, nonce: null, codeChallenge: null, scope: "openid", authTime: now, expiresAt: new Date(now.getTime() + 60_000), usedAt: null };
+describe("MemoryOidcStore", () => {
+  it("consumes a code once and reports replay", async () => {
+    const s = new MemoryOidcStore(); await s.createAuthCode(code);
+    expect((await s.consumeAuthCode("h1", now))?.firstUse).toBe(true);
+    expect((await s.consumeAuthCode("h1", now))?.firstUse).toBe(false);
+    expect(await s.consumeAuthCode("nope", now)).toBeUndefined();
+  });
+  it("revokes tokens per code and deletes expired rows", async () => {
+    const s = new MemoryOidcStore();
+    await s.createAccessToken({ tokenHash: "t1", codeHash: "h1", clientId: "c", sub: "x", address: "0x1", scope: "openid", expiresAt: later, revoked: false });
+    await s.createAccessToken({ tokenHash: "t2", codeHash: "h2", clientId: "c", sub: "x", address: "0x1", scope: "openid", expiresAt: new Date(now.getTime() - 1), revoked: false });
+    await s.revokeAccessTokensForCode("h1");
+    expect((await s.getAccessToken("t1"))?.revoked).toBe(true);
+    expect(await s.deleteExpired(now)).toBe(1);
+    expect(await s.getAccessToken("t2")).toBeUndefined();
+  });
+  it("stores and deletes login requests", async () => {
+    const s = new MemoryOidcStore();
+    await s.createLoginRequest({ id: "r", clientId: "c", redirectUri: "https://s/cb", scope: "openid", state: null, nonce: null, codeChallenge: null, siweNonce: "n", expiresAt: later });
+    expect((await s.getLoginRequest("r"))?.clientId).toBe("c");
+    await s.deleteLoginRequest("r"); expect(await s.getLoginRequest("r")).toBeUndefined();
+  });
+});
+```
+
+- [ ] **Step 2: Run and confirm failure**
+
+Run: `pnpm vitest run subgraphs/renown-oidc/tests/store.test.ts`. Expected: FAIL.
+
+- [ ] **Step 3: Implement**
+
+- **`memory.ts`:** three Maps; `consumeAuthCode` sets `usedAt` on first use.
+- **`migrations.ts`:** `db.schema.createTable(...).ifNotExists()` for the three tables.
+  Columns use snake_case versions of the fields; timestamps are `timestamptz`; the
+  primary keys are `id`, `code_hash` and `token_hash`. Also create an index on
+  `access_tokens(code_hash)`.
+- **`kysely.ts`:**
+  - Use the query builder only, never raw `sql` table names, so the namespace
+    schema prefix applies.
+  - `consumeAuthCode` does
+    `updateTable("auth_codes").set({used_at: now}).where("code_hash","=",h).where("used_at","is",null).returningAll().executeTakeFirst()`.
+    If that returns a row, it is `{firstUse: true}`. Otherwise select the row: if it
+    exists, it is `{firstUse: false}`, else undefined.
+  - `deleteExpired` deletes from all three tables with `expires_at < now` and sums
+    `numDeletedRows`.
+  - Map between rows and the `core/types` objects with small `toX` functions.
+
+- [ ] **Step 4: Run and confirm pass, then commit**
+
+```bash
+pnpm vitest run subgraphs/renown-oidc && pnpm lint && pnpm tsc
+git add subgraphs/renown-oidc/store subgraphs/renown-oidc/tests/store.test.ts
+git commit -m "feat(renown-oidc): login-request, code and token store"
+```
+
+---
+
+### Task 4: HTTP handlers and the full-flow integration test
+
+**Files:**
+- Create: `subgraphs/renown-oidc/http/handlers.ts` (discovery, jwks, authorize, interaction, complete, token, userinfo), `http/errors.ts` (HTML error page and JSON error helpers), `http/deps.ts`
+- Test: `subgraphs/renown-oidc/tests/flow.test.ts`
+
+**Interfaces:**
+- Consumes: everything from Tasks 2–3.
+- Produces:
+
+```ts
+export interface ClientDirectory { getClient(clientId: string): Promise<OidcClient | undefined> }
+export interface ProfileDirectory { getProfile(address: string): Promise<Profile | undefined> }
+export interface OidcDeps { config: OidcConfig; keys: SigningKeys; store: OidcStore; clients: ClientDirectory; profiles: ProfileDirectory; now(): Date }
+export function createOidcHandlers(deps: OidcDeps): {
+  discovery(req: Request): Promise<Response>;
+  jwks(req: Request): Promise<Response>;
+  authorize(req: Request): Promise<Response>;
+  interaction(req: Request, id: string): Promise<Response>;
+  complete(req: Request, id: string): Promise<Response>;
+  token(req: Request): Promise<Response>;
+  userinfo(req: Request): Promise<Response>;
+}
+```
+
+**Behaviour** (from the spec):
+
+- **`discovery`:** JSON with:
+  - `issuer`, and the endpoints `${issuer}/authorize`, `/token`, `/userinfo`, `/jwks`
+  - `response_types_supported:["code"]`, `grant_types_supported:["authorization_code"]`
+  - `subject_types_supported:["public"]`, `id_token_signing_alg_values_supported:["ES256"]`
+  - `scopes_supported:["openid","profile","email"]`
+  - `token_endpoint_auth_methods_supported:["client_secret_basic","client_secret_post","none"]`
+  - `code_challenge_methods_supported:["S256"]`
+  - `claims_supported:["sub","name","preferred_username","picture","email","email_verified","nonce","auth_time"]`
+
+  `Cache-Control: public, max-age=300`.
+- **`authorize`:**
+  - Parse the query.
+  - A missing or unknown client, a DISABLED client, or a `redirect_uri` not in
+    `client.redirectUris` returns a 400 HTML error page and never redirects.
+  - Otherwise these errors redirect with `error=<code>&error_description=…&state=…`:
+    `response_type !== "code"` gives `unsupported_response_type`; a scope without
+    `openid` gives `invalid_scope`; a `code_challenge_method` other than `S256`
+    gives `invalid_request`; a public client (null secret hash) without
+    `code_challenge` gives `invalid_request`.
+  - Otherwise create a LoginRequest (`id = randomToken(16)`,
+    `siweNonce = randomToken(12)`, expiry +10 min) and 302 to
+    `${loginUrl}?request=${id}&issuer=${encodeURIComponent(issuer)}`.
+- **`interaction`:** an unknown or expired request gives 404 JSON `{error:"invalid_request"}`.
+  Otherwise JSON:
+  `{ client: { name, redirectHost: new URL(redirectUri).host }, scope, siwe: buildSiweTemplate(...) }`.
+  CORS comes from the host.
+- **`complete`:**
+  1. Read the JSON body `{message, signature}`. The login request must exist and be
+     unexpired, else 404.
+  2. Re-derive the template from the stored request. Note that `issuedAt` differs,
+     so `verifySiweLogin` must not compare `issuedAt`.
+  3. Verify the SIWE login. On `OidcError` return `{error: code}` with its status.
+  4. A disallowed subject returns 403 `{error:"access_denied", error_description:"This account is not allowed to sign in to <name>"}`.
+  5. Create an AuthCode: `code = randomToken()`, stored as `sha256Hex(code)`, TTL 60 s.
+  6. Delete the login request.
+  7. Return 200 `{ redirect: redirectUri + ("?"|"&") + "code=…&state=…" }`. The
+     `state` is included only when present.
+- **`token`:**
+  - Only POST with a form body. Client credentials come from HTTP Basic
+    (`client_id:client_secret`, URL-decoded per RFC 6749 §2.3.1) or from form fields.
+  - An unknown or disabled client, or a failed secret check for a confidential
+    client (`constantTimeEqual(await hashSecret(secret), client.clientSecretHash)`),
+    returns 401 `{error:"invalid_client"}` with `WWW-Authenticate: Basic` when Basic
+    was used.
+  - `grant_type !== "authorization_code"` returns `unsupported_grant_type`.
+  - Consume the code by hash:
+    - Missing code, expired code, client mismatch or redirect_uri mismatch return
+      400 `invalid_grant`.
+    - `firstUse: false` revokes that code's tokens, then returns `invalid_grant`.
+    - If the code has a challenge, it requires a `code_verifier` that passes S256,
+      else `invalid_grant`.
+  - On success:
+    - `id_token` = `keys.sign({ ...buildClaims(address, chainId, profile, scope), nonce?, auth_time }, { audience: clientId, expiresInSec: 600 })`
+    - an access token, stored hashed, TTL 3600
+  - Response: `{ access_token, token_type:"Bearer", expires_in:3600, id_token, scope }`
+    with `Cache-Control: no-store`.
+- **`userinfo`:** `Authorization: Bearer <token>`. A missing, unknown, revoked or
+  expired token returns 401 with `WWW-Authenticate: Bearer error="invalid_token"`.
+  Otherwise JSON from `buildClaims` using the token's scope.
+
+- [ ] **Step 1: Write the failing integration test**
+
+`subgraphs/renown-oidc/tests/flow.test.ts`. Use an in-memory store, an in-memory
+client directory, a real ES256 key and a real viem account. Drive the handlers with
+Fetch `Request` objects. Include these cases; they cover Review Focus 1–4:
+
+```ts
+import { describe, expect, it, beforeEach } from "vitest";
+import { generateKeyPair, exportJWK, jwtVerify, createLocalJWKSet } from "jose";
+import { createSiweMessage } from "viem/siwe";
+import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
+import { getAddress } from "viem";
+import { createOidcHandlers } from "../http/handlers.js";
+import { MemoryOidcStore } from "../store/memory.js";
+import { loadSigningKeys } from "../core/keys.js";
+import { hashSecret, sha256B64url } from "../core/crypto.js";
+import type { OidcClient } from "../core/types.js";
+
+const issuer = "https://sb.example/api/@powerhousedao/renown-package/oidc";
+const config = { issuer, loginUrl: "https://renown.example/oidc/login", registrationToken: null, driveId: null };
+const user = privateKeyToAccount(generatePrivateKey());
+const stranger = privateKeyToAccount(generatePrivateKey());
+let clock = new Date("2026-09-26T12:00:00Z");
+let h: ReturnType<typeof createOidcHandlers>;
+const SECRET = "s3cr3t-s3cr3t-s3cr3t";
+let confidential: OidcClient, publicClient: OidcClient;
+
+beforeEach(async () => {
+  clock = new Date("2026-09-26T12:00:00Z");
+  const { privateKey } = await generateKeyPair("ES256", { extractable: true });
+  const keys = (await loadSigningKeys(JSON.stringify([{ ...(await exportJWK(privateKey)), kid: "k1" }]), issuer))!;
+  confidential = { id: "conf", name: "Speckle", redirectUris: ["https://s.example/auth/oidc/callback"], allowedSubjects: [user.address.toLowerCase()], allowAnySubject: false, clientSecretHash: await hashSecret(SECRET), status: "ACTIVE" };
+  publicClient = { ...confidential, id: "pub", clientSecretHash: null };
+  const clients = new Map([[confidential.id, confidential], [publicClient.id, publicClient]]);
+  h = createOidcHandlers({ config, keys, store: new MemoryOidcStore(), clients: { getClient: async (id) => clients.get(id) }, profiles: { getProfile: async () => ({ username: "frank", userImage: null }) }, now: () => clock });
+});
+
+async function login(clientId: string, account = user, extra: Record<string, string> = {}) {
+  const q = new URLSearchParams({ client_id: clientId, redirect_uri: "https://s.example/auth/oidc/callback", response_type: "code", scope: "openid profile email", state: "st8", nonce: "nn", ...extra });
+  const a = await h.authorize(new Request(`${issuer}/authorize?${q}`));
+  expect(a.status).toBe(302);
+  const id = new URL(a.headers.get("location")!).searchParams.get("request")!;
+  const i = await (await h.interaction(new Request(`${issuer}/interaction/${id}`), id)).json();
+  const t = i.siwe;
+  const message = createSiweMessage({ address: account.address, chainId: 1, domain: t.domain, uri: t.uri, version: "1", nonce: t.nonce, issuedAt: new Date(t.issuedAt), expirationTime: new Date(t.expirationTime), statement: t.statement, requestId: t.requestId, resources: t.resources });
+  const signature = await account.signMessage({ message });
+  return h.complete(new Request(`${issuer}/interaction/${id}/complete`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, signature }) }), id);
+}
+const codeOf = async (r: Response) => new URL((await r.json()).redirect).searchParams.get("code")!;
+const tokenReq = (form: Record<string, string>, basic?: string) => new Request(`${issuer}/token`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", ...(basic ? { authorization: `Basic ${btoa(basic)}` } : {}) }, body: new URLSearchParams(form) });
+
+describe("OIDC flow", () => {
+  it("discovery and jwks", async () => {
+    const d = await (await h.discovery(new Request(`${issuer}/.well-known/openid-configuration`))).json();
+    expect(d).toMatchObject({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`, jwks_uri: `${issuer}/jwks`, code_challenge_methods_supported: ["S256"] });
+    const j = await (await h.jwks(new Request(`${issuer}/jwks`))).json();
+    expect(j.keys[0]).not.toHaveProperty("d");
+  });
+
+  it("confidential client: code → id_token → userinfo", async () => {
+    const r = await login("conf"); expect(r.status).toBe(200);
+    const body = await r.clone().json(); expect(body.redirect).toContain("state=st8");
+    const code = await codeOf(r);
+    const t = await h.token(tokenReq({ grant_type: "authorization_code", code, redirect_uri: "https://s.example/auth/oidc/callback" }, `conf:${SECRET}`));
+    expect(t.status).toBe(200); expect(t.headers.get("cache-control")).toBe("no-store");
+    const tok = await t.json();
+    const jwks = await (await h.jwks(new Request(`${issuer}/jwks`))).json();
+    const { payload } = await jwtVerify(tok.id_token, createLocalJWKSet(jwks), { issuer, audience: "conf" });
+    expect(payload).toMatchObject({ sub: `did:pkh:eip155:1:${getAddress(user.address)}`, nonce: "nn", name: "frank", email: `${user.address.toLowerCase()}@renown.vetra.io`, email_verified: false });
+    const u = await h.userinfo(new Request(`${issuer}/userinfo`, { headers: { authorization: `Bearer ${tok.access_token}` } }));
+    expect((await u.json()).sub).toBe(payload.sub);
+  });
+
+  it("replayed code fails and revokes the first access token", async () => {
+    const code = await codeOf(await login("conf"));
+    const first = await (await h.token(tokenReq({ grant_type: "authorization_code", code, redirect_uri: "https://s.example/auth/oidc/callback", client_id: "conf", client_secret: SECRET }))).json();
+    const again = await h.token(tokenReq({ grant_type: "authorization_code", code, redirect_uri: "https://s.example/auth/oidc/callback", client_id: "conf", client_secret: SECRET }));
+    expect(again.status).toBe(400); expect((await again.json()).error).toBe("invalid_grant");
+    const u = await h.userinfo(new Request(`${issuer}/userinfo`, { headers: { authorization: `Bearer ${first.access_token}` } }));
+    expect(u.status).toBe(401);
+  });
+
+  it("expired code is invalid_grant", async () => {
+    const code = await codeOf(await login("conf"));
+    clock = new Date(clock.getTime() + 61_000);
+    const r = await h.token(tokenReq({ grant_type: "authorization_code", code, redirect_uri: "https://s.example/auth/oidc/callback" }, `conf:${SECRET}`));
+    expect((await r.json()).error).toBe("invalid_grant");
+  });
+
+  it("wrong secret is invalid_client (401)", async () => {
+    const code = await codeOf(await login("conf"));
+    const r = await h.token(tokenReq({ grant_type: "authorization_code", code, redirect_uri: "https://s.example/auth/oidc/callback" }, "conf:nope"));
+    expect(r.status).toBe(401); expect((await r.json()).error).toBe("invalid_client");
+  });
+
+  it("public client requires PKCE and a matching verifier", async () => {
+    const q = new URLSearchParams({ client_id: "pub", redirect_uri: "https://s.example/auth/oidc/callback", response_type: "code", scope: "openid", state: "x" });
+    const noPkce = await h.authorize(new Request(`${issuer}/authorize?${q}`));
+    expect(new URL(noPkce.headers.get("location")!).searchParams.get("error")).toBe("invalid_request");
+    const verifier = "a".repeat(64);
+    const code = await codeOf(await login("pub", user, { code_challenge: await sha256B64url(verifier), code_challenge_method: "S256" }));
+    const bad = await h.token(tokenReq({ grant_type: "authorization_code", code, redirect_uri: "https://s.example/auth/oidc/callback", client_id: "pub", code_verifier: "b".repeat(64) }));
+    expect((await bad.json()).error).toBe("invalid_grant");
+  });
+
+  it("disallowed subject gets access_denied and no code", async () => {
+    const r = await login("conf", stranger);
+    expect(r.status).toBe(403); expect((await r.json()).error).toBe("access_denied");
+  });
+
+  it("unknown client, disabled client and unregistered redirect never redirect", async () => {
+    for (const [cid, redirect] of [["nope", "https://s.example/auth/oidc/callback"], ["conf", "https://s.example/auth/oidc/callback/"], ["conf", "https://evil.example/cb"]]) {
+      const q = new URLSearchParams({ client_id: cid, redirect_uri: redirect, response_type: "code", scope: "openid" });
+      const r = await h.authorize(new Request(`${issuer}/authorize?${q}`));
+      expect(r.status).toBe(400); expect(r.headers.get("location")).toBeNull();
+    }
+    confidential.status = "DISABLED";
+    const q = new URLSearchParams({ client_id: "conf", redirect_uri: "https://s.example/auth/oidc/callback", response_type: "code", scope: "openid" });
+    expect((await h.authorize(new Request(`${issuer}/authorize?${q}`))).status).toBe(400);
+  });
+
+  it("signature for another request is rejected", async () => {
+    const q = new URLSearchParams({ client_id: "conf", redirect_uri: "https://s.example/auth/oidc/callback", response_type: "code", scope: "openid" });
+    const ids = [];
+    for (let n = 0; n < 2; n++) ids.push(new URL((await h.authorize(new Request(`${issuer}/authorize?${q}`))).headers.get("location")!).searchParams.get("request")!);
+    const t = (await (await h.interaction(new Request(`${issuer}/interaction/${ids[0]}`), ids[0])).json()).siwe;
+    const message = createSiweMessage({ address: user.address, chainId: 1, domain: t.domain, uri: t.uri, version: "1", nonce: t.nonce, issuedAt: new Date(t.issuedAt), expirationTime: new Date(t.expirationTime), statement: t.statement, requestId: t.requestId, resources: t.resources });
+    const signature = await user.signMessage({ message });
+    const r = await h.complete(new Request("https://x", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, signature }) }), ids[1]);
+    expect(r.status).toBe(403);
+  });
+});
+```
+
+- [ ] **Step 2: Run and confirm failure**
+
+Run: `pnpm vitest run subgraphs/renown-oidc/tests/flow.test.ts`. Expected: FAIL.
+
+- [ ] **Step 3: Implement `http/handlers.ts`, `http/errors.ts`, `http/deps.ts`**
+
+Implement per the Behaviour list above.
+- `errors.ts`:
+  - `htmlError(status, title, detail)`: a minimal escaped HTML page.
+  - `jsonError(status, error, description?, headers?)`.
+  - `redirectError(redirectUri, error, description, state)`: a 302 with query
+    params appended correctly even when the redirect URI already has a query.
+- **Check before `now()`:** every expiry check compares `expiresAt <= deps.now()`.
+
+- [ ] **Step 4: Run and confirm pass**
+
+Run: `pnpm vitest run subgraphs/renown-oidc`. Expected: PASS (core, store, flow).
+
+- [ ] **Step 5: Commit**
+
+```bash
+pnpm lint && pnpm tsc
+git add subgraphs/renown-oidc/http subgraphs/renown-oidc/tests/flow.test.ts
+git commit -m "feat(renown-oidc): authorize, interaction, token and userinfo handlers"
+```
+
+---
+
+### Task 5: The `renown-oidc` subgraph (routes, GraphQL registration, cleanup)
+
+**Files:**
+- Generate, then edit: `pnpm generate subgraph --name renown-oidc`, which creates or keeps `subgraphs/renown-oidc/{index,schema,resolvers,lib}.ts` and updates `subgraphs/index.ts` and the manifest
+- Create: `subgraphs/renown-oidc/directories.ts` (ClientDirectory via reactorClient; ProfileDirectory via the renown-user read model)
+- Create: `subgraphs/renown-oidc/register.ts`
+- Test: `subgraphs/renown-oidc/tests/register.test.ts`, `subgraphs/renown-oidc/tests/subgraph.test.ts`
+
+**Interfaces:**
+- Consumes: `createOidcHandlers`, `KyselyOidcStore`, `migrate`, `loadConfig`,
+  `loadSigningKeys`, `hashSecret`, `randomToken`; document creators from Task 1.
+- Produces:
+  - `export class RenownOidcSubgraph extends BaseSubgraph` with name `renown-oidc`
+  - `registerClient(deps: { reactorClient: Pick<IReactorClient, "createEmpty" | "execute">; driveId: string | null }, input: { name: string; redirectUris: string[]; allowedSubjects: string[]; confidential: boolean }): Promise<{ clientId: string; clientSecret: string | null }>`
+  - `documentToClient(doc): OidcClient | undefined`, which returns undefined unless
+    `doc.header.documentType === "renown/oidc-client"`
+
+**Behaviour:**
+- **GraphQL schema** (`schema.ts`):
+
+```graphql
+input RegisterOidcClientInput { name: String!, redirectUris: [String!]!, allowedSubjects: [String!]!, confidential: Boolean = true }
+type RegisteredOidcClient { clientId: String!, clientSecret: String }
+type OidcClientInfo { clientId: String!, name: String, redirectUris: [String!]!, status: String! }
+type Query { oidcClient(clientId: String!): OidcClientInfo }
+type Mutation { registerOidcClient(input: RegisterOidcClientInput!): RegisteredOidcClient! }
+```
+
+- **`registerOidcClient` resolver:**
+  - Requires `ctx.headers.authorization === \`Bearer ${config.registrationToken}\``,
+    compared with `constantTimeEqual`. Throw `GraphQLError("Unauthorized")` otherwise,
+    and also when the registration token is unset.
+  - `registerClient` does:
+    1. `createEmpty("renown/oidc-client", driveId ? { parentIdentifier: driveId } : undefined)`
+    2. `execute(id, "main", [setClientInfo, ...addRedirectUri, ...addAllowedSubject, setClientSecretHash(confidential ? hash : null)])`
+    3. Check every returned operation for `.error`. If any errored, throw with that
+       message; the document stays for audit.
+    4. Return `{clientId: id, clientSecret}`.
+- **`oidcClient` query:** public info, no secrets.
+- **`onSetup()`:**
+  1. `config = loadConfig(process.env, this.http.baseUrl)`.
+  2. `keys = await loadSigningKeys(process.env.RENOWN_OIDC_SIGNING_KEYS, config.issuer)`.
+     If that throws, log the error and continue with keys null.
+  3. If keys are null, log `[renown-oidc] RENOWN_OIDC_SIGNING_KEYS unset — OIDC endpoints disabled`
+     and return. Do not register routes, and do not throw (Review Focus 5).
+  4. Otherwise `db = await this.relationalDb.createNamespace("renown-oidc")`,
+     `await migrate(db)`, `store = new KyselyOidcStore(db)`.
+  5. Build the handlers with `ClientDirectory` = `reactorClient.get(clientId)` in a
+     try/catch (undefined on throw), then `documentToClient`. `ProfileDirectory`
+     queries the renown-user read model; follow the pattern in
+     `subgraphs/renown-read-model/resolvers.ts`, e.g.
+     `RenownUserProcessor.query("renown-user", this.relationalDb).selectFrom("renown_user").select(["username","user_image"]).where(sql\`lower(eth_address)\`, "=", address.toLowerCase()).executeTakeFirst()`,
+     wrapped in try/catch returning undefined.
+  6. Register these routes, all `{ auth: "public" }`, keeping the handles:
+
+| Method | Path | Handler |
+|---|---|---|
+| GET | `oidc/.well-known/openid-configuration` | discovery |
+| GET | `oidc/jwks` | jwks |
+| GET | `oidc/authorize` | authorize |
+| GET | `oidc/interaction/:id` | interaction (with `ctx.params.id`) |
+| POST | `oidc/interaction/:id/complete` | complete |
+| POST | `oidc/token` | token |
+| GET | `oidc/userinfo` | userinfo |
+| POST | `oidc/userinfo` | userinfo |
+
+  7. Start `setInterval(() => store.deleteExpired(new Date()).catch(log), 300_000)`
+     and `unref()` it if available.
+- **`onDisconnect()`:** dispose the route handles and clear the interval.
+
+- [ ] **Step 1: Write the failing tests**
+
+`register.test.ts`: with a fake reactorClient that records calls, assert:
+- `registerClient` creates a `renown/oidc-client` document and dispatches exactly the
+  expected action types in order
+- for a confidential client it returns a 43-char secret whose `hashSecret` equals the
+  dispatched hash
+- it returns `clientSecret: null` and dispatches `hash: null` for a public client
+- it passes `parentIdentifier` only when `driveId` is set
+- it throws when a returned operation has `.error`
+
+`subgraph.test.ts`: construct `RenownOidcSubgraph` with a stub `http` scope that
+records `get`/`post` calls, a stub relationalDb, and a stub reactorClient.
+- With `RENOWN_OIDC_SIGNING_KEYS` unset, `onSetup()` resolves and registers **zero**
+  routes.
+- With a valid key, it registers the 8 routes above, each with `auth: "public"`.
+- `onDisconnect()` disposes them all.
+
+(Check the `BaseSubgraph` constructor args in
+`node_modules/@powerhousedao/reactor-api/dist/index.d.mts` around line 786, the
+`SubgraphArgs` type, and pass minimal stubs cast `as never`.)
+
+- [ ] **Step 2: Run and confirm failure**
+
+Run: `pnpm vitest run subgraphs/renown-oidc`. Expected: FAIL.
+
+- [ ] **Step 3: Implement**
+
+Implement the subgraph, `register.ts` and `directories.ts` per the Behaviour list.
+Confirm `subgraphs/index.ts` has `export * as RenownOidcSubgraph from "./renown-oidc/index.js";`
+and the manifest has `{"id":"renown-oidc","name":"renown-oidc"}`. `index.ts` must export
+**only** the class; the loader treats every export as a subgraph.
+
+- [ ] **Step 4: Run the full suite and build**
+
+Run: `pnpm test && pnpm lint && pnpm tsc && pnpm build`
+Expected:
+- all pass
+- `dist/node/subgraphs/index.mjs` exists and mentions `renown-oidc`
+- the browser build succeeds; no `node:crypto` import
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add subgraphs/renown-oidc subgraphs/index.ts powerhouse.manifest.json
+git commit -m "feat(renown-oidc): subgraph serving the OIDC endpoints and client registration"
+```
+
+---
+
+### Task 6: OIDC client editor
+
+**Files:**
+- Generate: `pnpm generate editor --name "Renown OIDC Client Editor" --document-type renown/oidc-client`, which creates `editors/renown-oidc-client-editor/{module.ts,editor.tsx}` and registers the editor in `editors/editors.ts` and the manifest
+- Hand-write: `editors/renown-oidc-client-editor/editor.tsx`
+- Create: `editors/renown-oidc-client-editor/secret.ts` (pure: `generateClientSecret(): Promise<{ secret: string; hash: string }>`)
+- Test: `editors/renown-oidc-client-editor/secret.test.ts`
+
+**Behaviour:**
+- `const [document, dispatch] = useSelectedRenownOidcClientDocument()` from
+  `document-models/renown-oidc-client` (the generated hooks). Wrap the page in
+  `DocumentToolbar` from `@powerhousedao/design-system/connect`, as in the template
+  editor.
+- Sections:
+  1. Name: text plus Save, dispatching `setClientInfo`.
+  2. Client ID: read-only, the document id, with a copy button.
+  3. Redirect URIs: list with remove, plus input and Add. Show the error of the last
+     failed operation.
+  4. Allowed subjects: same pattern, plus an "Allow any Renown user" checkbox that
+     dispatches `setAllowAnySubject`.
+  5. Status: an Active/Disabled toggle.
+  6. Client secret: "Confidential" or "Public (PKCE)" label. "Rotate secret" calls
+     `generateClientSecret()`, dispatches `setClientSecretHash({hash})`, and shows the
+     plaintext once in a copyable box with the warning "Copy it now — it is not
+     stored." "Make public" dispatches `setClientSecretHash({hash: null})`.
+- Tailwind classes as used by `editors/renown-user-editor/editor.tsx`.
+
+- [ ] **Step 1: Failing test for `secret.ts`**
+
+```ts
+import { expect, it } from "vitest";
+import { generateClientSecret } from "./secret.js";
+import { hashSecret } from "../../subgraphs/renown-oidc/core/crypto.js";
+it("generates a 256-bit secret and its sha256 hash", async () => {
+  const { secret, hash } = await generateClientSecret();
+  expect(secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(hash).toBe(await hashSecret(secret));
+});
+```
+
+- [ ] **Step 2: Run and confirm failure; implement `secret.ts`**
+
+Implement it with `randomToken()` and `hashSecret()`. Run the test again and confirm
+it passes.
+
+- [ ] **Step 3: Implement `editor.tsx`, then run `pnpm lint && pnpm tsc && pnpm build`**
+
+Expected: pass.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add editors/renown-oidc-client-editor editors/editors.ts editors/index.ts powerhouse.manifest.json
+git commit -m "feat(oidc-client): editor with one-time secret rotation"
+```
+
+- [ ] **Step 5: Push and open the PR**
+
+```bash
+git push -u origin feat/oidc-provider
+gh pr create --base main --title "feat: Renown as an OpenID Connect provider" --body "<summary, test results, env table from the spec, deploy note: releasing main cuts v2.0.0 including the unreleased layout migration>"
+```
+
+---
+
+## Part B: Renown app
+
+### Task 7: `/oidc/login` page
+
+**Files** (repo `/home/f/projects/renown`; run `git fetch && git checkout -b feat/oidc-login origin/main`):
+- Create: `pages/oidc/login.tsx`, `components/auth/oidc-login-flow.tsx`, `hooks/use-oidc-login-flow.ts`, `services/oidc.ts`
+- Test: `e2e/oidc-login.spec.ts`
+
+**Interfaces:**
+- `services/oidc.ts`:
+  - `DEFAULT_OIDC_ISSUER = "https://switchboard.renown.vetra.io/api/@powerhousedao/renown-package/oidc"`
+  - `resolveIssuer(queryIssuer?: string): string`. It accepts the `issuer` query param
+    only if it equals the default or `process.env.NEXT_PUBLIC_RENOWN_OIDC_ISSUER`.
+    This stops a crafted link from sending signatures elsewhere.
+  - `fetchInteraction(issuer, id)`
+  - `completeInteraction(issuer, id, message, signature): Promise<{ redirect: string }>`,
+    which throws `OidcLoginError(code, description)` on a non-2xx response
+  - `buildMessage(tpl, address, chainId): string`, via `createSiweMessage` from `viem/siwe`
+- `useOidcLoginFlow(requestId, issuer)` returns a view union:
+  `{ kind: "invalid" } | { kind: "loading" } | { kind: "pre-login"; client } | { kind: "ready"; client; address; submit(): Promise<void>; submitting: boolean } | { kind: "denied"; client; message } | { kind: "error"; message }`
+
+**Behaviour:**
+- `pages/oidc/login.tsx`: modelled on `pages/console.tsx`, with
+  `<PageBackground hideLoginButton>` and the title "Renown - Sign in".
+  - A missing `request` shows "Invalid sign-in link".
+  - Otherwise render `<OidcLoginFlow requestId issuer />`.
+- `OidcLoginFlow`: a `RenownCard` with the heading "Sign in with Renown" and the
+  subtitle "**{client.name}** at **{redirectHost}** wants to confirm your Renown
+  identity."
+  - Pre-login: `<LoginButtons />`.
+  - Ready: `ProfileCard`, a primary button "Continue as {short address}", and the
+    small print "You will be asked to sign a message. It costs nothing and grants no
+    access to your funds."
+  - Denied: the `error_description`.
+  - On success: `window.location.assign(redirect)`.
+- Signing uses `session.signer.signMessage(buildMessage(tpl, session.address, session.chainId))`.
+
+- [ ] **Step 1: Write the failing e2e test**
+
+Stub the issuer with `page.route`:
+
+```ts
+import { test, expect } from "@playwright/test";
+const ISSUER = "https://switchboard.renown.vetra.io/api/@powerhousedao/renown-package/oidc";
+test.describe("OIDC login page", () => {
+  test("invalid link without request id", async ({ page }) => {
+    await page.goto("/oidc/login");
+    await expect(page.getByText("Invalid sign-in link")).toBeVisible();
+  });
+  test("shows the requesting client and host", async ({ page }) => {
+    await page.route(`${ISSUER}/interaction/req1`, (r) => r.fulfill({ json: { client: { name: "Speckle cool-frog", redirectHost: "cool-frog-speckle.vetra.io" }, scope: "openid profile email", siwe: { domain: "localhost:3000", uri: ISSUER, version: "1", nonce: "abcdefgh12345678", issuedAt: new Date().toISOString(), expirationTime: new Date(Date.now() + 600000).toISOString(), statement: "Sign in to Speckle cool-frog with Renown.", requestId: "req1", resources: ["urn:renown-oidc:request:req1"] } } }));
+    await page.goto("/oidc/login?request=req1");
+    await expect(page.getByText("Speckle cool-frog")).toBeVisible();
+    await expect(page.getByText("cool-frog-speckle.vetra.io")).toBeVisible();
+    await expect(page).toHaveTitle("Renown - Sign in");
+  });
+  test("expired request shows an error", async ({ page }) => {
+    await page.route(`${ISSUER}/interaction/gone`, (r) => r.fulfill({ status: 404, json: { error: "invalid_request" } }));
+    await page.goto("/oidc/login?request=gone");
+    await expect(page.getByText(/expired|no longer valid/i)).toBeVisible();
+  });
+  test("ignores an untrusted issuer parameter", async ({ page }) => {
+    let hitEvil = false;
+    await page.route("https://evil.example/**", (r) => { hitEvil = true; return r.abort(); });
+    await page.route(`${ISSUER}/interaction/req2`, (r) => r.fulfill({ status: 404, json: { error: "invalid_request" } }));
+    await page.goto(`/oidc/login?request=req2&issuer=${encodeURIComponent("https://evil.example/oidc")}`);
+    await expect(page.getByText(/expired|no longer valid/i)).toBeVisible();
+    expect(hitEvil).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 2: Run and confirm failure**
+
+Run: `pnpm exec playwright test e2e/oidc-login.spec.ts`. Expected: FAIL (404 page).
+
+- [ ] **Step 3: Implement the page, component, hook and service**
+
+- [ ] **Step 4: Run and confirm pass, then `pnpm lint && pnpm exec tsc --noEmit`**
+
+- [ ] **Step 5: Commit, push, open the PR**
+
+```bash
+git add pages/oidc/login.tsx components/auth/oidc-login-flow.tsx hooks/use-oidc-login-flow.ts services/oidc.ts e2e/oidc-login.spec.ts
+git commit -m "feat(oidc): sign-in page for Renown OIDC"
+git push -u origin feat/oidc-login
+gh pr create --base main --title "feat(oidc): /oidc/login sign-in page" --body "<summary; depends on renown-package OIDC PR>"
+```
+
+---
+
+## Part C: Deployment (powerhouse-k8s-hosting)
+
+### Task 8: Signing keys, registration token, renown tenant configuration
+
+**Files:**
+- Create: `powerhouse-chart/templates/external-secret-switchboard-extra.yaml` (generic, default off)
+- Modify: `powerhouse-chart/values.yaml` (`switchboard.extraExternalSecret: {}`), `powerhouse-chart/templates/switchboard-deployment.yaml` (envFrom when set)
+- Modify: `tenants/renown/powerhouse-values.yaml`
+
+**Behaviour:**
+- **The chart feature:** `switchboard.extraExternalSecret: { key: <openbao path>, properties: [NAMES] }`
+  renders an ExternalSecret `<fullname>-switchboard-extra` (store `openbao`
+  ClusterSecretStore, `refreshInterval: 1h`, one `data` entry per property with
+  `remoteRef {key, property}`) plus `envFrom: - secretRef: <fullname>-switchboard-extra`.
+  Rendering nothing when unset keeps the fleet byte-identical.
+- **Generating the secret material** (run by the operator, i.e. me, locally; never
+  commit the output):
+
+```bash
+node -e 'const {generateKeyPair,exportJWK}=require("jose");(async()=>{const {privateKey}=await generateKeyPair("ES256",{extractable:true});const j=await exportJWK(privateKey);j.kid="renown-oidc-"+new Date().toISOString().slice(0,10);console.log(JSON.stringify([j]))})()' > "$SCRATCH/keys.json"
+openssl rand -base64 48 | tr -d '\n=' | tr '+/' '-_' > "$SCRATCH/regtoken"
+bao kv patch secret/powerhouse/renown/oidc RENOWN_OIDC_SIGNING_KEYS=@"$SCRATCH/keys.json" RENOWN_OIDC_REGISTRATION_TOKEN=@"$SCRATCH/regtoken"
+bao kv patch secret/powerhouse/shared/renown-oidc-registration REGISTRATION_TOKEN=@"$SCRATCH/regtoken"
+```
+
+Run node from the renown-package-oidc worktree so `jose` resolves. Use `patch`,
+never `put`, and first check the mount/path conventions used by the existing keys.
+Delete the scratch files afterwards.
+- **Renown tenant values**, added to `switchboard.env`:
+  - `PUBLIC_URL: https://switchboard.renown.vetra.io`
+  - `RENOWN_OIDC_LOGIN_URL: https://renown.vetra.io/oidc/login`
+  - `switchboard.extraExternalSecret: {key: powerhouse/renown/oidc, properties: [RENOWN_OIDC_SIGNING_KEYS, RENOWN_OIDC_REGISTRATION_TOKEN]}`
+
+  The image tag bumps happen in Task 10.
+
+- [ ] **Step 1:** Implement the chart template. Then run `scripts/chart-fleet-diff.sh main`:
+  expected "same" for every tenant. Render `tenants/renown` with the new values and
+  check the ExternalSecret and envFrom.
+- [ ] **Step 2:** Generate the secrets and write them to OpenBao (the commands above).
+  Verify with `bao kv get -field=RENOWN_OIDC_REGISTRATION_TOKEN …` that it is non-empty
+  (don't print the key material).
+- [ ] **Step 3:** Commit the chart and the renown values on branch `feat/speckle-renown-oidc`.
+  Open a PR. The image tag stays at v1.3.8 until Task 10, and the ExternalSecret is
+  inert for the old image.
+
+### Task 9: Speckle uses Renown OIDC
+
+**Files:**
+- Modify (vetra-cloud-package, PR #92 branch): `processors/vetra-cloud-environment/gitops.ts`, `gitops.test.ts`.
+  `generateSpeckleBlock` also emits:
+  ```yaml
+  speckle:
+    enabled: true
+    oidc:
+      allowedSubjects:
+        - "<state.owner lowercased>"
+  ```
+  This is emitted only when enabled and `state.owner` is set. Tests: owner present,
+  owner absent (no oidc block), disabled (no oidc block).
+- Create (chart): `powerhouse-chart/templates/speckle-oidc-job.yaml`, a registration Job
+  with its RBAC and an ExternalSecret for the registration token.
+- Create (chart): `powerhouse-chart/templates/speckle-ingress-block.yaml`, a Traefik
+  `ipAllowList` Middleware plus an Ingress for `/auth/local/register`.
+- Modify (chart): `speckle-deployment.yaml` (OIDC env), `values.yaml` (`speckle.oidc` block).
+
+**Behaviour:**
+- **Values:**
+  ```yaml
+  speckle:
+    oidc:
+      allowedSubjects: []
+      discoveryUrl: https://switchboard.renown.vetra.io/api/@powerhousedao/renown-package/oidc/.well-known/openid-configuration
+      registrationUrl: https://switchboard.renown.vetra.io/graphql/renown-oidc
+      registrationSecretKey: powerhouse/shared/renown-oidc-registration
+  ```
+  OIDC is active when `allowedSubjects` is non-empty.
+- **ExternalSecret `<fn>-speckle-oidc-registration`:** property `REGISTRATION_TOKEN`
+  from `registrationSecretKey`, `refreshInterval: 1h`.
+- **Job `<fn>-speckle-oidc-register`:**
+  - A normal Job, not a hook, with `argocd.argoproj.io/sync-wave: "2"` and
+    `argocd.argoproj.io/sync-options: Replace=true`, and the bootstrap image.
+  - If Secret `<fn>-speckle-oidc` exists with a non-empty `OIDC_CLIENT_ID`, it exits 0.
+  - Otherwise it POSTs `registerOidcClient` with
+    `{name: "Speckle <subdomain>", redirectUris: ["https://<host>/auth/oidc/callback"], allowedSubjects, confidential: true}`
+    and `Authorization: Bearer $REGISTRATION_TOKEN`, then
+    `kubectl create secret generic <fn>-speckle-oidc --from-literal=OIDC_CLIENT_ID=… --from-literal=OIDC_CLIENT_SECRET=…`.
+  - RBAC: create secrets; get the one named secret.
+  - Because the Secret is created by the Job, it survives resyncs.
+- **Speckle server env when OIDC is active:**
+  - `STRATEGY_OIDC=true`, `OIDC_NAME=Renown`, `OIDC_DISCOVERY_URL`
+  - `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` via `secretKeyRef` to `<fn>-speckle-oidc`,
+    not optional
+  - The server Deployment gets sync-wave `"3"`, already set, so it waits for the Job.
+- **Allowed-subject changes:** they are not re-synced to an existing client in v1.
+  Documented follow-up: the Job could call an update mutation.
+- **Blocking public registration:**
+  - A Middleware (`traefik.io/v1alpha1`, kind Middleware)
+    `<fn>-speckle-deny: spec.ipAllowList.sourceRange: ["127.0.0.1/32"]`.
+  - A second Ingress for path `/auth/local/register` (Prefix, backend the server) with
+    annotation `traefik.ingress.kubernetes.io/router.middlewares: <ns>-<fn>-speckle-deny@kubernetescrd`.
+    Traefik gives longer paths priority, so this overrides `/auth`.
+  - The bootstrap service account registers through the in-cluster Service and is
+    unaffected.
+- **The existing bootstrap Job** keeps registering the service admin in-cluster.
+
+- [ ] **Step 1:** Cloud-package: failing tests, then implement, then run `npx vitest run && npx tsc --noEmit`,
+  then commit and push to the PR #92 branch.
+- [ ] **Step 2:** Chart: implement.
+  - `helm template` with `speckle.enabled=true` and `speckle.oidc.allowedSubjects[0]=0xabc…`
+    renders the Job, the ExternalSecret, the Middleware, the block Ingress and the OIDC env.
+  - Without allowedSubjects none of them render.
+  - `kubectl apply --dry-run=server` in a staging namespace.
+  - `scripts/chart-fleet-diff.sh main` shows the fleet unchanged.
+  - Commit and push.
+- [ ] **Step 3:** vetra.io PR #137: change the Speckle add-on description to "…Sign in
+  with your Renown account." Run the tests, then commit and push.
+
+## Part D: Release and verification
+
+### Task 10: Release, deploy, verify end to end
+
+These steps need the human's merges. Stop and ask when you get to one, then continue.
+
+- [ ] **Step 1: Merge gate.** Ask the human to merge, in order:
+  1. renown-package OIDC PR
+  2. renown app PR
+  3. k8s-hosting #216, then the Task 8/9 PR
+  4. vetra-cloud-package #92
+  5. speckle-package #1
+  6. vetra.io #137 (after its pin bump in step 5)
+- [ ] **Step 2: Release renown-package.**
+  - `gh workflow run sync-and-publish.yml -R powerhouse-inc/renown-package --ref main -f channel=latest -f sync=false`.
+  - Watch it with `gh run watch`.
+  - **This cuts v2.0.0 and its deploy job rewrites `tenants/renown` switchboard/connect
+    tags automatically**, which moves production Renown from v1.3.8 to v2.0.0.
+  - Before triggering, confirm with the human that production Renown may move to
+    v2.0.0; it includes the unreleased layout migration and reactor 6.2.3-dev.24.
+- [ ] **Step 3: Release the Renown app.** Semantic-release on main produces a new
+  version. Bump `app.image.tag` in `tenants/renown/powerhouse-values.yaml` by hand to
+  that version (1.10.2 → new; this also ships 1.11–1.15). Commit and push via PR, or as
+  the human instructs.
+- [ ] **Step 4: Verify Renown OIDC live.**
+  - `curl -s https://switchboard.renown.vetra.io/api/@powerhousedao/renown-package/oidc/.well-known/openid-configuration | jq .issuer`
+    must equal that path. `…/oidc/jwks` must have a key.
+  - Register a test client with `registerOidcClient`, using the token from OpenBao and
+    redirect `http://localhost:8765/cb`.
+  - Run the flow from a local script: an `openid-client` authorization-code request
+    with PKCE, sign-in through the page with a test wallet, then the code exchange.
+    Verify the ID token.
+  - Disable the test client in Connect afterwards.
+- [ ] **Step 5: Speckle.**
+  - Publish `speckle-package@1.0.1` to registry.dev.vetra.io and registry.vetra.io
+    (`npm run build && npm publish --registry …` from the merged main).
+  - Let cloud-package CI publish its release.
+  - Bump the staging `PH_REGISTRY_PACKAGES` pin in `tenants/staging`.
+  - Bump the vetra.io tarball pin on #137, and ask for it to be merged to `staging`.
+- [ ] **Step 6: End-to-end on staging.**
+  1. Enable 3D Models on a staging environment the human designates.
+  2. Pods Ready; the Job created `<fn>-speckle-oidc`; the bootstrap token is stored.
+  3. `https://<sub>-speckle.vetra.io` shows "Renown" as a login option.
+  4. `POST /auth/local/register` from outside returns 403.
+  5. Signing in as the owner via Renown works; signing in as another wallet gives
+     `access_denied`.
+  6. Create a project, send a small object with the Speckle API using the owner's
+     personal token, create a `speckle/sync` document in Connect (server URL
+     pre-filled), request a sync, and see the `speckle/project` mirror populated and
+     the 3D view load.
+- [ ] **Step 7: Record memory.** Update `project_speckle_addon.md` and add a Renown OIDC
+  reference memory: issuer URL, env names, OpenBao paths, the key rotation procedure,
+  and the v2.0.0 release caveat.
