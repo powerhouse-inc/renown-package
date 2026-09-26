@@ -8,7 +8,7 @@ import { createOidcHandlers } from "../http/handlers.js";
 import { htmlError } from "../http/errors.js";
 import { MemoryOidcStore } from "../store/memory.js";
 import { loadSigningKeys } from "../core/keys.js";
-import { hashSecret, sha256B64url } from "../core/crypto.js";
+import { hashSecret, randomToken, sha256B64url } from "../core/crypto.js";
 import type { OidcClient } from "../core/types.js";
 import { testSigningKeysEnv } from "./signing-key.js";
 
@@ -107,6 +107,18 @@ describe("OIDC flow", () => {
     const code = await codeOf(await login("pub", user, { code_challenge: await sha256B64url(verifier), code_challenge_method: "S256" }));
     const bad = await h.token(tokenReq({ grant_type: "authorization_code", code, redirect_uri: "https://s.example/auth/oidc/callback", client_id: "pub", code_verifier: "b".repeat(64) }));
     expect((await bad.json()).error).toBe("invalid_grant");
+  });
+
+  it("public client with the right PKCE verifier gets a JWKS-verifiable id_token", async () => {
+    const verifier = randomToken(48);
+    const code = await codeOf(await login("pub", user, { code_challenge: await sha256B64url(verifier), code_challenge_method: "S256" }));
+    const t = await h.token(tokenReq({ grant_type: "authorization_code", code, redirect_uri: "https://s.example/auth/oidc/callback", client_id: "pub", code_verifier: verifier }));
+    expect(t.status).toBe(200);
+    const tok = await t.json();
+    const jwks = await (await h.jwks(new Request(`${issuer}/jwks`))).json();
+    const { payload, protectedHeader } = await jwtVerify(tok.id_token, createLocalJWKSet(jwks), { issuer, audience: "pub" });
+    expect(protectedHeader.alg).toBe("RS256");
+    expect(payload).toMatchObject({ sub: `did:pkh:eip155:1:${getAddress(user.address)}`, nonce: "nn" });
   });
 
   it("disallowed subject gets access_denied and no code", async () => {
