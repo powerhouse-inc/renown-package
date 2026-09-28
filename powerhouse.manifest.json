@@ -66,6 +66,10 @@
     {
       "id": "renown-oidc",
       "name": "renown-oidc"
+    },
+    {
+      "id": "renown-auth",
+      "name": "renown-auth"
     }
   ],
   "config": []

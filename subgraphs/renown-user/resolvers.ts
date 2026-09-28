@@ -1,12 +1,5 @@
 import type { ISubgraph } from "@powerhousedao/reactor-api";
-import {
-  actions,
-  type SetUsernameInput,
-  type SetEthAddressInput,
-  type SetUserImageInput,
-  type RenownUserDocument,
-} from "../../document-models/renown-user/index.js";
-import { setName } from "document-model";
+import { type RenownUserDocument } from "../../document-models/renown-user/index.js";
 
 export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
   const reactor = subgraph.reactorClient;
@@ -70,69 +63,6 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
             );
           },
         };
-      },
-    },
-    Mutation: {
-      RenownUser_createDocument: async (
-        _: unknown,
-        args: { name: string; driveId?: string },
-      ) => {
-        const { driveId, name } = args;
-        const document = await reactor.createEmpty<RenownUserDocument>(
-          "powerhouse/renown-user",
-          driveId ? { parentIdentifier: driveId } : undefined,
-        );
-
-        if (name) {
-          await reactor.execute(document.header.id, "main", [setName(name)]);
-        }
-
-        return document.header.id;
-      },
-
-      RenownUser_setUsername: async (
-        _: unknown,
-        args: { docId: string; input: SetUsernameInput },
-      ) => {
-        const { docId, input } = args;
-        const doc = await reactor.get<RenownUserDocument>(docId);
-        if (!doc) {
-          throw new Error("Document not found");
-        }
-
-        await reactor.execute(docId, "main", [actions.setUsername(input)]);
-
-        return true;
-      },
-
-      RenownUser_setEthAddress: async (
-        _: unknown,
-        args: { docId: string; input: SetEthAddressInput },
-      ) => {
-        const { docId, input } = args;
-        const doc = await reactor.get<RenownUserDocument>(docId);
-        if (!doc) {
-          throw new Error("Document not found");
-        }
-
-        await reactor.execute(docId, "main", [actions.setEthAddress(input)]);
-
-        return true;
-      },
-
-      RenownUser_setUserImage: async (
-        _: unknown,
-        args: { docId: string; input: SetUserImageInput },
-      ) => {
-        const { docId, input } = args;
-        const doc = await reactor.get<RenownUserDocument>(docId);
-        if (!doc) {
-          throw new Error("Document not found");
-        }
-
-        await reactor.execute(docId, "main", [actions.setUserImage(input)]);
-
-        return true;
       },
     },
   };

@@ -58,6 +58,9 @@ importers:
       '@powerhousedao/vetra':
         specifier: 6.2.3-dev.26
         version: 6.2.3-dev.26(d848a24fd0fc22617bf27ef04b8cf01c)
+      '@renown/sdk':
+        specifier: 6.2.3-dev.26
+        version: 6.2.3-dev.26(daad448cd783ece4a1ffe125770a1a2d)
       '@semantic-release/changelog':
         specifier: ^6.0.3
         version: 6.0.3(semantic-release@25.0.9(typescript@5.9.3))

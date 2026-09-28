@@ -23,43 +23,4 @@ export const schema: DocumentNode = gql`
   type Query {
     RenownUser: RenownUserQueries
   }
-
-  """
-  Mutations: RenownUser
-  """
-  type Mutation {
-    RenownUser_createDocument(name: String!, driveId: String): String
-
-    RenownUser_setUsername(
-      driveId: String
-      docId: PHID
-      input: RenownUser_SetUsernameInput
-    ): Int
-    RenownUser_setEthAddress(
-      driveId: String
-      docId: PHID
-      input: RenownUser_SetEthAddressInput
-    ): Int
-    RenownUser_setUserImage(
-      driveId: String
-      docId: PHID
-      input: RenownUser_SetUserImageInput
-    ): Int
-  }
-
-  """
-  Module: Profile
-  """
-  input RenownUser_SetUsernameInput {
-    "Add your inputs here"
-    username: String!
-  }
-  input RenownUser_SetEthAddressInput {
-    "Add your inputs here"
-    ethAddress: EthereumAddress!
-  }
-  input RenownUser_SetUserImageInput {
-    "Add your inputs here"
-    userImage: String!
-  }
 `;
