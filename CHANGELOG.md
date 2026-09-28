@@ -1,3 +1,22 @@
+# [1.5.0](https://github.com/powerhouse-inc/renown-package/compare/v1.4.0...v1.5.0) (2026-09-28)
+
+
+### Bug Fixes
+
+* **processors:** skip an operation whose write fails instead of wedging the cursor ([f82176c](https://github.com/powerhouse-inc/renown-package/commit/f82176c13ddafb8229654f0d0f28edfb194eb1ed))
+* **processors:** skip only data exceptions, rethrow transient errors ([17c905b](https://github.com/powerhouse-inc/renown-package/commit/17c905b26349cd3d5727f6b44cfdd2b4bd0cd2fc))
+* **renown-auth:** bound rate-limiter memory, harden did:pkh parsing, strict timestamp check ([59e94a7](https://github.com/powerhouse-inc/renown-package/commit/59e94a70d96fcda42ca51b6c08e969497675c832))
+* **renown-auth:** cap credential fields at their read-model column sizes ([fa9a9bb](https://github.com/powerhouse-inc/renown-package/commit/fa9a9bb02175afc15a017bd635ff70fd30319e87))
+* **renown-auth:** recover the revoke signer once ([710a3b2](https://github.com/powerhouse-inc/renown-package/commit/710a3b2fa6c0fb31bfa22cf7effb48d32580ceae))
+* **renown-auth:** replay-safe rate limits, profile size caps, revoke by proven issuer ([04bc170](https://github.com/powerhouse-inc/renown-package/commit/04bc17061188ad9ed2393691049e6200c0681d85))
+* **renown-user:** remove unauthenticated profile mutations ([43b3969](https://github.com/powerhouse-inc/renown-package/commit/43b39695eff29ae7d9b41a88f8b33251ce8dc5c6))
+
+
+### Features
+
+* **renown-auth:** credential validation, signed messages, rate limit ([077a09c](https://github.com/powerhouse-inc/renown-package/commit/077a09c2ac4bceead625a5ba8b2ec38512ac1f8a))
+* **renown-auth:** self-authenticating issue, revoke and profile mutations ([d012c09](https://github.com/powerhouse-inc/renown-package/commit/d012c0915ae2925f4fc9fe2e0a0bb8e92e99c5c6))
+
 # [1.4.0](https://github.com/powerhouse-inc/renown-package/compare/v1.3.8...v1.4.0) (2026-09-26)
 
 
