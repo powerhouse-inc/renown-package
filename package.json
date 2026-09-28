@@ -131,6 +131,7 @@
     "@powerhousedao/shared": "6.2.3-dev.26",
     "@powerhousedao/switchboard": "6.2.3-dev.26",
     "@powerhousedao/vetra": "6.2.3-dev.26",
+    "@renown/sdk": "6.2.3-dev.26",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
     "@tailwindcss/cli": "^4.1.18",

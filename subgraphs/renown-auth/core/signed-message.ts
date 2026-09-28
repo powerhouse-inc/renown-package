@@ -1,0 +1,67 @@
+import { verifyMessage } from "viem";
+
+// Signed actions (revoke, profile update) must carry a timestamp within this
+// window of the server's clock, in either direction. Signing a fresh message
+// and replaying an old one both fail outside this bound.
+export const SIGNATURE_WINDOW_MS = 600_000;
+
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return toHex(new Uint8Array(digest));
+}
+
+/** Canonical message a caller signs to authorize revoking `credentialId`. */
+export function revokeMessage(credentialId: string, timestamp: string): string {
+  return `Revoke Renown credential ${credentialId} at ${timestamp}`;
+}
+
+/**
+ * Canonical message a caller signs to authorize a profile upsert. The payload
+ * is hashed (rather than embedded raw) so the signed message has a fixed
+ * shape regardless of field content.
+ */
+export async function profileMessage(
+  address: string,
+  profile: { username?: string | null; userImage?: string | null },
+  timestamp: string,
+): Promise<string> {
+  const payload = JSON.stringify({
+    username: profile.username ?? null,
+    userImage: profile.userImage ?? null,
+  });
+  const hash = await sha256hex(payload);
+  return `Update Renown profile ${address.toLowerCase()} ${hash} at ${timestamp}`;
+}
+
+/** True when `timestamp` (ISO-8601) is within `SIGNATURE_WINDOW_MS` of `now`. */
+export function isFreshTimestamp(timestamp: string, now: Date): boolean {
+  const t = Date.parse(timestamp);
+  if (Number.isNaN(t)) return false;
+  return Math.abs(now.getTime() - t) <= SIGNATURE_WINDOW_MS;
+}
+
+/**
+ * Verifies an EIP-191 `personal_sign` signature (viem `verifyMessage`,
+ * offline, EOA only). Any failure — malformed signature, wrong address, a
+ * throw from the underlying recovery — resolves to `false` rather than
+ * rejecting.
+ */
+export async function verifySignedMessage(args: {
+  address: string;
+  message: string;
+  signature: string;
+}): Promise<boolean> {
+  try {
+    return await verifyMessage({
+      address: args.address as `0x${string}`,
+      message: args.message,
+      signature: args.signature as `0x${string}`,
+    });
+  } catch {
+    return false;
+  }
+}
