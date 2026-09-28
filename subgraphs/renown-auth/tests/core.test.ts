@@ -193,9 +193,44 @@ describe("validateCredentialInput", () => {
 
   it("rejects an oversized string field", async () => {
     const input = toInput(await signCredential());
-    input.id = "a".repeat(4097);
+    input.id = "a".repeat(256);
 
-    expect(() => validateCredentialInput(input)).toThrow(/id exceeds 4096 characters/);
+    expect(() => validateCredentialInput(input)).toThrow(/id exceeds 255 characters/);
+  });
+
+  it.each([
+    ["issuer.id", (i: InitInput) => (i.issuer.id = `did:pkh:eip155:${"0".repeat(250)}1:${i.issuer.ethereumAddress}`)],
+    ["credentialSubject.id", (i: InitInput) => (i.credentialSubject.id = "d".repeat(256))],
+    ["credentialSubject.app", (i: InitInput) => (i.credentialSubject.app = "a".repeat(256))],
+    ["credentialStatus.id", (i: InitInput) => (i.credentialStatus = { id: "s".repeat(256), type: "t" })],
+    ["credentialStatus.type", (i: InitInput) => (i.credentialStatus = { id: "s", type: "t".repeat(256) })],
+    ["credentialSchema.id", (i: InitInput) => (i.credentialSchema.id = "s".repeat(256))],
+    ["credentialSchema.type", (i: InitInput) => (i.credentialSchema.type = "t".repeat(256))],
+    ["proof.proofPurpose", (i: InitInput) => (i.proof.proofPurpose = "p".repeat(256))],
+  ])("rejects a %s longer than its varchar(255) column", async (field, mutate) => {
+    const input = toInput(await signCredential());
+    mutate(input);
+
+    expect(() => validateCredentialInput(input)).toThrow(`Invalid request: ${field} exceeds 255 characters`);
+  });
+
+  it("caps text-column fields at 4096 characters", async () => {
+    for (const mutate of [
+      (i: InitInput) => (i.context = ["c".repeat(4097)]),
+      (i: InitInput) => (i.type = ["t".repeat(4097)]),
+      (i: InitInput) => (i.proof.verificationMethod = "v".repeat(4097)),
+    ]) {
+      const input = toInput(await signCredential());
+      mutate(input);
+      expect(() => validateCredentialInput(input)).toThrow(/exceeds 4096 characters/);
+    }
+  });
+
+  it("rejects an unparseable proof.created", async () => {
+    const input = toInput(await signCredential());
+    input.proof.created = "not a date";
+
+    expect(() => validateCredentialInput(input, now)).toThrow(/proof\.created is not a valid date/);
   });
 
   it("rejects an oversized context/type array", async () => {

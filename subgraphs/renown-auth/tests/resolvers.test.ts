@@ -32,14 +32,17 @@ const MALLORY = privateKeyToAccount(
 const APP_DID = "did:key:z6MkApp";
 const MINUTE = 60_000;
 
-function signCredential(account: PrivateKeyAccount): Promise<PowerhouseVerifiableCredential> {
+function signCredential(
+  account: PrivateKeyAccount,
+  app = "test-app",
+): Promise<PowerhouseVerifiableCredential> {
   const sign: SignCredentialTypedData = (args) =>
     account.signTypedData(args as Parameters<typeof account.signTypedData>[0]);
   return buildAndSignCredential({
     signTypedData: sign,
     address: account.address,
     chainId: 1,
-    app: "test-app",
+    app,
     appId: APP_DID,
     expiresInDays: 7,
   });
@@ -421,6 +424,30 @@ describe("renown_issueCredential", () => {
     expect(reactor.createEmpty).not.toHaveBeenCalled();
   });
 
+  it("rejects a signed credential whose app exceeds its varchar(255) column, before any write", async () => {
+    const { reactor, renown_issueCredential } = setup();
+    const input = toInput(await signCredential(ALICE, "a".repeat(256)));
+
+    await expect(renown_issueCredential(null, { input }, ANON)).rejects.toMatchObject({
+      message: "Invalid request: credentialSubject.app exceeds 255 characters",
+      ...BAD_USER_INPUT,
+    });
+    expect(reactor.createEmpty).not.toHaveBeenCalled();
+    expect(reactor.execute).not.toHaveBeenCalled();
+  });
+
+  it("indexes a signed credential with a 255-character app through the real processor", async () => {
+    const { renown_issueCredential } = setup();
+    const input = toInput(await signCredential(ALICE, "a".repeat(255)));
+
+    const documentId = await renown_issueCredential(null, { input }, ANON);
+
+    const rows = await credentialRows(input.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ document_id: documentId });
+    expect(rows[0].credential_subject_app).toHaveLength(255);
+  });
+
   it("rejects structurally invalid input before verifying", async () => {
     const { reactor, renown_issueCredential } = setup();
     const input = toInput(await signCredential(ALICE));
@@ -708,6 +735,16 @@ describe("renown_revokeCredential", () => {
     expect(reactor.appliedTypes(documentId)).toEqual(["INIT", "REVOKE"]);
   });
 
+  it("is FORBIDDEN with an unrecoverable signature", async () => {
+    const { renown_revokeCredential, credentialId } = await issued();
+    for (const signature of ["0xdeadbeef", "not-hex", "0x" + "00".repeat(65)]) {
+      await expect(
+        renown_revokeCredential(null, { credentialId, signature, timestamp: new Date().toISOString() }, ANON),
+      ).rejects.toMatchObject(FORBIDDEN);
+    }
+    expect(await isRevoked(credentialId)).toBe(false);
+  });
+
   it("throws Not found for an unknown credential id", async () => {
     const { renown_revokeCredential } = setup();
     await expect(
@@ -830,6 +867,9 @@ describe("renown_upsertProfile", () => {
         tokenFor(alice),
       ),
     ).resolves.toEqual(expect.any(String));
+    const [row] = await profileRows(alice);
+    expect(row.username).toHaveLength(255);
+    expect(row.user_image).toHaveLength(524_288);
   });
 
   it("rate limits upserts per authorized address", async () => {

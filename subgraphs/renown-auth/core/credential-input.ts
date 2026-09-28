@@ -15,6 +15,9 @@ const EXPECTED_PROOF_TYPE = "EthereumEip712Signature2021";
 // rate limiting — just a cheap ceiling on obviously-abusive input.
 const MAX_ARRAY_ITEMS = 32;
 const MAX_STRING_LENGTH = 4096;
+// Fields the renown-credential read model stores in varchar(255) columns. A
+// longer value would make the processor's insert fail, so it is refused here.
+const MAX_COLUMN_LENGTH = 255;
 
 // Optional chain-id allowlist, e.g. RENOWN_ALLOWED_CHAIN_IDS="1,137". Unset ->
 // any chain accepted.
@@ -35,11 +38,8 @@ function assert(condition: unknown, message: string): asserts condition {
   }
 }
 
-function assertBoundedString(value: string, field: string): void {
-  assert(
-    value.length <= MAX_STRING_LENGTH,
-    `${field} exceeds ${MAX_STRING_LENGTH} characters`,
-  );
+function assertBoundedString(value: string, field: string, max: number = MAX_STRING_LENGTH): void {
+  assert(value.length <= max, `${field} exceeds ${max} characters`);
 }
 
 const ETHEREUM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
@@ -88,7 +88,6 @@ export function validateCredentialInput(
     "too many context/type entries",
   );
   assert(input.id, "missing id");
-  assertBoundedString(input.id, "id");
 
   const { issuer, credentialSubject, credentialSchema, proof } = input;
   assert(issuer.id && issuer.ethereumAddress, "missing issuer");
@@ -104,6 +103,28 @@ export function validateCredentialInput(
     proof.eip712.primaryType === "VerifiableCredential",
     'proof.eip712.primaryType must be "VerifiableCredential"',
   );
+
+  // Every field that lands in a varchar(255) read-model column, then the
+  // text-column fields at the general ceiling.
+  const columnFields: [string, string | null | undefined][] = [
+    ["id", input.id],
+    ["issuer.id", issuer.id],
+    ["credentialSubject.id", credentialSubject.id],
+    ["credentialSubject.app", credentialSubject.app],
+    ["credentialStatus.id", input.credentialStatus?.id],
+    ["credentialStatus.type", input.credentialStatus?.type],
+    ["credentialSchema.id", credentialSchema.id],
+    ["credentialSchema.type", credentialSchema.type],
+    ["proof.proofPurpose", proof.proofPurpose],
+  ];
+  for (const [field, value] of columnFields) {
+    if (value != null) assertBoundedString(value, field, MAX_COLUMN_LENGTH);
+  }
+  input.context.forEach((entry, i) => assertBoundedString(entry, `context[${i}]`));
+  input.type.forEach((entry, i) => assertBoundedString(entry, `type[${i}]`));
+  assertBoundedString(proof.verificationMethod, "proof.verificationMethod");
+  assertBoundedString(proof.eip712.domain.version, "proof.eip712.domain.version");
+  assert(!Number.isNaN(Date.parse(proof.created)), "proof.created is not a valid date");
 
   // Binding: issuer.id is `did:pkh:<net>:<chainId>:<address>`; every address in
   // the credential must be the same, and the chain id must match the domain.
