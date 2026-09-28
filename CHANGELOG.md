@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/powerhouse-inc/renown-package/compare/v1.5.0...v1.5.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **renown-auth:** accept smart-wallet (ERC-1271/6492) signatures ([9cd5a5c](https://github.com/powerhouse-inc/renown-package/commit/9cd5a5cc2d9866ea2115b43e6549d0028616104c))
+
 # [1.5.0](https://github.com/powerhouse-inc/renown-package/compare/v1.4.0...v1.5.0) (2026-09-28)
 
 
