@@ -37,8 +37,16 @@ export async function profileMessage(
   return `Update Renown profile ${address.toLowerCase()} ${hash} at ${timestamp}`;
 }
 
-/** True when `timestamp` (ISO-8601) is within `SIGNATURE_WINDOW_MS` of `now`. */
+// Full date + time + an explicit zone (`Z` or `±HH:MM`), no bare local-time
+// strings. `Date.parse` alone accepts zone-less and date-only strings too
+// (interpreting them ambiguously as local time), which a signed-timestamp
+// freshness check must not.
+const STRICT_ISO_8601_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+/** True when `timestamp` (strict ISO-8601, zone required) is within `SIGNATURE_WINDOW_MS` of `now`. */
 export function isFreshTimestamp(timestamp: string, now: Date): boolean {
+  if (!STRICT_ISO_8601_RE.test(timestamp)) return false;
   const t = Date.parse(timestamp);
   if (Number.isNaN(t)) return false;
   return Math.abs(now.getTime() - t) <= SIGNATURE_WINDOW_MS;

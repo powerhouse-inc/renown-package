@@ -123,6 +123,14 @@ describe("signed messages", () => {
     ).toBe(false);
     expect(isFreshTimestamp("not a date", now)).toBe(false);
   });
+  it("requires a strict ISO-8601 timestamp with an explicit zone", () => {
+    expect(isFreshTimestamp(new Date(now.getTime() - SIGNATURE_WINDOW_MS).toISOString(), now)).toBe(true);
+    expect(isFreshTimestamp(new Date(now.getTime() + SIGNATURE_WINDOW_MS).toISOString(), now)).toBe(true);
+    expect(isFreshTimestamp(new Date(now.getTime() - SIGNATURE_WINDOW_MS - 1).toISOString(), now)).toBe(false);
+    expect(isFreshTimestamp(new Date(now.getTime() + SIGNATURE_WINDOW_MS + 1).toISOString(), now)).toBe(false);
+    expect(isFreshTimestamp("2026-09-28T12:00:00", now)).toBe(false); // no zone
+    expect(isFreshTimestamp("2026-09-28", now)).toBe(false); // date-only
+  });
   it("verifies personal_sign for the right address only; garbage is false", async () => {
     const a = privateKeyToAccount(generatePrivateKey()),
       b = privateKeyToAccount(generatePrivateKey());
@@ -148,6 +156,18 @@ describe("rate limiter", () => {
     expect(rl.take("a", 2)).toBe(false);
     expect(rl.take("b", 2)).toBe(true);
     expect(rl.take("a", 60_001)).toBe(true);
+  });
+
+  it("evicts stale keys via the periodic sweep instead of growing forever", () => {
+    const rl = createRateLimiter(5, 1000);
+    rl.take("stale", 0); // only hit is at t=0, window [-1000, 1000)
+    expect(rl.size()).toBe(1);
+
+    // 256 takes on fresh keys, far outside "stale"'s window, forces a sweep
+    // (every 256th take) that must find "stale" fully aged out and drop it.
+    for (let i = 0; i < 256; i++) rl.take(`fresh-${i}`, 10_000);
+
+    expect(rl.size()).toBe(256);
   });
 });
 
@@ -209,5 +229,73 @@ describe("validateCredentialInput", () => {
       if (previous === undefined) delete process.env.RENOWN_ALLOWED_CHAIN_IDS;
       else process.env.RENOWN_ALLOWED_CHAIN_IDS = previous;
     }
+  });
+
+  it("rejects an expired credential", async () => {
+    const input = toInput(await signCredential({ expiresInDays: -1 }));
+
+    expect(() => validateCredentialInput(input)).toThrow(/expired/i);
+  });
+
+  it("rejects when proof.ethereumAddress does not match issuer.ethereumAddress", async () => {
+    const input = toInput(await signCredential());
+    input.proof.ethereumAddress = "0x0000000000000000000000000000000000000009";
+
+    expect(() => validateCredentialInput(input)).toThrow(/proof\.ethereumAddress/i);
+  });
+
+  it("rejects a malformed issuer DID (non-eip155 network) through full validation", async () => {
+    const input = toInput(await signCredential());
+    input.issuer.id = `did:pkh:cosmos:1:${ACCOUNT.address}`;
+
+    expect(() => validateCredentialInput(input)).toThrow(/issuer\.id network must be eip155/);
+  });
+});
+
+describe("issuerAddressOf", () => {
+  function withIssuerId(id: string): InitInput {
+    return {
+      issuer: { id, ethereumAddress: "0x0000000000000000000000000000000000000001" },
+    } as unknown as InitInput;
+  }
+
+  it("returns the lowercased address for a valid did:pkh", () => {
+    const address = `0x${"A".repeat(40)}`;
+    expect(issuerAddressOf(withIssuerId(`did:pkh:eip155:1:${address}`))).toBe(
+      address.toLowerCase(),
+    );
+  });
+
+  it("rejects a DID with the wrong method", () => {
+    expect(() => issuerAddressOf(withIssuerId("did:web:example.com"))).toThrow(
+      /issuer\.id is not a did:pkh/,
+    );
+  });
+
+  it("rejects a short address", () => {
+    expect(() =>
+      issuerAddressOf(withIssuerId("did:pkh:eip155:1:0x1234")),
+    ).toThrow(/issuer\.id address is not a valid Ethereum address/);
+  });
+
+  it("rejects a long address", () => {
+    const long = `0x${"a".repeat(41)}`;
+    expect(() =>
+      issuerAddressOf(withIssuerId(`did:pkh:eip155:1:${long}`)),
+    ).toThrow(/issuer\.id address is not a valid Ethereum address/);
+  });
+
+  it("rejects a non-hex address", () => {
+    const nonHex = `0x${"z".repeat(40)}`;
+    expect(() =>
+      issuerAddressOf(withIssuerId(`did:pkh:eip155:1:${nonHex}`)),
+    ).toThrow(/issuer\.id address is not a valid Ethereum address/);
+  });
+
+  it("rejects a non-eip155 network", () => {
+    const address = `0x${"a".repeat(40)}`;
+    expect(() =>
+      issuerAddressOf(withIssuerId(`did:pkh:cosmos:1:${address}`)),
+    ).toThrow(/issuer\.id network must be eip155/);
   });
 });

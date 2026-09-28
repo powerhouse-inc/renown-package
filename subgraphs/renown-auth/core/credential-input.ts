@@ -42,6 +42,35 @@ function assertBoundedString(value: string, field: string): void {
   );
 }
 
+const ETHEREUM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+/**
+ * Parses `did:pkh:eip155:<chainId>:<address>` strictly: `parsePkhDid` itself
+ * only checks the DID has 5 `:`-separated parts and that the address starts
+ * with `0x` (accepting e.g. `0x`, `0xZZ`, or a 4000-char string), and throws
+ * a bare (unprefixed) error on a malformed DID. This wraps it so every
+ * caller gets a consistent `Invalid request: …` error and a validated,
+ * lowercased address.
+ */
+function parseIssuerPkh(issuerId: string): {
+  networkId: string;
+  chainId: number;
+  address: `0x${string}`;
+} {
+  let pkh: ReturnType<typeof parsePkhDid>;
+  try {
+    pkh = parsePkhDid(issuerId);
+  } catch {
+    throw new Error("Invalid request: issuer.id is not a did:pkh");
+  }
+  assert(pkh.networkId === "eip155", "issuer.id network must be eip155");
+  assert(
+    ETHEREUM_ADDRESS_RE.test(pkh.address),
+    "issuer.id address is not a valid Ethereum address",
+  );
+  return { ...pkh, address: pkh.address.toLowerCase() as `0x${string}` };
+}
+
 /**
  * Structural + semantic validation of the signed credential input. Throws a
  * clear `Invalid request: …` error on the first failure; returns the
@@ -78,9 +107,9 @@ export function validateCredentialInput(
 
   // Binding: issuer.id is `did:pkh:<net>:<chainId>:<address>`; every address in
   // the credential must be the same, and the chain id must match the domain.
-  const pkh = parsePkhDid(issuer.id);
+  const pkh = parseIssuerPkh(issuer.id);
   const issuerAddress = issuer.ethereumAddress.toLowerCase();
-  assert(pkh.address.toLowerCase() === issuerAddress, "issuer.id address != issuer.ethereumAddress");
+  assert(pkh.address === issuerAddress, "issuer.id address != issuer.ethereumAddress");
   assert(
     proof.ethereumAddress.toLowerCase() === issuerAddress,
     "proof.ethereumAddress != issuer.ethereumAddress",
@@ -150,5 +179,5 @@ export function validateCredentialInput(
 
 /** The issuer's address, lowercased, parsed from `input.issuer.id` (`did:pkh:eip155:<chain>:<addr>`). */
 export function issuerAddressOf(input: InitInput): `0x${string}` {
-  return parsePkhDid(input.issuer.id).address.toLowerCase() as `0x${string}`;
+  return parseIssuerPkh(input.issuer.id).address;
 }
