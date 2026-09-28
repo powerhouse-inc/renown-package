@@ -101,3 +101,42 @@ describe("processors skip an operation whose write fails", () => {
     expect(message).not.toContain(tooLong);
   });
 });
+
+describe("processors rethrow anything that is not a data exception", () => {
+  /** A relational db whose every query fails with `error`, as a broken connection would. */
+  function failingDb(error: unknown) {
+    return {
+      selectFrom: () => {
+        throw error;
+      },
+    } as never;
+  }
+
+  const failures: [string, unknown][] = [
+    ["connection failure (08006)", Object.assign(new Error("connection terminated"), { code: "08006" })],
+    ["deadlock (40P01)", Object.assign(new Error("deadlock detected"), { code: "40P01" })],
+    ["an error without a SQLSTATE", new Error("socket hang up")],
+  ];
+
+  it.each(failures)("renown-user rethrows a %s", async (_, error) => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const processor = new RenownUserProcessor("usr", FILTER, failingDb(error));
+
+    await expect(
+      processor.onOperations([op("user-x", 0, "SET_USERNAME", { username: "alice" })]),
+    ).rejects.toBe(error);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it.each(failures)("renown-credential rethrows a %s (e.g. on a REVOKE)", async (_, error) => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const processor = new RenownCredentialProcessor("cred", FILTER, failingDb(error));
+
+    await expect(
+      processor.onOperations([
+        op("cred-x", 1, "REVOKE", { revokedAt: "2026-09-28T00:00:00.000Z", reason: "revoked by owner" }),
+      ]),
+    ).rejects.toBe(error);
+    expect(log).not.toHaveBeenCalled();
+  });
+});

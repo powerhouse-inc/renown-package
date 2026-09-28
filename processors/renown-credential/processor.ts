@@ -44,11 +44,16 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
     }
 
     // One bad operation (e.g. a value too long for its column) must never
-    // wedge the processor: log it without its payload and move on.
+    // wedge the processor: a Postgres data exception (SQLSTATE class 22) is
+    // logged without its payload and skipped. Anything else — a dropped
+    // connection, a deadlock, an error with no SQLSTATE — is rethrown so the
+    // reactor's at-least-once queue retries the batch instead of losing it.
     for (const { operation, context } of operations) {
       try {
         await this.applyOperation(operation, context);
       } catch (error) {
+        const code = (error as { code?: unknown } | null)?.code;
+        if (typeof code !== "string" || !code.startsWith("22")) throw error;
         const reason = error instanceof Error ? error.message : String(error);
         console.error(
           `[RenownCredentialProcessor] skipped operation ${operation.index} of ${context.documentId}: ${reason}`,
