@@ -3,6 +3,7 @@ import type { BaseSubgraph } from "@powerhousedao/reactor-api";
 import { verifyCredentialSignature } from "@renown/sdk";
 import type { Action, PHDocument } from "document-model";
 import { GraphQLError } from "graphql";
+import { recoverMessageAddress } from "viem";
 import {
   actions as credentialActions,
   renownCredentialDocumentType,
@@ -128,8 +129,10 @@ async function authorizeAddress(
 
 /**
  * The address the caller proves control of, among `candidates` (lowercased):
- * the login token's address when the host resolved one, else the candidate
- * whose `personal_sign` over `signed.message` verifies. Undefined if neither.
+ * the login token's address when the host resolved one, else the signer of
+ * a fresh `personal_sign` over `signed.message` if it is one of them.
+ * Undefined if neither. The signer is recovered once (EOA, offline), however
+ * many candidates there are.
  */
 async function provenAddress(
   ctx: ResolverContext,
@@ -138,10 +141,21 @@ async function provenAddress(
   now: Date,
 ): Promise<string | undefined> {
   if (ctx.user?.address) return ctx.user.address.toLowerCase();
-  for (const candidate of candidates) {
-    if (await isSignedBy(candidate, signed, now)) return candidate;
+  if (!signed.signature || !signed.timestamp || !isFreshTimestamp(signed.timestamp, now)) {
+    return undefined;
   }
-  return undefined;
+  const signer = await recoverSigner(signed.message, signed.signature);
+  return signer !== null && candidates.includes(signer) ? signer : undefined;
+}
+
+/** The lowercased address that produced `signature` over `message`, or null if it can't be recovered. */
+async function recoverSigner(message: string, signature: string): Promise<string | null> {
+  try {
+    const address = await recoverMessageAddress({ message, signature: signature as `0x${string}` });
+    return address.toLowerCase();
+  } catch {
+    return null;
+  }
 }
 
 /** Validates the signed credential and proves it was signed by its issuer; returns the issuer address. */
@@ -218,6 +232,11 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
 
         // A signed credential is public, so anyone can replay it: its profile
         // fields may only seed a profile that doesn't exist yet, never change one.
+        // A replay of an already stored credential never reaches this point
+        // (the idempotent return above), so only the first storage of a given
+        // credential can seed. Anyone holding a not-yet-stored credential of
+        // an address with no profile could seed that profile's fields; the
+        // owner can overwrite them with renown_upsertProfile.
         if ((await findNewestProfileDoc(relationalDb, issuer)) === undefined) {
           const profileDocId = await create(renownUserDocumentType);
           await execute(profileDocId, [
