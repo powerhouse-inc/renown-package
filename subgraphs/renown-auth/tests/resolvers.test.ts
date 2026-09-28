@@ -185,13 +185,16 @@ interface Mutations {
   >;
 }
 
-function setup(options: { rateLimit?: number } = {}) {
+function setup(options: { issuanceLimit?: number; profileLimit?: number } = {}) {
   const reactor = fakeReactor();
   const resolvers = createResolvers({
     reactorClient: reactor as unknown as ResolverDeps["reactorClient"],
     relationalDb,
-    ...(options.rateLimit !== undefined
-      ? { rateLimiter: createRateLimiter(options.rateLimit, MINUTE) }
+    ...(options.issuanceLimit !== undefined
+      ? { issuanceRateLimiter: createRateLimiter(options.issuanceLimit, MINUTE) }
+      : {}),
+    ...(options.profileLimit !== undefined
+      ? { profileRateLimiter: createRateLimiter(options.profileLimit, MINUTE) }
       : {}),
   }) as { Mutation: Mutations };
   return { reactor, ...resolvers.Mutation };
@@ -238,6 +241,49 @@ async function signProfile(
 }
 
 const FORBIDDEN = { extensions: { code: "FORBIDDEN" } };
+const BAD_USER_INPUT = { extensions: { code: "BAD_USER_INPUT" } };
+const RATE_LIMITED = { message: "Rate limited", extensions: { code: "RATE_LIMITED" } };
+const INTERNAL = { extensions: { code: "INTERNAL_SERVER_ERROR" } };
+const LONG_USERNAME = "u".repeat(256);
+const LONG_IMAGE = "i".repeat(524_289);
+
+/** Inserts a read-model row for `credentialId` claiming `issuer`, as a pre-closure junk write would. */
+async function seedJunkCredential(
+  reactor: ReturnType<typeof fakeReactor>,
+  credentialId: string,
+  issuer: string,
+  createdAt: Date,
+): Promise<string> {
+  const junk = (await reactor.createEmpty("powerhouse/renown-credential")).header.id;
+  await root
+    .withSchema(CRED_NS)
+    .insertInto("renown_credential")
+    .values({
+      document_id: junk,
+      context: "[]",
+      credential_id: credentialId,
+      type: "[]",
+      issuer_id: `did:pkh:eip155:1:${issuer}`,
+      issuer_ethereum_address: issuer,
+      issuance_date: createdAt,
+      credential_subject_app: "junk",
+      credential_schema_id: "x",
+      credential_schema_type: "x",
+      proof_verification_method: "x",
+      proof_ethereum_address: issuer,
+      proof_created: createdAt,
+      proof_purpose: "x",
+      proof_type: "x",
+      proof_value: "0x00",
+      proof_eip712_domain: "{}",
+      proof_eip712_primary_type: "x",
+      revoked: false,
+      created_at: createdAt,
+      updated_at: createdAt,
+    })
+    .execute();
+  return junk;
+}
 
 describe("renown-auth schema", () => {
   const sdl = print(schema);
@@ -387,8 +433,7 @@ describe("renown_issueCredential", () => {
   });
 
   it("rate limits issuance per issuer address, and only proven issuers consume the budget", async () => {
-    const { renown_issueCredential } = setup({ rateLimit: 3 });
-    const input = toInput(await signCredential(ALICE));
+    const { renown_issueCredential } = setup({ issuanceLimit: 3 });
     const forged = toInput(await signCredential(ALICE));
     forged.proof.proofValue = (await signCredential(MALLORY)).proof.proofValue;
 
@@ -399,12 +444,11 @@ describe("renown_issueCredential", () => {
       );
     }
     for (let i = 0; i < 3; i++) {
-      await renown_issueCredential(null, { input }, ANON);
+      await renown_issueCredential(null, { input: toInput(await signCredential(ALICE)) }, ANON);
     }
-    await expect(renown_issueCredential(null, { input }, ANON)).rejects.toMatchObject({
-      message: "Rate limited",
-      extensions: { code: "RATE_LIMITED" },
-    });
+    await expect(
+      renown_issueCredential(null, { input: toInput(await signCredential(ALICE)) }, ANON),
+    ).rejects.toMatchObject(RATE_LIMITED);
 
     // Another issuer has its own budget.
     await expect(
@@ -414,11 +458,62 @@ describe("renown_issueCredential", () => {
 
   it("defaults to 30 issuances per minute per issuer", async () => {
     const { renown_issueCredential } = setup();
-    const input = toInput(await signCredential(ALICE));
     for (let i = 0; i < 30; i++) {
-      await renown_issueCredential(null, { input }, ANON);
+      await renown_issueCredential(null, { input: toInput(await signCredential(ALICE)) }, ANON);
     }
-    await expect(renown_issueCredential(null, { input }, ANON)).rejects.toThrow("Rate limited");
+    await expect(
+      renown_issueCredential(null, { input: toInput(await signCredential(ALICE)) }, ANON),
+    ).rejects.toMatchObject(RATE_LIMITED);
+  });
+
+  it("replays of an existing credential never spend the issuer's budget", async () => {
+    const { reactor, renown_issueCredential } = setup();
+    const input = toInput(await signCredential(ALICE));
+    const documentId = await renown_issueCredential(null, { input }, ANON);
+
+    // Anyone can replay Alice's public credential; 40 replays exceed the limit of 30.
+    for (let i = 0; i < 40; i++) {
+      await expect(renown_issueCredential(null, { input }, ANON)).resolves.toBe(documentId);
+    }
+    expect(reactor.docsOfType("powerhouse/renown-credential")).toHaveLength(1);
+
+    await expect(
+      renown_issueCredential(null, { input: toInput(await signCredential(ALICE)) }, ANON),
+    ).resolves.toEqual(expect.any(String));
+  });
+
+  it("is not fooled by a junk row claiming the credential id under another issuer", async () => {
+    const { reactor, renown_issueCredential } = setup();
+    const input = toInput(await signCredential(ALICE));
+    const junk = await seedJunkCredential(reactor, input.id, MALLORY.address.toLowerCase(), new Date("2026-01-01T00:00:00Z"));
+
+    const documentId = await renown_issueCredential(null, { input }, ANON);
+
+    expect(documentId).not.toBe(junk);
+    expect(reactor.appliedTypes(documentId)).toEqual(["INIT"]);
+    expect(await credentialRows(input.id)).toHaveLength(2);
+    await expect(renown_issueCredential(null, { input }, ANON)).resolves.toBe(documentId);
+  });
+
+  it("rejects an oversized username or userImage before writing anything", async () => {
+    const { reactor, renown_issueCredential } = setup();
+    const input = toInput(await signCredential(ALICE));
+
+    await expect(
+      renown_issueCredential(null, { input, username: LONG_USERNAME }, ANON),
+    ).rejects.toMatchObject(BAD_USER_INPUT);
+    await expect(
+      renown_issueCredential(null, { input, userImage: LONG_IMAGE }, ANON),
+    ).rejects.toMatchObject(BAD_USER_INPUT);
+    expect(reactor.createEmpty).not.toHaveBeenCalled();
+
+    // At the caps is fine.
+    await renown_issueCredential(
+      null,
+      { input, username: "u".repeat(255), userImage: "i".repeat(524_288) },
+      ANON,
+    );
+    expect((await profileRows(ALICE.address))[0].username).toHaveLength(255);
   });
 
   it("throws when the reactor rejects the INIT operation", async () => {
@@ -427,7 +522,7 @@ describe("renown_issueCredential", () => {
 
     await expect(
       renown_issueCredential(null, { input: toInput(await signCredential(ALICE)) }, ANON),
-    ).rejects.toThrow(/INIT rejected/);
+    ).rejects.toMatchObject({ ...INTERNAL, message: expect.stringMatching(/INIT rejected/) as unknown });
     expect(await profileRows(ALICE.address)).toHaveLength(0);
   });
 });
@@ -569,6 +664,50 @@ describe("renown_revokeCredential", () => {
     expect(reactor.appliedTypes(copy.header.id)).toEqual(["REVOKE"]);
   });
 
+  it("a live junk copy under another issuer neither blocks the issuer nor lets its claimant revoke the real one", async () => {
+    const { reactor, renown_revokeCredential, credentialId, documentId } = await issued();
+    // Older than Alice's row, so it sorts first among the live copies.
+    const junk = await seedJunkCredential(
+      reactor,
+      credentialId,
+      MALLORY.address.toLowerCase(),
+      new Date("2020-01-01T00:00:00Z"),
+    );
+    const revokedDocs = async () =>
+      Object.fromEntries((await credentialRows(credentialId)).map((row) => [row.document_id, row.revoked]));
+
+    // Mallory, "issuer" of the junk copy, can only ever touch her own copy.
+    const byMallory = await signRevoke(MALLORY, credentialId, new Date());
+    await renown_revokeCredential(null, { credentialId, ...byMallory }, ANON);
+    await renown_revokeCredential(null, { credentialId }, tokenFor(MALLORY.address));
+    expect((await revokedDocs())[documentId]).toBe(false);
+    expect(reactor.appliedTypes(documentId)).toEqual(["INIT"]);
+
+    // Alice revokes hers by signature, despite the older junk row.
+    const byAlice = await signRevoke(ALICE, credentialId, new Date());
+    await expect(renown_revokeCredential(null, { credentialId, ...byAlice }, ANON)).resolves.toBe(true);
+    expect((await revokedDocs())[documentId]).toBe(true);
+    expect(reactor.appliedTypes(documentId)).toEqual(["INIT", "REVOKE"]);
+    expect(reactor.appliedTypes(junk)).toEqual(["REVOKE"]);
+  });
+
+  it("revokes by token for a live junk copy's issuer, not the real one", async () => {
+    const { reactor, renown_revokeCredential, credentialId, documentId } = await issued();
+    await seedJunkCredential(reactor, credentialId, MALLORY.address.toLowerCase(), new Date("2020-01-01T00:00:00Z"));
+
+    await expect(renown_revokeCredential(null, { credentialId }, tokenFor(ALICE.address))).resolves.toBe(true);
+    expect(reactor.appliedTypes(documentId)).toEqual(["INIT", "REVOKE"]);
+  });
+
+  it("returns true for an already revoked credential when authorized by signature", async () => {
+    const { reactor, renown_revokeCredential, credentialId, documentId } = await issued();
+    await renown_revokeCredential(null, { credentialId }, tokenFor(ALICE.address));
+    const signed = await signRevoke(ALICE, credentialId, new Date());
+
+    await expect(renown_revokeCredential(null, { credentialId, ...signed }, ANON)).resolves.toBe(true);
+    expect(reactor.appliedTypes(documentId)).toEqual(["INIT", "REVOKE"]);
+  });
+
   it("throws Not found for an unknown credential id", async () => {
     const { renown_revokeCredential } = setup();
     await expect(
@@ -582,7 +721,7 @@ describe("renown_revokeCredential", () => {
 
     await expect(
       renown_revokeCredential(null, { credentialId }, tokenFor(ALICE.address)),
-    ).rejects.toThrow(/REVOKE rejected/);
+    ).rejects.toMatchObject({ ...INTERNAL, message: expect.stringMatching(/REVOKE rejected/) as unknown });
   });
 });
 
@@ -672,6 +811,59 @@ describe("renown_upsertProfile", () => {
     expect(reactor.execute).not.toHaveBeenCalled();
   });
 
+  it("rejects an oversized username or userImage before writing anything", async () => {
+    const { reactor, renown_upsertProfile } = setup();
+
+    await expect(
+      renown_upsertProfile(null, { address: alice, username: LONG_USERNAME }, tokenFor(alice)),
+    ).rejects.toMatchObject(BAD_USER_INPUT);
+    await expect(
+      renown_upsertProfile(null, { address: alice, userImage: LONG_IMAGE }, tokenFor(alice)),
+    ).rejects.toMatchObject(BAD_USER_INPUT);
+    expect(reactor.createEmpty).not.toHaveBeenCalled();
+    expect(reactor.execute).not.toHaveBeenCalled();
+
+    await expect(
+      renown_upsertProfile(
+        null,
+        { address: alice, username: "u".repeat(255), userImage: "i".repeat(524_288) },
+        tokenFor(alice),
+      ),
+    ).resolves.toEqual(expect.any(String));
+  });
+
+  it("rate limits upserts per authorized address", async () => {
+    const { renown_upsertProfile } = setup({ profileLimit: 3 });
+
+    // Refused callers don't spend Alice's budget.
+    for (let i = 0; i < 5; i++) {
+      await expect(
+        renown_upsertProfile(null, { address: alice, username: "x" }, tokenFor(MALLORY.address)),
+      ).rejects.toMatchObject(FORBIDDEN);
+    }
+    for (let i = 0; i < 3; i++) {
+      await renown_upsertProfile(null, { address: alice, username: `a${i}` }, tokenFor(alice));
+    }
+    await expect(
+      renown_upsertProfile(null, { address: alice.toLowerCase(), username: "a4" }, tokenFor(alice)),
+    ).rejects.toMatchObject(RATE_LIMITED);
+    expect((await profileRows(alice))[0].username).toBe("a2");
+
+    await expect(
+      renown_upsertProfile(null, { address: MALLORY.address, username: "m" }, tokenFor(MALLORY.address)),
+    ).resolves.toEqual(expect.any(String));
+  });
+
+  it("defaults to 30 upserts per minute per address", async () => {
+    const { renown_upsertProfile } = setup();
+    for (let i = 0; i < 30; i++) {
+      await renown_upsertProfile(null, { address: alice, username: `a${i}` }, tokenFor(alice));
+    }
+    await expect(
+      renown_upsertProfile(null, { address: alice, username: "late" }, tokenFor(alice)),
+    ).rejects.toMatchObject(RATE_LIMITED);
+  });
+
   it("updates the newest existing profile and never creates a duplicate", async () => {
     const { reactor, renown_upsertProfile } = setup();
     const older = (await reactor.createEmpty("powerhouse/renown-user")).header.id;
@@ -705,6 +897,6 @@ describe("renown_upsertProfile", () => {
 
     await expect(
       renown_upsertProfile(null, { address: alice, username: "alice" }, tokenFor(alice)),
-    ).rejects.toThrow(/SET_USERNAME rejected/);
+    ).rejects.toMatchObject({ ...INTERNAL, message: expect.stringMatching(/SET_USERNAME rejected/) as unknown });
   });
 });

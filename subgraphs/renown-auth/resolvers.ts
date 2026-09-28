@@ -20,15 +20,16 @@ import {
   revokeMessage,
   verifySignedMessage,
 } from "./core/signed-message.js";
-import {
-  findCredentialDoc,
-  findLiveCredentialDocIds,
-  findNewestProfileDoc,
-  type ReadModelDb,
-} from "./lookups.js";
+import { findCredentialDocs, findNewestProfileDoc, type ReadModelDb } from "./lookups.js";
 
-const ISSUANCE_LIMIT = 30;
-const ISSUANCE_WINDOW_MS = 60_000;
+// Per address, in memory: 30 issuances and 30 profile upserts per minute.
+const WRITE_LIMIT = 30;
+const WRITE_WINDOW_MS = 60_000;
+// Profile field bounds. The username fits the read model's varchar(255)
+// column (a longer one would be stored in the document but never indexed);
+// the image may be a data URL, hence 512 KiB of text.
+const MAX_USERNAME_LENGTH = 255;
+const MAX_USER_IMAGE_LENGTH = 524_288;
 const REVOCATION_REASON = "revoked by owner";
 const ETHEREUM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
@@ -47,8 +48,11 @@ export interface ResolverDeps {
   reactorClient: Pick<IReactorClient, "createEmpty" | "execute">;
   relationalDb: ReadModelDb;
   now?: () => Date;
-  rateLimiter?: { take(key: string, now?: number): boolean };
+  issuanceRateLimiter?: RateLimiter;
+  profileRateLimiter?: RateLimiter;
 }
+
+type RateLimiter = { take(key: string, now?: number): boolean };
 
 interface IssueCredentialArgs {
   input: InitInput;
@@ -80,6 +84,30 @@ function invalidRequest(message: string): GraphQLError {
   return new GraphQLError(message, { extensions: { code: "BAD_USER_INPUT" } });
 }
 
+function rateLimited(): GraphQLError {
+  return new GraphQLError("Rate limited", { extensions: { code: "RATE_LIMITED" } });
+}
+
+/** Rejects oversized profile fields before anything is written. */
+function assertProfileBounds(profile: { username?: string | null; userImage?: string | null }): void {
+  if (profile.username != null && profile.username.length > MAX_USERNAME_LENGTH) {
+    throw invalidRequest(`Invalid request: username exceeds ${MAX_USERNAME_LENGTH} characters`);
+  }
+  if (profile.userImage != null && profile.userImage.length > MAX_USER_IMAGE_LENGTH) {
+    throw invalidRequest(`Invalid request: userImage exceeds ${MAX_USER_IMAGE_LENGTH} characters`);
+  }
+}
+
+/** True when `signed` carries a fresh `personal_sign` by `address` over `signed.message`. */
+async function isSignedBy(address: string, signed: SignedMessage, now: Date): Promise<boolean> {
+  return Boolean(
+    signed.signature &&
+      signed.timestamp &&
+      isFreshTimestamp(signed.timestamp, now) &&
+      (await verifySignedMessage({ address, message: signed.message, signature: signed.signature })),
+  );
+}
+
 /**
  * Passes when the caller proves control of `expected`: either the host
  * resolved a login token to that address, or `signed` carries that address's
@@ -89,20 +117,31 @@ function invalidRequest(message: string): GraphQLError {
 async function authorizeAddress(
   ctx: ResolverContext,
   expected: string,
-  signed: SignedMessage | undefined,
+  signed: SignedMessage,
   now: Date,
 ): Promise<void> {
   const want = expected.toLowerCase();
   if (ctx.user?.address && ctx.user.address.toLowerCase() === want) return;
-  if (
-    signed?.signature &&
-    signed.timestamp &&
-    isFreshTimestamp(signed.timestamp, now) &&
-    (await verifySignedMessage({ address: want, message: signed.message, signature: signed.signature }))
-  ) {
-    return;
-  }
+  if (await isSignedBy(want, signed, now)) return;
   throw forbidden();
+}
+
+/**
+ * The address the caller proves control of, among `candidates` (lowercased):
+ * the login token's address when the host resolved one, else the candidate
+ * whose `personal_sign` over `signed.message` verifies. Undefined if neither.
+ */
+async function provenAddress(
+  ctx: ResolverContext,
+  candidates: string[],
+  signed: SignedMessage,
+  now: Date,
+): Promise<string | undefined> {
+  if (ctx.user?.address) return ctx.user.address.toLowerCase();
+  for (const candidate of candidates) {
+    if (await isSignedBy(candidate, signed, now)) return candidate;
+  }
+  return undefined;
 }
 
 /** Validates the signed credential and proves it was signed by its issuer; returns the issuer address. */
@@ -126,7 +165,8 @@ async function verifiedIssuer(input: InitInput, now: Date): Promise<`0x${string}
 export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
   const { reactorClient, relationalDb } = deps;
   const now = deps.now ?? (() => new Date());
-  const rateLimiter = deps.rateLimiter ?? createRateLimiter(ISSUANCE_LIMIT, ISSUANCE_WINDOW_MS);
+  const issuanceRateLimiter = deps.issuanceRateLimiter ?? createRateLimiter(WRITE_LIMIT, WRITE_WINDOW_MS);
+  const profileRateLimiter = deps.profileRateLimiter ?? createRateLimiter(WRITE_LIMIT, WRITE_WINDOW_MS);
 
   /** Applies `actions` and throws if the reactor rejected any of them. */
   async function execute(documentId: string, actions: Action[]): Promise<void> {
@@ -136,7 +176,9 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
       .flat()
       .find((operation) => operation.error && sent.has(operation.action.id));
     if (failed?.error) {
-      throw new GraphQLError(`${failed.action.type} failed: ${failed.error}`);
+      throw new GraphQLError(`${failed.action.type} failed: ${failed.error}`, {
+        extensions: { code: "INTERNAL_SERVER_ERROR" },
+      });
     }
   }
 
@@ -156,15 +198,20 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
     Mutation: {
       renown_issueCredential: async (_: unknown, args: IssueCredentialArgs): Promise<string> => {
         const { input, username, userImage } = args;
+        assertProfileBounds({ username, userImage });
         const issuer = await verifiedIssuer(input, now());
 
-        // Keyed by a proven issuer address, so a forger can't spend someone else's budget.
-        if (!rateLimiter.take(issuer, now().getTime())) {
-          throw new GraphQLError("Rate limited", { extensions: { code: "RATE_LIMITED" } });
-        }
-
-        const existing = await findCredentialDoc(relationalDb, input.id);
+        // Idempotent before rate limiting: a signed credential is public, so
+        // replays of it must never spend its issuer's budget. Only a row from
+        // the same issuer counts; a junk copy claiming the VC id under another
+        // issuer must not swallow the real credential.
+        const existing = (await findCredentialDocs(relationalDb, input.id)).find(
+          (doc) => doc.issuerAddress === issuer,
+        );
         if (existing) return existing.documentId;
+
+        // Keyed by a proven issuer address, so a forger can't spend someone else's budget.
+        if (!issuanceRateLimiter.take(issuer, now().getTime())) throw rateLimited();
 
         const credentialDocId = await create(renownCredentialDocumentType);
         await execute(credentialDocId, [credentialActions.init(input)]);
@@ -188,24 +235,28 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
         ctx: ResolverContext,
       ): Promise<boolean> => {
         const { credentialId, signature, timestamp } = args;
-        const credential = await findCredentialDoc(relationalDb, credentialId);
-        if (!credential) {
+        const docs = await findCredentialDocs(relationalDb, credentialId);
+        if (docs.length === 0) {
           throw new GraphQLError("Not found", { extensions: { code: "NOT_FOUND" } });
         }
 
-        await authorizeAddress(
+        // Copies of a VC id may claim different issuers. The caller revokes
+        // exactly the copies issued by the address they prove, and nothing else.
+        const issuers = [...new Set(docs.map((doc) => doc.issuerAddress))];
+        const caller = await provenAddress(
           ctx,
-          credential.issuerAddress,
+          issuers,
           { message: revokeMessage(credentialId, timestamp ?? ""), signature, timestamp },
           now(),
         );
-
-        if (credential.revoked) return true;
+        const own = docs.filter((doc) => doc.issuerAddress === caller);
+        if (caller === undefined || own.length === 0) throw forbidden();
 
         const revokedAt = now().toISOString();
-        const live = await findLiveCredentialDocIds(relationalDb, credentialId, credential.issuerAddress);
-        for (const documentId of live) {
-          await execute(documentId, [credentialActions.revoke({ revokedAt, reason: REVOCATION_REASON })]);
+        for (const doc of own.filter((d) => !d.revoked)) {
+          await execute(doc.documentId, [
+            credentialActions.revoke({ revokedAt, reason: REVOCATION_REASON }),
+          ]);
         }
         return true;
       },
@@ -219,6 +270,7 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
         if (!ETHEREUM_ADDRESS_RE.test(address)) {
           throw invalidRequest("Invalid request: address is not a valid Ethereum address");
         }
+        assertProfileBounds({ username, userImage });
 
         await authorizeAddress(
           ctx,
@@ -232,6 +284,8 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
         );
 
         const lowercased = address.toLowerCase();
+        if (!profileRateLimiter.take(lowercased, now().getTime())) throw rateLimited();
+
         const existing = await findNewestProfileDoc(relationalDb, lowercased);
         const documentId = existing ?? (await create(renownUserDocumentType));
         const actions = [

@@ -20,49 +20,26 @@ function credentials(db: ReadModelDb) {
 }
 
 /**
- * The credential document for a VC id (`credentialId`, not the document id).
- * Several documents can carry the same VC id (copies written before writes
- * were closed); a live one is preferred over a revoked one, then the oldest.
+ * Every document carrying a VC id (`credentialId`, not the document id).
+ * Several can exist: copies written before writes were closed, possibly
+ * claiming other issuers. Live rows come first, then the oldest.
  */
-export async function findCredentialDoc(
+export async function findCredentialDocs(
   db: ReadModelDb,
   credentialId: string,
-): Promise<CredentialDoc | undefined> {
-  const row = await credentials(db)
+): Promise<CredentialDoc[]> {
+  const rows = await credentials(db)
     .select(["document_id", "issuer_ethereum_address", "revoked"])
     .where("credential_id", "=", credentialId)
     .orderBy("revoked", "asc")
     .orderBy("created_at", "asc")
     .orderBy("document_id", "asc")
-    .executeTakeFirst();
-  if (!row) return undefined;
-  return {
+    .execute();
+  return rows.map((row) => ({
     documentId: row.document_id,
     issuerAddress: row.issuer_ethereum_address.toLowerCase(),
     revoked: row.revoked,
-  };
-}
-
-/**
- * Every not-yet-revoked document for a VC id issued by `issuerAddress`
- * (case-insensitive). Revoking only one of several copies would leave the
- * credential verifiable through the others.
- */
-export async function findLiveCredentialDocIds(
-  db: ReadModelDb,
-  credentialId: string,
-  issuerAddress: string,
-): Promise<string[]> {
-  const rows = await credentials(db)
-    .select("document_id")
-    .where("credential_id", "=", credentialId)
-    .where("revoked", "=", false)
-    .where((eb) =>
-      eb(eb.fn("LOWER", ["issuer_ethereum_address"]), "=", issuerAddress.toLowerCase()),
-    )
-    .orderBy("document_id", "asc")
-    .execute();
-  return rows.map((row) => row.document_id);
+  }));
 }
 
 /**
