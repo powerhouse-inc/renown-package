@@ -23,6 +23,19 @@ import { profileMessage, revokeMessage } from "../core/signed-message.js";
 import { createResolvers, type ResolverDeps } from "../resolvers.js";
 import { schema } from "../schema.js";
 
+// Smart-wallet (ERC-1271/6492) checks go to the chain; stub them so the suite
+// stays offline. Default: the chain vouches for nothing.
+const onChain = vi.hoisted(() => ({
+  typedData: vi.fn((_args: { chainId: number; address: string; signature: string }) => Promise.resolve(false)),
+  message: vi.fn((_args: { chainId: number; address: string; message: string; signature: string }) => Promise.resolve(false)),
+}));
+vi.mock("../core/smart-wallet.js", () => ({
+  verifyTypedDataOnChain: onChain.typedData,
+  verifyMessageOnChain: onChain.message,
+}));
+// Shaped like an ERC-6492 wrapper: ecrecover can't make sense of it.
+const SMART_SIG = `0x${"ab".repeat(400)}${"6492".repeat(16)}`;
+
 const ALICE = privateKeyToAccount(
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
 );
@@ -97,6 +110,8 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  onChain.typedData.mockReset().mockResolvedValue(false);
+  onChain.message.mockReset().mockResolvedValue(false);
   await root.withSchema(CRED_NS).deleteFrom("renown_credential").execute();
   await root.withSchema(USER_NS).deleteFrom("renown_user").execute();
 });
@@ -938,5 +953,75 @@ describe("renown_upsertProfile", () => {
     await expect(
       renown_upsertProfile(null, { address: alice, username: "alice" }, tokenFor(alice)),
     ).rejects.toMatchObject({ ...INTERNAL, message: expect.stringMatching(/SET_USERNAME rejected/) as unknown });
+  });
+});
+
+describe("smart-wallet signatures (ERC-1271 / ERC-6492)", () => {
+  const alice = ALICE.address.toLowerCase();
+
+  async function smartCredential() {
+    const credential = await signCredential(ALICE);
+    credential.proof.proofValue = SMART_SIG;
+    return toInput(credential);
+  }
+
+  it("issues a credential whose signature the chain vouches for", async () => {
+    onChain.typedData.mockResolvedValue(true);
+    const { renown_issueCredential } = setup();
+    const input = await smartCredential();
+
+    const documentId = await renown_issueCredential(null, { input, username: "smart" }, ANON);
+
+    expect(documentId).toEqual(expect.any(String));
+    expect(await credentialRows(input.id)).toHaveLength(1);
+    expect(onChain.typedData).toHaveBeenCalledTimes(1);
+    expect(onChain.typedData.mock.calls[0][0]).toMatchObject({ chainId: 1, address: alice, signature: SMART_SIG });
+  });
+
+  it("rejects a smart-wallet credential the chain does not vouch for", async () => {
+    const { reactor, renown_issueCredential } = setup();
+
+    await expect(renown_issueCredential(null, { input: await smartCredential() }, ANON)).rejects.toThrow(
+      /^Invalid request: /,
+    );
+    expect(reactor.createEmpty).not.toHaveBeenCalled();
+  });
+
+  it("never asks the chain about an EOA signature", async () => {
+    const { renown_issueCredential } = setup();
+    await renown_issueCredential(null, { input: toInput(await signCredential(ALICE)) }, ANON);
+    expect(onChain.typedData).not.toHaveBeenCalled();
+  });
+
+  it("revokes with the issuer's smart-wallet signature, and only for the issuer", async () => {
+    const context = setup();
+    const input = toInput(await signCredential(ALICE));
+    await context.renown_issueCredential(null, { input }, ANON);
+    const timestamp = new Date().toISOString();
+    const signed = { signature: SMART_SIG, timestamp };
+
+    await expect(
+      context.renown_revokeCredential(null, { credentialId: input.id, ...signed }, ANON),
+    ).rejects.toMatchObject(FORBIDDEN);
+
+    onChain.message.mockImplementation(({ address }) => Promise.resolve(address === alice));
+    await expect(
+      context.renown_revokeCredential(null, { credentialId: input.id, ...signed }, ANON),
+    ).resolves.toBe(true);
+    expect(onChain.message).toHaveBeenLastCalledWith(
+      expect.objectContaining({ chainId: 1, address: alice, message: revokeMessage(input.id, timestamp) }),
+    );
+  });
+
+  it("updates a profile with the address's smart-wallet signature", async () => {
+    const { renown_upsertProfile } = setup();
+    const timestamp = new Date().toISOString();
+    const args = { address: alice, username: "smart", signature: SMART_SIG, timestamp };
+
+    await expect(renown_upsertProfile(null, args, ANON)).rejects.toMatchObject(FORBIDDEN);
+
+    onChain.message.mockResolvedValue(true);
+    await expect(renown_upsertProfile(null, args, ANON)).resolves.toEqual(expect.any(String));
+    expect((await profileRows(alice))[0]).toMatchObject({ username: "smart" });
   });
 });

@@ -22,6 +22,11 @@ import {
   verifySignedMessage,
 } from "./core/signed-message.js";
 import { findCredentialDocs, findNewestProfileDoc, type ReadModelDb } from "./lookups.js";
+import { verifyMessageOnChain, verifyTypedDataOnChain } from "./core/smart-wallet.js";
+
+// Signed revoke/profile messages carry no chain; smart-wallet signatures over
+// them are checked on Renown's default chain.
+const MESSAGE_CHAIN_ID = 1;
 
 // Per address, in memory: 30 issuances and 30 profile upserts per minute.
 const WRITE_LIMIT = 30;
@@ -105,7 +110,13 @@ async function isSignedBy(address: string, signed: SignedMessage, now: Date): Pr
     signed.signature &&
       signed.timestamp &&
       isFreshTimestamp(signed.timestamp, now) &&
-      (await verifySignedMessage({ address, message: signed.message, signature: signed.signature })),
+      ((await verifySignedMessage({ address, message: signed.message, signature: signed.signature })) ||
+        (await verifyMessageOnChain({
+          chainId: MESSAGE_CHAIN_ID,
+          address,
+          message: signed.message,
+          signature: signed.signature,
+        }))),
   );
 }
 
@@ -145,7 +156,15 @@ async function provenAddress(
     return undefined;
   }
   const signer = await recoverSigner(signed.message, signed.signature);
-  return signer !== null && candidates.includes(signer) ? signer : undefined;
+  if (signer !== null && candidates.includes(signer)) return signer;
+  // A smart wallet's signature recovers to no candidate: ask the chain.
+  for (const candidate of candidates) {
+    const signature = signed.signature;
+    if (await verifyMessageOnChain({ chainId: MESSAGE_CHAIN_ID, address: candidate, message: signed.message, signature })) {
+      return candidate;
+    }
+  }
+  return undefined;
 }
 
 /** The lowercased address that produced `signature` over `message`, or null if it can't be recovered. */
@@ -171,6 +190,21 @@ async function verifiedIssuer(input: InitInput, now: Date): Promise<`0x${string}
     valid = await verifyCredentialSignature(credential);
   } catch {
     valid = false;
+  }
+  if (!valid) {
+    // Not an EOA signature: a smart wallet (ERC-1271 / ERC-6492) can still prove it.
+    const { proof, ...message } = credential;
+    valid = await verifyTypedDataOnChain({
+      chainId: proof.eip712.domain.chainId,
+      address: issuerAddressOf(input),
+      signature: proof.proofValue,
+      typedData: {
+        domain: proof.eip712.domain,
+        types: proof.eip712.types,
+        primaryType: "VerifiableCredential",
+        message,
+      } as never,
+    });
   }
   if (!valid) throw invalidRequest("Invalid request: EIP-712 proof signature does not match issuer");
   return issuerAddressOf(input);
