@@ -1,3 +1,20 @@
+# [1.6.0](https://github.com/powerhouse-inc/renown-package/compare/v1.5.1...v1.6.0) (2026-10-02)
+
+
+### Bug Fixes
+
+* **renown-workload:** classify runs by event_name, not ref alone ([f746b81](https://github.com/powerhouse-inc/renown-package/commit/f746b814c8d2224209f4b8ba2e1c324b095b90c6))
+* **renown-workload:** default audience is the vetra-apps endpoints, not the whole switchboard ([6e9fbd8](https://github.com/powerhouse-inc/renown-package/commit/6e9fbd8ae2f37b48d962cca8318b40ebb83acf8e))
+
+
+### Features
+
+* **renown-workload:** GitHub OIDC verification, ref policy and did:key signing ([503f243](https://github.com/powerhouse-inc/renown-package/commit/503f2436e5cdac9bc234c9d0e231de7211e5323a))
+* **renown-workload:** POST workload/token exchange handler ([069bee4](https://github.com/powerhouse-inc/renown-package/commit/069bee4402d74775b801024173e3ef02e94b8367))
+* **renown-workload:** register the renown-workload subgraph ([00b1b87](https://github.com/powerhouse-inc/renown-package/commit/00b1b87c565184670e3224f0cf244ad0b15494f5))
+* **renown-workload:** token-gated workload identity registration API ([ff402e7](https://github.com/powerhouse-inc/renown-package/commit/ff402e730062be300b0084c53f30d6ddc5cb1db7))
+* **renown-workload:** workload_identities store with kysely and memory backends ([a4b4e89](https://github.com/powerhouse-inc/renown-package/commit/a4b4e89112e0fa5f0f27f073e6181ff93d84c1c0))
+
 ## [1.5.1](https://github.com/powerhouse-inc/renown-package/compare/v1.5.0...v1.5.1) (2026-09-28)
 
 
