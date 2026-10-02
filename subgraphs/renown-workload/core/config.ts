@@ -3,10 +3,19 @@ import type { WorkloadConfig } from "./types.js";
 /** The production npm registry: never reachable by PREVIEW (pull request) runs. */
 export const PRODUCTION_REGISTRY_AUDIENCE = "https://registry.vetra.io";
 
+/**
+ * The vetra switchboard's vetra-apps CI endpoints, which verify this audience
+ * themselves. Deliberately not the bare `https://switchboard.vetra.io`: that
+ * audience would let a workload token act as the owner on the switchboard's
+ * general GraphQL API.
+ */
+export const VETRA_APPS_AUDIENCE =
+  "https://switchboard.vetra.io/api/@powerhousedao/vetra-cloud-package/apps";
+
 export const DEFAULT_AUDIENCES = [
   PRODUCTION_REGISTRY_AUDIENCE,
   "https://registry.dev.vetra.io",
-  "https://switchboard.vetra.io",
+  VETRA_APPS_AUDIENCE,
 ];
 
 const KEY_BYTES = 32;

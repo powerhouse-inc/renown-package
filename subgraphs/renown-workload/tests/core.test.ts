@@ -1,6 +1,10 @@
 import { verifyAuthBearerToken } from "@renown/sdk";
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_AUDIENCES, loadConfig } from "../core/config.js";
+import {
+  DEFAULT_AUDIENCES,
+  loadConfig,
+  VETRA_APPS_AUDIENCE,
+} from "../core/config.js";
 import { open, seal } from "../core/crypto.js";
 import { createGithubVerifier, GithubTokenError } from "../core/github.js";
 import { generateWorkloadKey, issueWorkloadToken } from "../core/keys.js";
@@ -138,12 +142,31 @@ describe("isAudienceAllowed", () => {
       ),
     ).toBe(true);
     expect(
-      isAudienceAllowed(
-        "PREVIEW",
-        "https://switchboard.vetra.io",
-        DEFAULT_AUDIENCES,
-      ),
+      isAudienceAllowed("PREVIEW", VETRA_APPS_AUDIENCE, DEFAULT_AUDIENCES),
     ).toBe(true);
+  });
+
+  it("defaults to the registries and the vetra-apps CI endpoints only", () => {
+    expect(DEFAULT_AUDIENCES).toEqual([
+      "https://registry.vetra.io",
+      "https://registry.dev.vetra.io",
+      "https://switchboard.vetra.io/api/@powerhousedao/vetra-cloud-package/apps",
+    ]);
+    expect(VETRA_APPS_AUDIENCE).toBe(
+      "https://switchboard.vetra.io/api/@powerhousedao/vetra-cloud-package/apps",
+    );
+  });
+
+  it("never gives any run the bare vetra switchboard by default (it would act as the owner on its GraphQL)", () => {
+    for (const refClass of ["PRODUCTION", "RELEASE", "PREVIEW"] as const) {
+      expect(
+        isAudienceAllowed(
+          refClass,
+          "https://switchboard.vetra.io",
+          DEFAULT_AUDIENCES,
+        ),
+      ).toBe(false);
+    }
   });
 
   it("rejects audiences outside the allowlist", () => {

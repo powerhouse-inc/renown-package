@@ -27,6 +27,8 @@ import {
   REPOSITORY_ID,
 } from "./github-fixture.js";
 
+const APPS_AUDIENCE =
+  "https://switchboard.vetra.io/api/@powerhousedao/vetra-cloud-package/apps";
 const baseUrl = "https://sb.example/api/@powerhousedao/renown-package";
 const OWNER = "0xabcdef0123456789abcdef0123456789abcdef01";
 
@@ -206,17 +208,26 @@ describe("RenownWorkloadSubgraph", () => {
     const res = await routes[0].handler(
       tokenRequest({
         subject_token: await githubToken(prClaims()),
-        audience: "https://switchboard.vetra.io/",
+        audience: `${APPS_AUDIENCE}/`,
       }),
       {} as RouteContext,
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { access_token: string };
     const verified = await verifyAuthBearerToken(body.access_token, {
-      audience: "https://switchboard.vetra.io",
+      audience: APPS_AUDIENCE,
     });
     expect(verified && verified.issuer).toBe(identity.did);
     expect(fetchSpy).toHaveBeenCalledOnce();
+
+    const bare = await routes[0].handler(
+      tokenRequest({
+        subject_token: await githubToken(prClaims()),
+        audience: "https://switchboard.vetra.io",
+      }),
+      {} as RouteContext,
+    );
+    expect(bare.status).toBe(403);
     await subgraph.onDisconnect();
   });
 });
