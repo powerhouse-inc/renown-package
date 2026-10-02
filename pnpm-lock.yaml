@@ -88,6 +88,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: 4.1.1
         version: 4.1.1(vitest@4.1.1(@opentelemetry/api@1.9.1)(@types/node@24.13.6)(vite@8.0.14(@types/node@24.13.6)(jiti@2.7.0)(terser@5.51.2)(yaml@2.9.0)))
+      did-jwt-vc:
+        specifier: ^4.0.16
+        version: 4.0.16
       document-model:
         specifier: 6.2.3-dev.26
         version: 6.2.3-dev.26(@sentry/node-core@10.74.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1)))(rolldown@1.0.2)
