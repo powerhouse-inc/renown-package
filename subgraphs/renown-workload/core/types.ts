@@ -50,4 +50,8 @@ export interface VetraWorkloadClaim {
   runAttempt: string | null;
   actor: string | null;
   prNumber: number | null;
+  /** GitHub `event_name` of the run (`push`, `workflow_dispatch` or `pull_request`). */
+  eventName: string;
+  /** The workflow file that ran: `job_workflow_ref`, else `workflow_ref`. */
+  workflowRef: string | null;
 }

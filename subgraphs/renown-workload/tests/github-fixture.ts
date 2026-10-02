@@ -51,6 +51,8 @@ export function prClaims(overrides: JWTPayload = {}): JWTPayload {
     run_attempt: "1",
     actor: "octocat",
     event_name: "pull_request",
+    workflow_ref: `${REPOSITORY}/.github/workflows/deploy.yml@refs/pull/42/merge`,
+    job_workflow_ref: `${REPOSITORY}/.github/workflows/deploy.yml@refs/pull/42/merge`,
     ...overrides,
   };
 }
@@ -81,4 +83,18 @@ export async function githubToken(
     .setNotBefore(nowSec - 5)
     .setExpirationTime(nowSec + (options.expiresIn ?? 300))
     .sign(privateKey);
+}
+
+/** The claims of a `push` run on `ref`. */
+export function pushClaims(
+  ref: string,
+  overrides: JWTPayload = {},
+): JWTPayload {
+  return prClaims({
+    ref,
+    event_name: "push",
+    workflow_ref: `${REPOSITORY}/.github/workflows/deploy.yml@${ref}`,
+    job_workflow_ref: `${REPOSITORY}/.github/workflows/deploy.yml@${ref}`,
+    ...overrides,
+  });
 }

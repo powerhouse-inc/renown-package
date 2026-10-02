@@ -10,6 +10,7 @@ import {
   githubJwks,
   githubToken,
   prClaims,
+  pushClaims,
   REPOSITORY,
   REPOSITORY_ID,
 } from "./github-fixture.js";
@@ -102,6 +103,8 @@ describe("POST workload/token", () => {
       runAttempt: "1",
       actor: "octocat",
       prNumber: 42,
+      eventName: "pull_request",
+      workflowRef: `${REPOSITORY}/.github/workflows/deploy.yml@refs/pull/42/merge`,
     });
     // Bound to the requested audience only.
     expect(
@@ -115,7 +118,7 @@ describe("POST workload/token", () => {
 
   it("gives production-branch runs the production registry", async () => {
     const { status, body } = await exchange(
-      await githubToken(prClaims({ ref: "refs/heads/main" })),
+      await githubToken(pushClaims("refs/heads/main")),
       PROD_REGISTRY,
     );
     expect(status).toBe(200);
@@ -129,7 +132,7 @@ describe("POST workload/token", () => {
 
   it("gives v* tag runs a RELEASE token", async () => {
     const { status, body } = await exchange(
-      await githubToken(prClaims({ ref: "refs/tags/v1.0.0" })),
+      await githubToken(pushClaims("refs/tags/v1.2.3")),
       PROD_REGISTRY,
     );
     expect(status).toBe(200);
@@ -152,7 +155,7 @@ describe("POST workload/token", () => {
 
   it("refuses an audience outside the allowlist (403)", async () => {
     const { status } = await exchange(
-      await githubToken(prClaims({ ref: "refs/heads/main" })),
+      await githubToken(pushClaims("refs/heads/main")),
       "https://evil.example",
     );
     expect(status).toBe(403);
@@ -200,18 +203,94 @@ describe("POST workload/token", () => {
     expect(status).toBe(403);
   });
 
+  it.each([
+    "pull_request_target",
+    "workflow_run",
+    "issue_comment",
+    "pull_request_review_comment",
+  ])(
+    "refuses a %s run on the production branch (403), whatever the audience",
+    async (eventName) => {
+      for (const audience of [PROD_REGISTRY, DEV_REGISTRY]) {
+        const { status, body } = await exchange(
+          await githubToken(
+            pushClaims("refs/heads/main", { event_name: eventName }),
+          ),
+          audience,
+        );
+        expect(status).toBe(403);
+        expect(body.error).toBe("access_denied");
+      }
+    },
+  );
+
+  it("refuses a push of a non-version v tag (403)", async () => {
+    const { status } = await exchange(
+      await githubToken(pushClaims("refs/tags/vX")),
+      PROD_REGISTRY,
+    );
+    expect(status).toBe(403);
+  });
+
+  it("refuses a token without event_name (403)", async () => {
+    const { status } = await exchange(
+      await githubToken(
+        pushClaims("refs/heads/main", { event_name: undefined }),
+      ),
+    );
+    expect(status).toBe(403);
+  });
+
+  it("gives a pull_request run on refs/pull/7/merge a PREVIEW token carrying the event and workflow", async () => {
+    const workflowRef = `${REPOSITORY}/.github/workflows/preview.yml@refs/pull/7/merge`;
+    const { status, body } = await exchange(
+      await githubToken(
+        prClaims({
+          ref: "refs/pull/7/merge",
+          workflow_ref: "ignored-when-job-workflow-ref-set",
+          job_workflow_ref: workflowRef,
+        }),
+      ),
+    );
+    expect(status).toBe(200);
+    const verified = await verifyAuthBearerToken(body.access_token as string, {
+      audience: DEV_REGISTRY,
+    });
+    expect(verified && verified.payload.vetra).toMatchObject({
+      refClass: "PREVIEW",
+      prNumber: 7,
+      eventName: "pull_request",
+      workflowRef,
+    });
+  });
+
+  it("falls back to workflow_ref when job_workflow_ref is absent", async () => {
+    const { body } = await exchange(
+      await githubToken(
+        pushClaims("refs/heads/main", {
+          job_workflow_ref: undefined,
+          workflow_ref: "acme/shop/.github/workflows/x.yml@refs/heads/main",
+        }),
+      ),
+    );
+    const verified = await verifyAuthBearerToken(body.access_token as string, {
+      audience: DEV_REGISTRY,
+    });
+    expect(verified && verified.payload.vetra).toMatchObject({
+      refClass: "PRODUCTION",
+      eventName: "push",
+      workflowRef: "acme/shop/.github/workflows/x.yml@refs/heads/main",
+    });
+  });
+
   it("follows the production branch as updated", async () => {
     await deps.store.update(did, { productionBranch: "release" }, new Date());
     expect(
-      (await exchange(await githubToken(prClaims({ ref: "refs/heads/main" }))))
-        .status,
+      (await exchange(await githubToken(pushClaims("refs/heads/main")))).status,
     ).toBe(403);
     expect(
-      (
-        await exchange(
-          await githubToken(prClaims({ ref: "refs/heads/release" })),
-        )
-      ).status,
+      (await exchange(await githubToken(pushClaims("refs/heads/release"))))
+        .status,
     ).toBe(200);
   });
 

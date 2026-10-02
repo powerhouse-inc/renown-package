@@ -4,7 +4,7 @@ import { DEFAULT_AUDIENCES, loadConfig } from "../core/config.js";
 import { open, seal } from "../core/crypto.js";
 import { createGithubVerifier, GithubTokenError } from "../core/github.js";
 import { generateWorkloadKey, issueWorkloadToken } from "../core/keys.js";
-import { classifyRef, isAudienceAllowed } from "../core/refs.js";
+import { classifyRun, isAudienceAllowed } from "../core/refs.js";
 import { githubJwks, githubToken, prClaims } from "./github-fixture.js";
 
 const KEY = new Uint8Array(32).fill(7);
@@ -60,27 +60,53 @@ describe("seal/open", () => {
   });
 });
 
-describe("classifyRef", () => {
+describe("classifyRun", () => {
   it.each([
-    ["refs/heads/main", { refClass: "PRODUCTION", prNumber: null }],
-    ["refs/tags/v1.2.3", { refClass: "RELEASE", prNumber: null }],
-    ["refs/pull/42/merge", { refClass: "PREVIEW", prNumber: 42 }],
-  ])("%s", (ref, expected) => {
-    expect(classifyRef(ref, "main")).toEqual(expected);
+    ["push", "refs/heads/main", { refClass: "PRODUCTION", prNumber: null }],
+    [
+      "workflow_dispatch",
+      "refs/heads/main",
+      { refClass: "PRODUCTION", prNumber: null },
+    ],
+    ["push", "refs/tags/v1.2.3", { refClass: "RELEASE", prNumber: null }],
+    ["push", "refs/tags/v2", { refClass: "RELEASE", prNumber: null }],
+    [
+      "pull_request",
+      "refs/pull/42/merge",
+      { refClass: "PREVIEW", prNumber: 42 },
+    ],
+  ])("%s on %s", (eventName, ref, expected) => {
+    expect(classifyRun(eventName, ref, "main")).toEqual(expected);
   });
 
   it.each([
-    "refs/heads/feature",
-    "refs/heads/main-2",
-    "refs/heads/mainx",
-    "refs/tags/release-1",
-    "refs/tags/v",
-    "refs/pull/42/head",
-    "refs/pull/0/merge",
-    "refs/pull/x/merge",
-    "main",
-  ])("rejects %s", (ref) => {
-    expect(classifyRef(ref, "main")).toBeNull();
+    // Events whose `ref` is the default branch but whose code or trigger may come from a fork.
+    ["pull_request_target", "refs/heads/main"],
+    ["workflow_run", "refs/heads/main"],
+    ["issue_comment", "refs/heads/main"],
+    ["pull_request_review_comment", "refs/heads/main"],
+    ["pull_request_review", "refs/pull/42/merge"],
+    ["schedule", "refs/heads/main"],
+    ["repository_dispatch", "refs/heads/main"],
+    ["workflow_call", "refs/heads/main"],
+    // Right event, wrong ref.
+    ["push", "refs/heads/feature"],
+    ["push", "refs/heads/main-2"],
+    ["push", "refs/heads/mainx"],
+    ["push", "refs/tags/release-1"],
+    ["push", "refs/tags/v"],
+    ["push", "refs/tags/vX"],
+    ["push", "refs/pull/42/merge"],
+    ["workflow_dispatch", "refs/tags/v1.2.3"],
+    ["workflow_dispatch", "refs/heads/feature"],
+    ["pull_request", "refs/heads/main"],
+    ["pull_request", "refs/pull/42/head"],
+    ["pull_request", "refs/pull/0/merge"],
+    ["pull_request", "refs/pull/x/merge"],
+    ["push", "main"],
+    ["", "refs/heads/main"],
+  ])("rejects %s on %s", (eventName, ref) => {
+    expect(classifyRun(eventName, ref, "main")).toBeNull();
   });
 });
 
@@ -146,6 +172,8 @@ describe("workload keys", () => {
       runAttempt: "1",
       actor: "octocat",
       prNumber: null,
+      eventName: "push",
+      workflowRef: "acme/shop/.github/workflows/deploy.yml@refs/heads/main",
     };
     const token = await issueWorkloadToken({
       keyPair,

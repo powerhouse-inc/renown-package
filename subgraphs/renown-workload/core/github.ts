@@ -28,6 +28,9 @@ export interface GithubOidcClaims extends JWTPayload {
   run_id?: string;
   run_attempt?: string;
   actor?: string;
+  event_name?: string;
+  workflow_ref?: string;
+  job_workflow_ref?: string;
 }
 
 export class GithubTokenError extends Error {
@@ -156,6 +159,9 @@ export function createGithubVerifier(options: GithubVerifierOptions = {}) {
         run_id: optionalString(payload.run_id),
         run_attempt: optionalString(payload.run_attempt),
         actor: optionalString(payload.actor),
+        event_name: optionalString(payload.event_name),
+        workflow_ref: optionalString(payload.workflow_ref),
+        job_workflow_ref: optionalString(payload.job_workflow_ref),
       };
     },
   };

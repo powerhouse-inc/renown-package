@@ -2,7 +2,7 @@ import { normalizeAudience } from "../core/config.js";
 import { open } from "../core/crypto.js";
 import { GithubTokenError, type GithubVerifier } from "../core/github.js";
 import { issueWorkloadToken } from "../core/keys.js";
-import { classifyRef, isAudienceAllowed } from "../core/refs.js";
+import { classifyRun, isAudienceAllowed } from "../core/refs.js";
 import type { JwkKeyPair, VetraWorkloadClaim } from "../core/types.js";
 import type { WorkloadStore } from "../store/types.js";
 
@@ -99,10 +99,11 @@ export function createTokenHandler(
     if (identity.repository.toLowerCase() !== claims.repository.toLowerCase()) {
       return denied("The repository does not match the registered identity");
     }
-    const ref = classifyRef(claims.ref, identity.productionBranch);
+    const eventName = claims.event_name ?? "";
+    const ref = classifyRun(eventName, claims.ref, identity.productionBranch);
     if (ref === null) {
       return denied(
-        "Only the production branch, v* tags and pull request merge refs may deploy",
+        "Only push/workflow_dispatch on the production branch, push of v* tags and pull_request runs may deploy",
       );
     }
     if (!isAudienceAllowed(ref.refClass, request.audience, d.audiences)) {
@@ -133,6 +134,8 @@ export function createTokenHandler(
       runAttempt: claims.run_attempt ?? null,
       actor: claims.actor ?? null,
       prNumber: ref.prNumber,
+      eventName,
+      workflowRef: claims.job_workflow_ref ?? claims.workflow_ref ?? null,
     };
     const accessToken = await issueWorkloadToken({
       keyPair,
@@ -148,6 +151,7 @@ export function createTokenHandler(
         did: identity.did,
         repository: claims.repository,
         ref: claims.ref,
+        event_name: eventName,
         run_id: vetra.runId,
         actor: vetra.actor,
         audience: request.audience,
