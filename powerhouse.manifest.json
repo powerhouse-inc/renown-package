@@ -70,6 +70,10 @@
     {
       "id": "renown-auth",
       "name": "renown-auth"
+    },
+    {
+      "id": "renown-workload",
+      "name": "renown-workload"
     }
   ],
   "config": []
