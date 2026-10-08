@@ -52,6 +52,8 @@ const OWNER = "0xabc0000000000000000000000000000000000001";
 const MALLORY = "0xbad0000000000000000000000000000000000666";
 const USER = `did:pkh:eip155:1:${"0x1111111111111111111111111111111111111111"}`;
 const NOW = new Date("2026-10-08T10:00:00.000Z");
+/** The dashboard app allowed to write profiles (RENOWN_STATS_PROFILE_APPS). */
+const PROFILE_APP = "did:key:zDashboardAppDidForProfileUpsertsXXXXXXXXXXXX";
 const CRED_NS = RenownCredentialProcessor.getNamespace("renown-credential");
 
 let root: Kysely<CredentialDB & StatsDB>;
@@ -261,6 +263,7 @@ function setup(
     reportLimit?: number;
     withIndex?: boolean;
     reactor?: ReturnType<typeof fakeReactor>;
+    profileApps?: string[];
   } = {},
 ) {
   const reactor = options.reactor ?? fakeReactor();
@@ -270,6 +273,7 @@ function setup(
     relationalDb,
     index: () => (options.withIndex === false ? undefined : index),
     audience: () => AUDIENCE,
+    profileApps: () => new Set(options.profileApps ?? [PROFILE_APP]),
     now: () => NOW,
     ...(options.reportLimit !== undefined
       ? { reportRateLimiter: createRateLimiter(options.reportLimit, 60_000) }
@@ -305,7 +309,10 @@ const hostBearer = (appKey: string, address = OWNER): Ctx => ({
 const appHeader = async (token: Promise<string>): Promise<Ctx> => ({
   headers: { [APP_TOKEN_HEADER]: await token },
 });
-const wallet = (address: string): Ctx => ({ user: { address } });
+/** A wallet bearer signed by the listed dashboard app (or by `appKey`). */
+const wallet = (address: string, appKey = PROFILE_APP): Ctx => ({
+  user: { address, appKey },
+});
 
 describe("reportUserStat", () => {
   it("accepts a host-resolved bearer issued by the app DID and reads the stat back", async () => {
@@ -425,6 +432,26 @@ describe("reportUserStat", () => {
       { appDid: app.did, metric: "m", value: 7, updatedAt: NOW.toISOString() },
     ]);
     expect(reactor.ofType(renownUserStatsDocumentType)).toHaveLength(1);
+  });
+
+  it("appends no operation when the reported value is unchanged", async () => {
+    const app = await makeApp();
+    await insertDelegation(OWNER, app.did);
+    const { report, reactor } = setup();
+    const ctx = hostBearer(app.did);
+    const send = (value: number) =>
+      report({ appDid: app.did, userDid: USER, metric: "m", value }, ctx);
+    await send(5);
+    const [doc] = reactor.ofType(renownUserStatsDocumentType);
+    const before = doc.operations.global.length;
+    expect(await send(5)).toBe(true);
+    expect(
+      (await reactor.get(doc.header.id)).operations.global,
+    ).toHaveLength(before);
+    expect(await send(6)).toBe(true);
+    expect(
+      (await reactor.get(doc.header.id)).operations.global,
+    ).toHaveLength(before + 1);
   });
 
   it("folds did:pkh spellings of one wallet into one document", async () => {
@@ -654,6 +681,52 @@ describe("upsertAppProfile", () => {
     expect(reactor.ofType(renownAppProfileDocumentType)).toHaveLength(0);
   });
 
+  it("refuses a bearer from an app not in RENOWN_STATS_PROFILE_APPS, even the owner's; accepts a listed one", async () => {
+    const app = await makeApp();
+    const thirdParty = await makeApp(MALLORY);
+    await insertDelegation(OWNER, app.did);
+    const { upsert, appProfile, reactor } = setup();
+    expect(
+      await code(
+        upsert({ appDid: app.did, name: "x" }, wallet(OWNER, thirdParty.did)),
+      ),
+    ).toBe("FORBIDDEN");
+    // The app's own key is no profile app either.
+    expect(
+      await code(upsert({ appDid: app.did, name: "x" }, wallet(OWNER, app.did))),
+    ).toBe("FORBIDDEN");
+    expect(
+      await code(upsert({ appDid: app.did, name: "x" }, { user: { address: OWNER } })),
+    ).toBe("FORBIDDEN");
+    expect(reactor.ofType(renownAppProfileDocumentType)).toHaveLength(0);
+    expect(await upsert({ appDid: app.did, name: "Speckle" }, wallet(OWNER))).toBe(
+      true,
+    );
+    // Once claimed, a non-listed app still cannot rewrite it (e.g. a phishing website).
+    expect(
+      await code(
+        upsert(
+          { appDid: app.did, website: "https://phish.example" },
+          wallet(OWNER, thirdParty.did),
+        ),
+      ),
+    ).toBe("FORBIDDEN");
+    expect(await appProfile(app.did)).toMatchObject({
+      name: "Speckle",
+      website: null,
+    });
+  });
+
+  it("refuses every upsert when no profile app is configured", async () => {
+    const app = await makeApp();
+    await insertDelegation(OWNER, app.did);
+    const { upsert, reactor } = setup({ profileApps: [] });
+    expect(
+      await code(upsert({ appDid: app.did, name: "x" }, wallet(OWNER))),
+    ).toBe("FORBIDDEN");
+    expect(reactor.ofType(renownAppProfileDocumentType)).toHaveLength(0);
+  });
+
   it("returns null for an unknown app and rejects a non-wallet publisher query", async () => {
     const app = await makeApp();
     const { appProfile, byPublisher } = setup();
@@ -712,6 +785,40 @@ describe("authorisation hardening", () => {
     expect(
       await code(report(args(victim.did), await appHeader(app.token()))),
     ).toBe("FORBIDDEN");
+  });
+
+  it("refuses a CI workload token (vetra claim) in the header, even with the stats audience", async () => {
+    const { generateWorkloadKey, issueWorkloadToken } =
+      await import("../../renown-workload/core/keys.js");
+    const { did, keyPair } = await generateWorkloadKey();
+    await registerIdentity(did, OWNER);
+    await insertDelegation(OWNER, did);
+    const { report, reactor } = setup();
+    const token = await issueWorkloadToken({
+      keyPair,
+      did,
+      chainId: 1,
+      address: OWNER,
+      audience: AUDIENCE,
+      expiresInSec: 600,
+      vetra: {
+        ref: "refs/heads/main",
+        refClass: "PRODUCTION",
+        sha: null,
+        repository: "acme/app",
+        repositoryId: "1",
+        runId: null,
+        runAttempt: null,
+        actor: null,
+        prNumber: null,
+        eventName: "push",
+        workflowRef: null,
+      },
+    });
+    expect(
+      await code(report(args(did), await appHeader(Promise.resolve(token)))),
+    ).toBe("FORBIDDEN");
+    expect(reactor.ofType(renownUserStatsDocumentType)).toHaveLength(0);
   });
 
   it("refuses a header token whose delegation came from a different wallet than its subject", async () => {
@@ -861,6 +968,7 @@ describe("authorisation hardening", () => {
       relationalDb,
       index: () => new KyselyStatsIndex(statsDb()),
       audience: () => AUDIENCE,
+      profileApps: () => new Set([PROFILE_APP]),
       now: () => NOW,
       profileRateLimiter: createRateLimiter(1, 60_000),
     }) as { Mutation: Record<string, Resolver> };
@@ -1040,6 +1148,7 @@ describe("ownership is anchored on the registered workload identity", () => {
       relationalDb: brokenDb,
       index: () => new KyselyStatsIndex(statsDb()),
       audience: () => AUDIENCE,
+      profileApps: () => new Set([PROFILE_APP]),
       now: () => NOW,
     }) as { Mutation: Record<string, Resolver> };
     const reportError = await resolvers.Mutation.reportUserStat(

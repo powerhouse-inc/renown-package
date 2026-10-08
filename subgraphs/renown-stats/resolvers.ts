@@ -54,6 +54,11 @@ export interface StatsResolverDeps {
   /** Undefined until set up, or when the relational namespace is unavailable. */
   index(): StatsIndex | undefined;
   audience(): string;
+  /**
+   * App DIDs whose host bearers may upsert profiles (`RENOWN_STATS_PROFILE_APPS`).
+   * Empty refuses every upsert.
+   */
+  profileApps(): ReadonlySet<string>;
   now?: () => Date;
   reportRateLimiter?: RateLimiter;
   profileRateLimiter?: RateLimiter;
@@ -195,6 +200,9 @@ export function createResolvers(
       const audience = deps.audience();
       const verified = await verifyAuthBearerToken(token, { audience });
       if (!verified) return undefined;
+      // A CI workload token (it carries the `vetra` claim) is for the Vetra
+      // CI endpoints, never a stats credential, whatever its audience.
+      if ("vetra" in verified.payload) return undefined;
       // did-jwt only checks `aud` when the token has one; we require it.
       const aud = verified.payload.aud;
       if (!(Array.isArray(aud) ? aud.includes(audience) : aud === audience))
@@ -206,9 +214,10 @@ export function createResolvers(
       if (appDid === null || address === null) return undefined;
       return { appDid, address };
     } catch (error) {
-      // A malformed or invalid token is the caller's problem, and anyone can
-      // send one: debug only, so unauthenticated callers cannot flood the
-      // logs. Real lookup outages still warn (see `warn` above).
+      // Defensive only: verifyAuthBearerToken catches its own failures
+      // (console.error-ing them itself) and resolves false, so this branch is
+      // not normally reached and does not keep bad tokens out of error logs.
+      // If something here does throw, log at debug: anyone can send a token.
       const reason = error instanceof Error ? error.message : String(error);
       console.debug(
         `[renown-stats] app token verification failed (${reason}); refusing`,
@@ -356,6 +365,14 @@ export function createResolvers(
 
         await lock(`user:${userDid}`, async () => {
           const documentId = await userStatsDocument(index, userDid);
+          // Stats are current values: an unchanged value appends no operation.
+          const current = await reactorClient.get<RenownUserStatsDocument>(
+            documentId,
+          );
+          const stored = current.state.global.stats.find(
+            (stat) => stat.appDid === appDid && stat.metric === args.metric,
+          );
+          if (stored?.value === args.value) return;
           await execute(documentId, [
             statsActions.setStat({
               id: generateId(),
@@ -379,6 +396,11 @@ export function createResolvers(
           throw invalidRequest("appDid must be a did:key DID");
         const caller = ctx.user?.address?.toLowerCase();
         if (!caller) throw forbidden();
+        // Only listed apps (the Renown/Vetra dashboards) may write profiles: a
+        // third-party dApp the publisher logged into holds a bearer for the
+        // same wallet and must not rewrite their profile.
+        const appKey = ctx.user?.appKey;
+        if (!appKey || !deps.profileApps().has(appKey)) throw forbidden();
         const fields: ProfileFields = {
           name: args.name,
           tagline: args.tagline,

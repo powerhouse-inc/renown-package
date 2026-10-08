@@ -1,7 +1,7 @@
 import { BaseSubgraph } from "@powerhousedao/reactor-api";
 import type { DocumentNode } from "graphql";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
-import { statsAudience } from "./core/config.js";
+import { statsAudience, statsProfileApps } from "./core/config.js";
 import { createResolvers } from "./resolvers.js";
 import { schema } from "./schema.js";
 import { KyselyStatsIndex } from "./store/kysely.js";
@@ -20,6 +20,7 @@ import type { StatsKysely } from "./store/types.js";
 export class RenownStatsSubgraph extends BaseSubgraph {
   #index: KyselyStatsIndex | undefined;
   #audience: string | undefined;
+  #profileApps: ReadonlySet<string> | undefined;
   #setUp = false;
 
   name = "renown-stats";
@@ -32,6 +33,7 @@ export class RenownStatsSubgraph extends BaseSubgraph {
     relationalDb: this.relationalDb as unknown as ReadModelDb,
     index: () => this.#index,
     audience: () => this.#getAudience(),
+    profileApps: () => (this.#profileApps ??= statsProfileApps(process.env)),
   });
   additionalContextFields = {};
 

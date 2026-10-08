@@ -7,10 +7,23 @@ App profiles (`powerhouse/renown-app-profile`) and per-user app stats
 
 | Mutation | Caller |
 | --- | --- |
-| `reportUserStat(appDid, …)` | The app itself: a host-resolved bearer issued by `appDid`, **or** an app token in `X-Renown-App-Token` whose `aud` is the stats audience, issued by `appDid` for an owner who holds an unrevoked, unexpired delegation to it. |
-| `upsertAppProfile(appDid, …)` | The publisher, by wallet bearer. The first upsert needs a delegation from that wallet to `appDid` and makes it the publisher; later upserts need the same wallet. |
+| `reportUserStat(appDid, …)` | The app itself: a host-resolved bearer issued by `appDid`, **or** an app token in `X-Renown-App-Token` whose `aud` is the stats audience, issued by `appDid`. Either way `appDid` must be a registered workload identity (renown-workload), the token's subject wallet must be that identity's `ownerAddress`, and that wallet must hold an unrevoked, unexpired delegation to `appDid`. |
+| `upsertAppProfile(appDid, …)` | The publisher, by wallet bearer signed by a listed profile app: every upsert needs the bearer's signing app DID (`appKey`) in `RENOWN_STATS_PROFILE_APPS`. The first upsert needs the caller to be the workload identity's `ownerAddress` and makes that wallet the publisher; later upserts need the same wallet. |
 
-Reads are public. Stats are current values per (app, metric): resending a value is harmless.
+Ownership is anchored on the workload identity, never on a delegation alone
+(anyone can self-publish a delegation to any did:key):
+
+- An app DID that is not a registered workload identity is always FORBIDDEN,
+  on both paths, with or without a delegation.
+- The profile publisher is fixed at the first claim. It is not re-checked
+  later: if the workload identity is deleted, the publisher keeps the profile.
+- A host bearer from any app not listed in `RENOWN_STATS_PROFILE_APPS` cannot
+  write profiles, so a third-party dApp the publisher logged into cannot
+  rewrite them. With the variable unset or empty every upsert is FORBIDDEN.
+- CI workload tokens (those carrying the `vetra` claim) are refused in
+  `X-Renown-App-Token`, whatever their audience; use `issueAppStatsToken`.
+
+Reads are public. Stats are current values per (app, metric): resending an unchanged value is a no-op (no operation is appended).
 
 App tokens go in `X-Renown-App-Token`, not `Authorization`: the host verifies
 `Authorization` bearers without an audience and answers 401 to any token that
@@ -36,6 +49,7 @@ credential processor.
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `RENOWN_STATS_AUDIENCE` | The `aud` app tokens must carry (also what `issueAppStatsToken` mints). | `https://switchboard.renown.vetra.io/graphql/renown-stats` |
+| `RENOWN_STATS_PROFILE_APPS` | Comma-separated app DIDs (`did:key:z…`, trimmed) whose host bearers may call `upsertAppProfile` (e.g. the Renown and Vetra dashboards). | unset: every upsert is FORBIDDEN |
 
 ## Limits
 

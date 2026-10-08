@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_STATS_AUDIENCE, statsAudience } from "../core/config.js";
+import { DEFAULT_STATS_AUDIENCE, statsAudience, statsProfileApps } from "../core/config.js";
 import { addressOf, canonicalAppDid, canonicalUserDid, pkhDidFor } from "../core/dids.js";
 import { createKeyedLock } from "../core/keyed-lock.js";
 
@@ -41,6 +41,17 @@ describe("statsAudience", () => {
     expect(statsAudience({ RENOWN_STATS_AUDIENCE: "https://sb.example/graphql/renown-stats/" })).toBe(
       "https://sb.example/graphql/renown-stats",
     );
+  });
+});
+
+describe("statsProfileApps", () => {
+  it("is empty when unset or blank, and splits and trims a comma-separated list", () => {
+    expect(statsProfileApps({}).size).toBe(0);
+    expect(statsProfileApps({ RENOWN_STATS_PROFILE_APPS: " , " }).size).toBe(0);
+    expect([...statsProfileApps({ RENOWN_STATS_PROFILE_APPS: " did:key:zA ,did:key:zB,, " })]).toEqual([
+      "did:key:zA",
+      "did:key:zB",
+    ]);
   });
 });
 

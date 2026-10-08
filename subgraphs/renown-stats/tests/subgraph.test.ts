@@ -70,10 +70,28 @@ describe("RenownStatsSubgraph", () => {
     error.mockRestore();
   });
 
-  it("does not warn when an unauthenticated caller sends a malformed app token", async () => {
+  it("refuses a malformed app token without warning; the SDK itself logs it on console.error", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { subgraph, resolver } = makeSubgraph(pgliteNamespace);
+    await subgraph.onSetup();
+    const result = await resolver("Mutation", "reportUserStat")(
+      null,
+      { appDid: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK", userDid: USER, metric: "m", value: 1 },
+      { headers: { "x-renown-app-token": "not-a-jwt" } },
+    ).catch((e: unknown) => e);
+    expect((result as GraphQLError).extensions.code).toBe("FORBIDDEN");
+    expect(warn).not.toHaveBeenCalled();
+    // verifyAuthBearerToken swallows the failure and logs it itself; our
+    // debug-level catch is not reached. We cannot keep it out of error logs.
+    expect(error).toHaveBeenCalled();
+    expect(debug).not.toHaveBeenCalled();
+  });
+
+  it("logs at debug, not warn, if token verification ever throws", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
     verifier.fail = true;
     const { subgraph, resolver } = makeSubgraph(pgliteNamespace);
     await subgraph.onSetup();
@@ -87,6 +105,29 @@ describe("RenownStatsSubgraph", () => {
     expect(debug).toHaveBeenCalledWith(
       expect.stringContaining("app token verification failed"),
     );
+  });
+
+  it("refuses every profile upsert when RENOWN_STATS_PROFILE_APPS is unset", async () => {
+    vi.stubEnv("RENOWN_STATS_PROFILE_APPS", undefined);
+    try {
+      const { subgraph, resolver } = makeSubgraph(pgliteNamespace);
+      await subgraph.onSetup();
+      const result = await resolver("Mutation", "upsertAppProfile")(
+        null,
+        { appDid: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK", name: "x" },
+        {
+          user: {
+            address: "0xabc0000000000000000000000000000000000001",
+            appKey: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
+          },
+        },
+      ).catch((e: unknown) => e);
+      expect(result).toBeInstanceOf(GraphQLError);
+      expect((result as GraphQLError).extensions.code).toBe("FORBIDDEN");
+      expect((result as GraphQLError).message).toBe("Forbidden");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("survives a failing migration", async () => {
