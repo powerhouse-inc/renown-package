@@ -18,6 +18,12 @@ export const schema: DocumentNode = gql`
     createdAt: String!
   }
 
+  type AppStatsToken {
+    accessToken: String!
+    audience: String!
+    expiresIn: Int!
+  }
+
   input RegisterWorkloadIdentityInput {
     repositoryId: String!
     repository: String!
@@ -40,5 +46,7 @@ export const schema: DocumentNode = gql`
       productionBranch: String
     ): WorkloadIdentity!
     deleteWorkloadIdentity(did: String!): Boolean!
+    "A 10-minute Renown bearer signed by the identity's did:key, valid only for the renown-stats audience (send it as X-Renown-App-Token). For the Vetra stats relay."
+    issueAppStatsToken(did: String!): AppStatsToken!
   }
 `;

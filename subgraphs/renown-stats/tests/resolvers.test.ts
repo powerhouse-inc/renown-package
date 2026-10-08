@@ -1062,3 +1062,108 @@ describe("ownership is anchored on the registered workload identity", () => {
     );
   });
 });
+
+describe("tokens minted by renown-workload's issueAppStatsToken", () => {
+  const REGISTRATION = "registration-token";
+
+  /** renown-workload's resolvers over the same database renown-stats reads. */
+  async function workload() {
+    const {
+      createResolvers: createWorkloadResolvers,
+      REGISTRATION_TOKEN_HEADER,
+    } = await import("../../renown-workload/resolvers.js");
+    const { KyselyWorkloadStore } =
+      await import("../../renown-workload/store/kysely.js");
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const resolvers = createWorkloadResolvers({
+      config: () => ({
+        encryptionKey: new Uint8Array(32).fill(7),
+        registrationToken: REGISTRATION,
+        audiences: [],
+      }),
+      store: () => new KyselyWorkloadStore(workloadDb()),
+      statsAudience: () => AUDIENCE,
+    }) as { Mutation: Record<string, Resolver> };
+    const ctx = {
+      headers: { [REGISTRATION_TOKEN_HEADER]: REGISTRATION },
+    } as unknown as Ctx;
+    return {
+      register: async (repositoryId: string, owner = OWNER) =>
+        (
+          (await resolvers.Mutation.registerWorkloadIdentity(
+            null,
+            {
+              input: {
+                repositoryId,
+                repository: `acme/${repositoryId}`,
+                productionBranch: "main",
+                ownerAddress: owner,
+                chainId: 1,
+              },
+            },
+            ctx,
+          )) as { did: string }
+        ).did,
+      issue: async (did: string) =>
+        (
+          (await resolvers.Mutation.issueAppStatsToken(null, { did }, ctx)) as {
+            accessToken: string;
+          }
+        ).accessToken,
+    };
+  }
+
+  const args = (appDid: string) => ({
+    appDid,
+    userDid: USER,
+    metric: "m",
+    value: 1,
+  });
+
+  it("are accepted by reportUserStat for their own app", async () => {
+    const { register, issue } = await workload();
+    const did = await register("101");
+    await insertDelegation(OWNER, did);
+    const { report, userStats } = setup();
+    expect(await report(args(did), await appHeader(issue(did)))).toBe(true);
+    expect(await userStats(USER)).toEqual([
+      { appDid: did, metric: "m", value: 1, updatedAt: NOW.toISOString() },
+    ]);
+  });
+
+  it("cannot report for another app, even one with the same owner", async () => {
+    const { register, issue } = await workload();
+    const a = await register("101");
+    const b = await register("102");
+    await insertDelegation(OWNER, a);
+    await insertDelegation(OWNER, b);
+    const { report, userStats } = setup();
+    const tokenA = issue(a);
+    expect(await code(report(args(b), await appHeader(tokenA)))).toBe(
+      "FORBIDDEN",
+    );
+    expect(await userStats(USER)).toEqual([]);
+  });
+
+  it("are refused once the owner's delegation is gone", async () => {
+    const { register, issue } = await workload();
+    const did = await register("101");
+    await insertDelegation(OWNER, did, { revoked: true });
+    const { report } = setup();
+    expect(await code(report(args(did), await appHeader(issue(did))))).toBe(
+      "FORBIDDEN",
+    );
+  });
+
+  it("are refused once the workload identity is deleted", async () => {
+    const { register, issue } = await workload();
+    const did = await register("101");
+    await insertDelegation(OWNER, did);
+    const token = await issue(did);
+    await workloadDb().deleteFrom("workload_identities").execute();
+    const { report } = setup();
+    expect(
+      await code(report(args(did), await appHeader(Promise.resolve(token)))),
+    ).toBe("FORBIDDEN");
+  });
+});
