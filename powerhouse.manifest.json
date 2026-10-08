@@ -82,6 +82,10 @@
     {
       "id": "renown-workload",
       "name": "renown-workload"
+    },
+    {
+      "id": "renown-stats",
+      "name": "renown-stats"
     }
   ],
   "config": []

@@ -1,0 +1,79 @@
+import { PGlite } from "@electric-sql/pglite";
+import { GraphQLError } from "graphql";
+import { Kysely, sql } from "kysely";
+import { PGliteDialect } from "kysely-pglite-dialect";
+import { describe, expect, it, vi } from "vitest";
+import { RenownStatsSubgraph } from "../index.js";
+
+type Resolver = (parent: unknown, args: unknown, ctx: unknown) => Promise<unknown>;
+const USER = "did:pkh:eip155:1:0x1111111111111111111111111111111111111111";
+
+function makeSubgraph(open: () => Promise<unknown>) {
+  const createNamespace = vi.fn(open);
+  // Same constructor shape as renown-workload's subgraph test.
+  const subgraph = new RenownStatsSubgraph({
+    http: { owner: "@powerhousedao/renown-package", baseUrl: "https://sb.example", get: vi.fn(), post: vi.fn() },
+    reactorClient: {},
+    relationalDb: { createNamespace },
+  } as never);
+  const resolver = (type: string, field: string) =>
+    (subgraph.resolvers as Record<string, Record<string, Resolver>>)[type][field];
+  return { subgraph, resolver, createNamespace };
+}
+
+async function pgliteNamespace(): Promise<unknown> {
+  const root = new Kysely<any>({ dialect: new PGliteDialect(new PGlite()) });
+  await sql`create schema "renown-stats"`.execute(root);
+  return root.withSchema("renown-stats");
+}
+
+describe("RenownStatsSubgraph", () => {
+  it("is named renown-stats", () => {
+    expect(makeSubgraph(pgliteNamespace).subgraph.name).toBe("renown-stats");
+  });
+
+  it("sets up its namespace once and serves reads", async () => {
+    const { subgraph, resolver, createNamespace } = makeSubgraph(pgliteNamespace);
+    await subgraph.onSetup();
+    await subgraph.onSetup();
+    expect(createNamespace).toHaveBeenCalledTimes(1);
+    expect(createNamespace).toHaveBeenCalledWith("renown-stats");
+    expect(await resolver("Query", "userStats")(null, { userDid: USER }, {})).toEqual([]);
+  });
+
+  it("never fails the host when its namespace is unavailable", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { subgraph, resolver } = makeSubgraph(() => Promise.reject(new Error("no db")));
+    await expect(subgraph.onSetup()).resolves.toBeUndefined();
+    const result = await resolver("Query", "userStats")(null, { userDid: USER }, {}).catch((e: unknown) => e);
+    expect(result).toBeInstanceOf(GraphQLError);
+    expect((result as GraphQLError).extensions.code).toBe("SERVICE_NOT_CONFIGURED");
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("[renown-stats]"));
+    error.mockRestore();
+  });
+
+  it("does not warn when an unauthenticated caller sends a malformed app token", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { subgraph, resolver } = makeSubgraph(pgliteNamespace);
+    await subgraph.onSetup();
+    const result = await resolver("Mutation", "reportUserStat")(
+      null,
+      { appDid: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK", userDid: USER, metric: "m", value: 1 },
+      { headers: { "x-renown-app-token": "not-a-jwt" } },
+    ).catch((e: unknown) => e);
+    expect((result as GraphQLError).extensions.code).toBe("FORBIDDEN");
+    expect(warn).not.toHaveBeenCalled();
+    expect(debug).not.toHaveBeenCalledWith(expect.stringContaining("lookup"));
+    vi.restoreAllMocks();
+  });
+
+  it("survives a failing migration", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { subgraph } = makeSubgraph(() => Promise.resolve({}));
+    await expect(subgraph.onSetup()).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("[renown-stats]"));
+    error.mockRestore();
+  });
+});

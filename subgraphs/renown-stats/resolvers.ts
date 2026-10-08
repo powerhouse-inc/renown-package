@@ -206,7 +206,13 @@ export function createResolvers(
       if (appDid === null || address === null) return undefined;
       return { appDid, address };
     } catch (error) {
-      warn("app token verification", error);
+      // A malformed or invalid token is the caller's problem, and anyone can
+      // send one: debug only, so unauthenticated callers cannot flood the
+      // logs. Real lookup outages still warn (see `warn` above).
+      const reason = error instanceof Error ? error.message : String(error);
+      console.debug(
+        `[renown-stats] app token verification failed (${reason}); refusing`,
+      );
       return undefined;
     }
   }
