@@ -1,6 +1,7 @@
 import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
 import type { DB as RenownCredentialDB } from "../../processors/renown-credential/schema.js";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
+import type { WorkloadDB } from "../renown-workload/store/types.js";
 
 /**
  * True when `address` holds an unrevoked, unexpired Renown credential
@@ -36,4 +37,26 @@ export async function hasDelegation(
     )
     .executeTakeFirst();
   return row !== undefined;
+}
+
+/** The relational namespace renown-workload keeps its identities in (read-only here). */
+export const WORKLOAD_NAMESPACE = "renown-workload";
+
+/**
+ * The lowercase owner address of the server-held workload identity `appDid`,
+ * or undefined when `appDid` is not a registered identity. This, not a
+ * delegation credential (which any wallet can self-publish to any did:key),
+ * is what proves who an app DID belongs to.
+ */
+export async function workloadOwner(
+  db: ReadModelDb,
+  appDid: string,
+): Promise<string | undefined> {
+  const row = await db
+    .queryNamespace<WorkloadDB>(WORKLOAD_NAMESPACE)
+    .selectFrom("workload_identities")
+    .select("owner_address")
+    .where("did", "=", appDid)
+    .executeTakeFirst();
+  return row?.owner_address.toLowerCase();
 }

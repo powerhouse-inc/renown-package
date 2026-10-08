@@ -13,6 +13,7 @@ import { PGliteDialect } from "kysely-pglite-dialect";
 import { getAddress } from "viem";
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -34,6 +35,8 @@ import { RenownCredentialProcessor } from "../../../processors/renown-credential
 import { up as upCredential } from "../../../processors/renown-credential/migrations.js";
 import type { DB as CredentialDB } from "../../../processors/renown-credential/schema.js";
 import { createRateLimiter } from "../../renown-auth/core/rate-limit.js";
+import { migrate as migrateWorkload } from "../../renown-workload/store/migrations.js";
+import type { WorkloadDB } from "../../renown-workload/store/types.js";
 import { pkhDidFor } from "../core/dids.js";
 import {
   APP_TOKEN_HEADER,
@@ -64,13 +67,29 @@ beforeAll(async () => {
   await upCredential(root.withSchema(CRED_NS) as never);
   await sql`create schema "renown-stats"`.execute(root);
   await migrate(root.withSchema("renown-stats"));
+  await sql`create schema "renown-workload"`.execute(root);
+  await migrateWorkload(root.withSchema("renown-workload"));
 });
 
 afterAll(async () => {
   await root.destroy();
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+/** renown-workload's identities, as its subgraph writes them. */
+const workloadDb = (): Kysely<WorkloadDB> =>
+  root.withSchema("renown-workload") as unknown as Kysely<WorkloadDB>;
+
+let consoleWarn: ReturnType<typeof vi.spyOn>;
 beforeEach(async () => {
+  // The SDK reports malformed tokens on console.error, and refusals after a
+  // lookup failure warn; keep test output clean (asserted where it matters).
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
+  consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  await workloadDb().deleteFrom("workload_identities").execute();
   await root.withSchema(CRED_NS).deleteFrom("renown_credential").execute();
   await root
     .withSchema("renown-stats")
@@ -128,14 +147,50 @@ async function insertDelegation(
     .execute();
 }
 
-/** An app identity with its own did:key, acting for `owner`. */
-async function makeApp(owner = OWNER) {
+/** Registers `did` as a server-held workload identity owned by `owner` (stored EIP-55, as the registry does). */
+async function registerIdentity(did: string, owner: string): Promise<void> {
+  await workloadDb()
+    .insertInto("workload_identities")
+    .values({
+      did,
+      provider: "github",
+      repository_id: generateId(),
+      repository: "acme/app",
+      production_branch: "main",
+      owner_address: getAddress(owner),
+      chain_id: 1,
+      encrypted_key_pair: "sealed",
+      created_at: NOW,
+      updated_at: NOW,
+    })
+    .execute();
+}
+
+/**
+ * An app identity with its own did:key, acting for `owner`, registered as a
+ * workload identity of `owner` unless `register` is false.
+ */
+async function makeApp(owner = OWNER, options: { register?: boolean } = {}) {
   const renownCrypto = await new RenownCryptoBuilder()
     .withKeyPairStorage(new MemoryKeyStorage())
     .withChainId(1)
     .build();
+  if (options.register !== false)
+    await registerIdentity(renownCrypto.did, owner);
   return {
     did: renownCrypto.did,
+    /** A stats-audience token signed by the app key, but naming `address` as its wallet. */
+    tokenAs: (address: string) =>
+      createAuthBearerToken(
+        1,
+        DEFAULT_RENOWN_NETWORK_ID,
+        address,
+        renownCrypto.issuer,
+        {
+          aud: AUDIENCE,
+          expiresIn: 600,
+        },
+      ),
     token: (
       options: { aud?: string; expiresIn?: number } = {
         aud: AUDIENCE,
@@ -255,6 +310,7 @@ const wallet = (address: string): Ctx => ({ user: { address } });
 describe("reportUserStat", () => {
   it("accepts a host-resolved bearer issued by the app DID and reads the stat back", async () => {
     const app = await makeApp();
+    await insertDelegation(OWNER, app.did);
     const { report, userStats } = setup();
     expect(
       await report(
@@ -350,6 +406,7 @@ describe("reportUserStat", () => {
 
   it("keeps current values: duplicates are harmless, a new value replaces the old", async () => {
     const app = await makeApp();
+    await insertDelegation(OWNER, app.did);
     const { report, userStats, reactor } = setup();
     const ctx = hostBearer(app.did);
     await report(
@@ -372,6 +429,7 @@ describe("reportUserStat", () => {
 
   it("folds did:pkh spellings of one wallet into one document", async () => {
     const app = await makeApp();
+    await insertDelegation(OWNER, app.did);
     const { report, userStats, reactor } = setup();
     const address = "0x1111111111111111111111111111111111111111";
     await report(
@@ -398,6 +456,7 @@ describe("reportUserStat", () => {
 
   it("creates exactly one document when first reports race", async () => {
     const app = await makeApp();
+    await insertDelegation(OWNER, app.did);
     const { report, userStats, reactor } = setup();
     const ctx = hostBearer(app.did);
     await Promise.all([
@@ -411,6 +470,7 @@ describe("reportUserStat", () => {
 
   it("rejects malformed input with BAD_USER_INPUT", async () => {
     const app = await makeApp();
+    await insertDelegation(OWNER, app.did);
     const { report } = setup();
     const ctx = hostBearer(app.did);
     expect(
@@ -454,6 +514,7 @@ describe("reportUserStat", () => {
 
   it("rate-limits per app DID", async () => {
     const app = await makeApp();
+    await insertDelegation(OWNER, app.did);
     const { report } = setup({ reportLimit: 1 });
     await report(
       { appDid: app.did, userDid: USER, metric: "m", value: 1 },
@@ -471,6 +532,7 @@ describe("reportUserStat", () => {
 
   it("answers SERVICE_NOT_CONFIGURED without its index", async () => {
     const app = await makeApp();
+    await insertDelegation(OWNER, app.did);
     const { report, userStats } = setup({ withIndex: false });
     expect(
       await code(
@@ -760,6 +822,7 @@ describe("authorisation hardening", () => {
 
   it("creates exactly one user-stats document for a burst of first reports, every value landing in it", async () => {
     const app = await makeApp();
+    await insertDelegation(OWNER, app.did);
     const { report, reactor, userStats } = setup();
     const ctx = hostBearer(app.did);
     await Promise.all(
@@ -777,6 +840,7 @@ describe("authorisation hardening", () => {
 
   it("routes every report to the indexed document even across resolver instances that race", async () => {
     const app = await makeApp();
+    await insertDelegation(OWNER, app.did);
     const reactor = fakeReactor();
     const a = setup({ reactor });
     const b = setup({ reactor });
@@ -840,6 +904,7 @@ describe("authorisation hardening", () => {
 
   it("surfaces a reducer rejection (too many metrics) as BAD_USER_INPUT", async () => {
     const app = await makeApp();
+    await insertDelegation(OWNER, app.did);
     const { report, userStats } = setup();
     const ctx = hostBearer(app.did);
     for (let i = 0; i < 32; i++)
@@ -856,5 +921,144 @@ describe("authorisation hardening", () => {
       ),
     ).toBe("BAD_USER_INPUT");
     expect(await userStats(USER)).toHaveLength(32);
+  });
+});
+
+describe("ownership is anchored on the registered workload identity", () => {
+  const args = (did: string) => ({
+    appDid: did,
+    userDid: USER,
+    metric: "m",
+    value: 1,
+  });
+
+  it("refuses a squatter who self-delegated to the app DID; the real owner then claims it", async () => {
+    const app = await makeApp(OWNER);
+    await insertDelegation(MALLORY, app.did);
+    const { upsert, appProfile, reactor } = setup();
+    expect(
+      await code(
+        upsert({ appDid: app.did, name: "Squatted" }, wallet(MALLORY)),
+      ),
+    ).toBe("FORBIDDEN");
+    expect(reactor.ofType(renownAppProfileDocumentType)).toHaveLength(0);
+    expect(
+      await upsert({ appDid: app.did, name: "Speckle" }, wallet(OWNER)),
+    ).toBe(true);
+    expect(await appProfile(app.did)).toMatchObject({
+      name: "Speckle",
+      publisherDid: pkhDidFor(OWNER),
+    });
+  });
+
+  it("refuses to create a profile for an unregistered app DID, even for a delegating wallet", async () => {
+    const app = await makeApp(OWNER, { register: false });
+    await insertDelegation(OWNER, app.did);
+    const { upsert, reactor } = setup();
+    expect(
+      await code(upsert({ appDid: app.did, name: "x" }, wallet(OWNER))),
+    ).toBe("FORBIDDEN");
+    expect(reactor.ofType(renownAppProfileDocumentType)).toHaveLength(0);
+  });
+
+  it("refuses an app token naming a throwaway wallet with a fresh self-delegation; accepts the owner's", async () => {
+    const app = await makeApp(OWNER);
+    await insertDelegation(MALLORY, app.did);
+    const { report, reactor } = setup();
+    expect(
+      await code(report(args(app.did), await appHeader(app.tokenAs(MALLORY)))),
+    ).toBe("FORBIDDEN");
+    expect(reactor.ofType(renownUserStatsDocumentType)).toHaveLength(0);
+    await insertDelegation(OWNER, app.did);
+    expect(
+      await report(args(app.did), await appHeader(app.tokenAs(OWNER))),
+    ).toBe(true);
+  });
+
+  it("refuses a host bearer whose wallet is not the identity's owner, even with a delegation", async () => {
+    const app = await makeApp(OWNER);
+    await insertDelegation(MALLORY, app.did);
+    const { report } = setup();
+    expect(
+      await code(report(args(app.did), hostBearer(app.did, MALLORY))),
+    ).toBe("FORBIDDEN");
+  });
+
+  it("refuses an unregistered app DID on both paths, even with the owner's delegation", async () => {
+    const app = await makeApp(OWNER, { register: false });
+    await insertDelegation(OWNER, app.did);
+    const { report, reactor } = setup();
+    expect(
+      await code(report(args(app.did), await appHeader(app.token()))),
+    ).toBe("FORBIDDEN");
+    expect(await code(report(args(app.did), hostBearer(app.did)))).toBe(
+      "FORBIDDEN",
+    );
+    expect(reactor.ofType(renownUserStatsDocumentType)).toHaveLength(0);
+  });
+
+  it("still requires a live delegation from the owner on the host path", async () => {
+    const app = await makeApp(OWNER);
+    const { report } = setup();
+    expect(await code(report(args(app.did), hostBearer(app.did)))).toBe(
+      "FORBIDDEN",
+    );
+    await insertDelegation(OWNER, app.did, { revoked: true });
+    expect(await code(report(args(app.did), hostBearer(app.did)))).toBe(
+      "FORBIDDEN",
+    );
+  });
+
+  it("matches the owner whatever casing the registry and caller use", async () => {
+    const app = await makeApp(OWNER);
+    await insertDelegation(OWNER, app.did);
+    const { report, upsert } = setup();
+    expect(
+      await report(args(app.did), hostBearer(app.did, getAddress(OWNER))),
+    ).toBe(true);
+    expect(
+      await upsert(
+        { appDid: app.did, name: "x" },
+        wallet(OWNER.toUpperCase().replace("0X", "0x")),
+      ),
+    ).toBe(true);
+  });
+
+  it("fails closed with the usual FORBIDDEN, and warns server-side, when the identity lookup fails", async () => {
+    const app = await makeApp(OWNER);
+    await insertDelegation(OWNER, app.did);
+    const brokenDb = {
+      queryNamespace: (namespace: string) => {
+        if (namespace === "renown-workload")
+          throw new Error("namespace unavailable");
+        return root.withSchema(namespace);
+      },
+    } as unknown as IRelationalDb<unknown>;
+    const resolvers = createResolvers({
+      reactorClient:
+        fakeReactor() as unknown as StatsResolverDeps["reactorClient"],
+      relationalDb: brokenDb,
+      index: () => new KyselyStatsIndex(statsDb()),
+      audience: () => AUDIENCE,
+      now: () => NOW,
+    }) as { Mutation: Record<string, Resolver> };
+    const reportError = await resolvers.Mutation.reportUserStat(
+      null,
+      args(app.did),
+      hostBearer(app.did),
+    ).catch((e: unknown) => e);
+    const upsertError = await resolvers.Mutation.upsertAppProfile(
+      null,
+      { appDid: app.did, name: "x" },
+      wallet(OWNER),
+    ).catch((e: unknown) => e);
+    for (const error of [reportError, upsertError]) {
+      expect(error).toBeInstanceOf(GraphQLError);
+      expect((error as GraphQLError).extensions.code).toBe("FORBIDDEN");
+      expect((error as GraphQLError).message).toBe("Forbidden");
+    }
+    expect(consoleWarn).toHaveBeenCalledWith(
+      expect.stringContaining("namespace unavailable"),
+    );
   });
 });

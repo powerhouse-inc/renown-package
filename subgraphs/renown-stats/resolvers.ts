@@ -24,7 +24,7 @@ import {
   pkhDidFor,
 } from "./core/dids.js";
 import { createKeyedLock } from "./core/keyed-lock.js";
-import { hasDelegation } from "./lookups.js";
+import { hasDelegation, workloadOwner } from "./lookups.js";
 import type { AppProfileEntry, StatsIndex } from "./store/types.js";
 
 /** Carries an app token whose `aud` is the stats audience (the host would 401 it as a bearer). */
@@ -154,8 +154,43 @@ export function createResolvers(
       throw invalidRequest(`${failed.action.type} failed: ${failed.error}`);
   }
 
-  /** The app DID a header app token proves, or undefined. Never throws: any failure is "not proven". */
-  async function appTokenIssuer(token: string): Promise<string | undefined> {
+  /** Server-side only: the client always sees the same FORBIDDEN. */
+  function warn(what: string, error: unknown): void {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(`[renown-stats] ${what} failed (${reason}); refusing`);
+  }
+
+  /** The lowercase owner of the registered workload identity `appDid`; undefined if none or on error. */
+  async function ownerOf(appDid: string): Promise<string | undefined> {
+    try {
+      return await workloadOwner(relationalDb, appDid);
+    } catch (error) {
+      warn("workload identity lookup", error);
+      return undefined;
+    }
+  }
+
+  /**
+   * True when `address` may act as `appDid`: `appDid` is a registered workload
+   * identity owned by `address`, and `address` holds a live delegation to it.
+   * A delegation alone proves nothing (anyone can self-publish one to any
+   * did:key). Never throws.
+   */
+  async function actsFor(address: string, appDid: string): Promise<boolean> {
+    const owner = await ownerOf(appDid);
+    if (owner === undefined || owner !== address.toLowerCase()) return false;
+    try {
+      return await hasDelegation(relationalDb, address, appDid, now());
+    } catch (error) {
+      warn("delegation lookup", error);
+      return false;
+    }
+  }
+
+  /** The app DID and wallet a header app token claims, or undefined. Never throws. */
+  async function appTokenCaller(
+    token: string,
+  ): Promise<{ appDid: string; address: string } | undefined> {
     try {
       const audience = deps.audience();
       const verified = await verifyAuthBearerToken(token, { audience });
@@ -164,32 +199,45 @@ export function createResolvers(
       const aud = verified.payload.aud;
       if (!(Array.isArray(aud) ? aud.includes(audience) : aud === audience))
         return undefined;
-      const issuer = canonicalAppDid(verified.issuer);
+      const appDid = canonicalAppDid(verified.issuer);
       const address = addressOf(
         verified.verifiableCredential.credentialSubject.address,
       );
-      if (issuer === null || address === null) return undefined;
-      if (!(await hasDelegation(relationalDb, address, issuer, now())))
-        return undefined;
-      return issuer;
-    } catch {
+      if (appDid === null || address === null) return undefined;
+      return { appDid, address };
+    } catch (error) {
+      warn("app token verification", error);
       return undefined;
     }
   }
 
   /**
-   * The app DID the caller proves: the header token whenever the header is
-   * present at all (an empty, repeated or invalid header proves nothing and
-   * never falls back), else the host bearer's signer.
+   * The app DID and wallet the caller presents: the header token whenever the
+   * header is present at all (an empty, repeated or invalid header proves
+   * nothing and never falls back), else the host bearer's signer and wallet.
    */
-  async function callerAppDid(
+  async function presentedCaller(
     ctx: ResolverContext,
-  ): Promise<string | undefined> {
+  ): Promise<{ appDid: string; address: string } | undefined> {
     const header = ctx.headers?.[APP_TOKEN_HEADER];
-    if (header === undefined) return ctx.user?.appKey;
+    if (header === undefined) {
+      const appDid = ctx.user?.appKey;
+      const address = ctx.user?.address ? addressOf(ctx.user.address) : null;
+      return appDid && address ? { appDid, address } : undefined;
+    }
     if (typeof header !== "string") return undefined;
     const token = header.trim().replace(/^Bearer\s+/i, "");
-    return token === "" ? undefined : appTokenIssuer(token);
+    return token === "" ? undefined : appTokenCaller(token);
+  }
+
+  /** True when the caller proves it is `appDid`, acting for that identity's owner. */
+  async function provesApp(
+    ctx: ResolverContext,
+    appDid: string,
+  ): Promise<boolean> {
+    const caller = await presentedCaller(ctx);
+    if (caller?.appDid !== appDid) return false;
+    return actsFor(caller.address, appDid);
   }
 
   /** The user's stats document, created (and bound to the user) on first use. */
@@ -283,7 +331,7 @@ export function createResolvers(
         const appDid = canonicalAppDid(args.appDid);
         if (appDid === null)
           throw invalidRequest("appDid must be a did:key DID");
-        if ((await callerAppDid(ctx)) !== appDid) throw forbidden();
+        if (!(await provesApp(ctx, appDid))) throw forbidden();
 
         const userDid = canonicalUserDid(args.userDid);
         if (userDid === null)
@@ -339,9 +387,9 @@ export function createResolvers(
         await lock(`app:${appDid}`, async () => {
           let entry = await index.appProfile(appDid);
           if (!entry) {
-            // Only the identity's owner (who delegated to it) may claim its profile.
-            if (!(await hasDelegation(relationalDb, caller, appDid, now())))
-              throw forbidden();
+            // Only the registered identity's owner may claim its profile. A
+            // delegation is no proof: anyone can self-publish one to any did:key.
+            if ((await ownerOf(appDid)) !== caller) throw forbidden();
             const created = (
               await reactorClient.createEmpty(renownAppProfileDocumentType)
             ).header.id;
