@@ -1,3 +1,24 @@
+# [1.7.0](https://github.com/powerhouse-inc/renown-package/compare/v1.6.0...v1.7.0) (2026-10-08)
+
+
+### Bug Fixes
+
+* **stats:** accept only raster data-URL logos, not svg+xml ([e9f5d85](https://github.com/powerhouse-inc/renown-package/commit/e9f5d8596f5a4c23be07749ea00de372398a6773))
+* **stats:** anchor app ownership on the registered workload identity ([7b27b4f](https://github.com/powerhouse-inc/renown-package/commit/7b27b4f6dbe70abc6bb959055f253e8b948a362d))
+* **stats:** gate profile upserts on RENOWN_STATS_PROFILE_APPS, refuse CI tokens, skip unchanged stats ([a19a2b0](https://github.com/powerhouse-inc/renown-package/commit/a19a2b06533ee1763429d07fcad30465d55da429))
+* **stats:** log fixed reasons for token signing failures, document FORBIDDEN, sharpen malformed-token test ([d1e15cf](https://github.com/powerhouse-inc/renown-package/commit/d1e15cf43e8bb90f200257505cc9bc90e76d7ebd))
+
+
+### Features
+
+* **stats:** DID canonicalisation, stats audience and keyed lock ([261776c](https://github.com/powerhouse-inc/renown-package/commit/261776c35b070ff15efea91b0170acb9ba5eb042))
+* **stats:** DID-to-document index in the renown-stats namespace ([dfb0bd8](https://github.com/powerhouse-inc/renown-package/commit/dfb0bd84f3bb48fd261e9d1bc6c17a103edd35e7))
+* **stats:** issueAppStatsToken so the Vetra relay can report as the app ([5ce09c7](https://github.com/powerhouse-inc/renown-package/commit/5ce09c75ef7abb4a039e488d1f6ead333bff79a2))
+* **stats:** powerhouse/renown-app-profile document model ([6a5de69](https://github.com/powerhouse-inc/renown-package/commit/6a5de693c5574466a42dc89bf3233d93b9302c40))
+* **stats:** powerhouse/renown-user-stats document model ([06b0904](https://github.com/powerhouse-inc/renown-package/commit/06b0904f21fe322565bc9a6396c8d8944bbcf596))
+* **stats:** register the renown-stats subgraph ([b5ef6c4](https://github.com/powerhouse-inc/renown-package/commit/b5ef6c4d0ccf4adaffc8696456fdeb2e66add3d1))
+* **stats:** reportUserStat and app profile resolvers with app-DID authorisation ([9ecfcb8](https://github.com/powerhouse-inc/renown-package/commit/9ecfcb845b45e360421a694b5f39717bb626d8df))
+
 # [1.6.0](https://github.com/powerhouse-inc/renown-package/compare/v1.5.1...v1.6.0) (2026-10-02)
 
 
