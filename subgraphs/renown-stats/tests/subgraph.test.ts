@@ -2,8 +2,21 @@ import { PGlite } from "@electric-sql/pglite";
 import { GraphQLError } from "graphql";
 import { Kysely, sql } from "kysely";
 import { PGliteDialect } from "kysely-pglite-dialect";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type * as Sdk from "@renown/sdk";
 import { RenownStatsSubgraph } from "../index.js";
+
+const verifier = vi.hoisted(() => ({ fail: false }));
+vi.mock("@renown/sdk", async (importOriginal) => {
+  const original = await importOriginal<typeof Sdk>();
+  return {
+    ...original,
+    verifyAuthBearerToken: (...args: Parameters<typeof original.verifyAuthBearerToken>) => {
+      if (verifier.fail) return Promise.reject(new Error("boom"));
+      return original.verifyAuthBearerToken(...args);
+    },
+  };
+});
 
 type Resolver = (parent: unknown, args: unknown, ctx: unknown) => Promise<unknown>;
 const USER = "did:pkh:eip155:1:0x1111111111111111111111111111111111111111";
@@ -28,6 +41,11 @@ async function pgliteNamespace(): Promise<unknown> {
 }
 
 describe("RenownStatsSubgraph", () => {
+  afterEach(() => {
+    verifier.fail = false;
+    vi.restoreAllMocks();
+  });
+
   it("is named renown-stats", () => {
     expect(makeSubgraph(pgliteNamespace).subgraph.name).toBe("renown-stats");
   });
@@ -56,6 +74,7 @@ describe("RenownStatsSubgraph", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
+    verifier.fail = true;
     const { subgraph, resolver } = makeSubgraph(pgliteNamespace);
     await subgraph.onSetup();
     const result = await resolver("Mutation", "reportUserStat")(
@@ -65,8 +84,9 @@ describe("RenownStatsSubgraph", () => {
     ).catch((e: unknown) => e);
     expect((result as GraphQLError).extensions.code).toBe("FORBIDDEN");
     expect(warn).not.toHaveBeenCalled();
-    expect(debug).not.toHaveBeenCalledWith(expect.stringContaining("lookup"));
-    vi.restoreAllMocks();
+    expect(debug).toHaveBeenCalledWith(
+      expect.stringContaining("app token verification failed"),
+    );
   });
 
   it("survives a failing migration", async () => {

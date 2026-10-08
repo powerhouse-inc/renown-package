@@ -176,10 +176,18 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
           deps.statsAudience ?? (() => statsAudience(process.env))
         )();
         let accessToken: string;
+        // Fixed reasons only: error messages from decrypt or JSON.parse can
+        // quote key material.
+        let stage: "decrypt" | "parse" | "sign" = "decrypt";
         try {
-          const keyPair = JSON.parse(
-            await open(encryptionKey, identity.encryptedKeyPair, identity.did),
-          ) as JwkKeyPair;
+          const plaintext = await open(
+            encryptionKey,
+            identity.encryptedKeyPair,
+            identity.did,
+          );
+          stage = "parse";
+          const keyPair = JSON.parse(plaintext) as JwkKeyPair;
+          stage = "sign";
           // Subject is the registered owner, so renown-stats' ownership check holds.
           accessToken = await issueAppToken({
             keyPair,
@@ -189,10 +197,14 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
             audience,
             expiresInSec: APP_STATS_TOKEN_TTL_SEC,
           });
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
+        } catch {
+          const reason = {
+            decrypt: "key pair could not be decrypted (wrong RENOWN_WORKLOAD_KEY_ENCRYPTION_KEY?)",
+            parse: "decrypted key pair is not valid JSON",
+            sign: "signing failed",
+          }[stage];
           console.error(
-            `[renown-workload] cannot sign an app stats token for ${identity.did} (${reason}; wrong RENOWN_WORKLOAD_KEY_ENCRYPTION_KEY?)`,
+            `[renown-workload] cannot sign an app stats token for ${identity.did}: ${reason}`,
           );
           throw new GraphQLError("Internal error", {
             extensions: { code: "INTERNAL_SERVER_ERROR" },
