@@ -18,6 +18,10 @@
     {
       "id": "renown/oidc-client",
       "name": "RenownOidcClient"
+    },
+    {
+      "name": "RenownUserStats",
+      "id": "powerhouse/renown-user-stats"
     }
   ],
   "apps": [],
