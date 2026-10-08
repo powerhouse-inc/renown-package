@@ -18,6 +18,14 @@
     {
       "id": "renown/oidc-client",
       "name": "RenownOidcClient"
+    },
+    {
+      "name": "RenownUserStats",
+      "id": "powerhouse/renown-user-stats"
+    },
+    {
+      "name": "RenownAppProfile",
+      "id": "powerhouse/renown-app-profile"
     }
   ],
   "apps": [],
@@ -74,6 +82,10 @@
     {
       "id": "renown-workload",
       "name": "renown-workload"
+    },
+    {
+      "id": "renown-stats",
+      "name": "renown-stats"
     }
   ],
   "config": []

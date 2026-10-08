@@ -4,6 +4,7 @@ Exchanges a GitHub Actions OIDC token for a Renown auth bearer token. The token 
 
 - `POST /api/@powerhousedao/renown-package/workload/token` with JSON `{ subject_token, audience }`. This route is public.
 - GraphQL `registerWorkloadIdentity` / `updateWorkloadIdentity` / `deleteWorkloadIdentity` / `workloadIdentity`. All of them require the `x-renown-workload-registration-token` header.
+- GraphQL `issueAppStatsToken(did)` (same header): a 10-minute bearer signed by the identity's did:key with `aud` = `RENOWN_STATS_AUDIENCE` (default `https://switchboard.renown.vetra.io/graphql/renown-stats`). Vetra's stats relay sends it to `reportUserStat` as `X-Renown-App-Token`. An unknown DID returns `FORBIDDEN`, the same answer as a bad registration token.
 
 ## Which runs get a token
 

@@ -1,4 +1,5 @@
 import {
+  createAuthBearerToken,
   DEFAULT_RENOWN_NETWORK_ID,
   MemoryKeyStorage,
   RenownCryptoBuilder,
@@ -68,4 +69,41 @@ export async function issueWorkloadToken(
   return createVerifiableCredentialJwt(payload, issuer, {
     expiresIn: input.expiresInSec,
   });
+}
+
+export interface IssueAppTokenInput {
+  keyPair: JwkKeyPair;
+  /** The DID the key pair must resolve to (guards against a mismatched row). */
+  did: string;
+  chainId: number;
+  address: string;
+  audience: string;
+  expiresInSec: number;
+}
+
+/**
+ * A Renown auth bearer token for one service audience, signed by the
+ * identity's did:key, without the CI `vetra` claim. Used for the Vetra
+ * stats relay (`issueAppStatsToken`).
+ */
+export async function issueAppToken(
+  input: IssueAppTokenInput,
+): Promise<string> {
+  const renownCrypto = await new RenownCryptoBuilder()
+    .withKeyPairStorage(new MemoryKeyStorage(input.keyPair))
+    .withChainId(input.chainId)
+    .build();
+  if (renownCrypto.did !== input.did) {
+    throw new Error("Stored key pair does not match the identity's DID");
+  }
+  return createAuthBearerToken(
+    input.chainId,
+    DEFAULT_RENOWN_NETWORK_ID,
+    input.address,
+    renownCrypto.issuer,
+    {
+      aud: input.audience,
+      expiresIn: input.expiresInSec,
+    },
+  );
 }
