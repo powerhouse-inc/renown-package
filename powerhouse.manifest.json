@@ -22,6 +22,10 @@
     {
       "name": "RenownUserStats",
       "id": "powerhouse/renown-user-stats"
+    },
+    {
+      "name": "RenownAppProfile",
+      "id": "powerhouse/renown-app-profile"
     }
   ],
   "apps": [],
