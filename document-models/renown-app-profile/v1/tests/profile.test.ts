@@ -112,7 +112,8 @@ describe("utils", () => {
   });
   it("isLogo", () => {
     expect(isLogo(LOGO)).toBe(true);
-    expect(isLogo("data:image/svg+xml;base64,PHN2Zz4=")).toBe(true);
+    // SVG can carry script; only raster data URLs are accepted.
+    expect(isLogo("data:image/svg+xml;base64,PHN2Zz4=")).toBe(false);
     expect(isLogo("https://cdn.example/l.png")).toBe(true);
     expect(isLogo("http://cdn.example/l.png")).toBe(false);
     expect(isLogo("nope")).toBe(false);
