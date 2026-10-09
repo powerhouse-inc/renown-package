@@ -7,6 +7,7 @@ import {
   isLogo,
   isWebsite,
   renownAppProfileDocumentType,
+  type RenownAppMetric,
   type RenownAppProfileDocument,
 } from "../../document-models/renown-app-profile/index.js";
 import {
@@ -29,6 +30,13 @@ import {
   type RichProfileFields,
   type RichProfilePatch,
 } from "./core/app-profile-patch.js";
+import {
+  metricActions,
+  toAppMetric,
+  toMetricsPatch,
+  type AppMetric,
+  type AppMetricInput,
+} from "./core/app-metrics-patch.js";
 import { REGISTRAR_HEADER } from "./core/config.js";
 import {
   addressOf,
@@ -115,6 +123,8 @@ interface ProfileFields {
 
 interface UpsertAppProfileArgs extends ProfileFields, RichProfileFields {
   appDid: string;
+  /** The whole desired metric list; absent or null leaves it unchanged. */
+  metrics?: readonly AppMetricInput[] | null;
 }
 
 interface UserStatOutput {
@@ -137,6 +147,7 @@ interface AppProfileOutput {
   logoRef: string | null;
   coverRef: string | null;
   links: AppProfileLink[];
+  metrics: AppMetric[];
 }
 
 const forbidden = () =>
@@ -375,11 +386,12 @@ export function createResolvers(
     }
   }
 
-  /** The actions that apply `fields` and `patch` to the profile document. */
+  /** The actions that apply `fields`, `patch` and `metrics` to the profile document. */
   async function profileWrite(
     documentId: string,
     fields: ProfileFields,
     patch: RichProfilePatch,
+    metrics: AppMetric[] | undefined,
   ): Promise<Action[]> {
     const scalars = {
       ...fields,
@@ -392,13 +404,21 @@ export function createResolvers(
     if (Object.values(scalars).some((value) => value != null)) {
       actions.push(profileActions.setProfile(scalars));
     }
-    if (patch.links) {
+    if (patch.links || metrics) {
       const document =
         await reactorClient.get<RenownAppProfileDocument>(documentId);
-      // Profiles from before links existed have no list at all.
-      const current =
-        (document.state.global as { links?: AppProfileLink[] }).links ?? [];
-      actions.push(...appLinkActions(current, patch.links));
+      // Profiles from before links (Phase 2) or metrics (Phase 3) have no list at all.
+      const state = document.state.global as {
+        links?: AppProfileLink[];
+        metrics?: RenownAppMetric[];
+      };
+      if (patch.links)
+        actions.push(...appLinkActions(state.links ?? [], patch.links));
+      if (metrics) {
+        actions.push(
+          ...metricActions((state.metrics ?? []).map(toAppMetric), metrics),
+        );
+      }
     }
     return actions;
   }
@@ -445,6 +465,7 @@ export function createResolvers(
         label,
         url,
       })),
+      metrics: (state.metrics ?? []).map(toAppMetric),
     };
   }
 
@@ -554,15 +575,23 @@ export function createResolvers(
           const stored = current.state.global.stats.find(
             (stat) => stat.appDid === appDid && stat.metric === args.metric,
           );
-          if (stored?.value === args.value) return;
-          await execute(documentId, [
-            statsActions.setStat({
-              id: generateId(),
-              appDid,
-              metric: args.metric,
-              value: args.value,
-              updatedAt: now().toISOString(),
-            }),
+          const at = now();
+          if (stored?.value !== args.value) {
+            await execute(documentId, [
+              statsActions.setStat({
+                id: generateId(),
+                appDid,
+                metric: args.metric,
+                value: args.value,
+                updatedAt: at.toISOString(),
+              }),
+            ]);
+          }
+          // The app-level aggregate row, right after the accepted report and
+          // under the same per-user lock. Every report rewrites it: it marks
+          // the user active, and repairs a row a crash left behind.
+          await index.recordMetricValues([
+            { appDid, metric: args.metric, userDid, value: args.value, updatedAt: at },
           ]);
         });
         return true;
@@ -596,8 +625,10 @@ export function createResolvers(
         };
         assertProfileFields(fields);
         let patch: RichProfilePatch;
+        let metrics: AppMetric[] | undefined;
         try {
           patch = toRichProfilePatch(args);
+          metrics = toMetricsPatch(args.metrics);
         } catch (error) {
           if (error instanceof AppProfileInputError)
             throw fieldError("BAD_USER_INPUT", error.field, error.message);
@@ -633,7 +664,12 @@ export function createResolvers(
             );
             if (entry.publisherAddress !== caller) throw forbidden();
           }
-          const actions = await profileWrite(entry.documentId, fields, patch);
+          const actions = await profileWrite(
+            entry.documentId,
+            fields,
+            patch,
+            metrics,
+          );
           if (actions.length > 0) await execute(entry.documentId, actions);
           const images = imagesPatch(patch);
           if (images) await index.setAppImages(entry.documentId, images, now());

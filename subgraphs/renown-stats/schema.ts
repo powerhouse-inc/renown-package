@@ -15,6 +15,25 @@ export const schema: DocumentNode = gql`
     url: String!
   }
 
+  enum RenownMetricAggregation {
+    SUM
+    MAX
+    AVG
+    COUNT_USERS
+  }
+
+  "A publisher-defined metric: what the app reports as key, and how Renown shows it."
+  type AppMetric {
+    id: String!
+    key: String!
+    label: String!
+    unit: String
+    description: String
+    aggregation: RenownMetricAggregation!
+    "Shown on the app page and on user profiles."
+    public: Boolean!
+  }
+
   type AppProfile {
     appDid: String!
     "The profile document; its images are at <renown>/media/<documentId>/logo and /cover."
@@ -31,6 +50,7 @@ export const schema: DocumentNode = gql`
     logoRef: String
     coverRef: String
     links: [AppProfileLink!]!
+    metrics: [AppMetric!]!
   }
 
   type AppProfilePage {
@@ -43,6 +63,20 @@ export const schema: DocumentNode = gql`
     id: String!
     label: String!
     url: String!
+  }
+
+  input AppMetricInput {
+    id: String!
+    "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$, unique per app"
+    key: String!
+    "1-40 characters"
+    label: String!
+    "At most 16 characters; empty means none"
+    unit: String
+    "At most 200 characters; empty means none"
+    description: String
+    aggregation: RenownMetricAggregation!
+    public: Boolean!
   }
 
   type Query {
@@ -80,6 +114,8 @@ export const schema: DocumentNode = gql`
       logoRef: String
       coverRef: String
       links: [AppProfileLinkInput!]
+      "The whole metric list (at most 16); [] clears."
+      metrics: [AppMetricInput!]
     ): Boolean!
   }
 `;

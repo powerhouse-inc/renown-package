@@ -63,3 +63,9 @@ credential processor.
 
 600 reports per app DID per minute; 30 profile upserts per wallet per minute
 (in memory, per replica); 32 metrics per app per user.
+
+## Metrics (identity hub phase 3)
+
+Publishers declare what their app reports on its profile: `upsertAppProfile(metrics: [AppMetricInput!])` takes the whole list (`[]` clears; absent leaves it). Each metric: `key` (the reported metric name, `^[A-Za-z][A-Za-z0-9_.:-]{0,63}$`, unique), `label` (1–40), `unit` (≤ 16), `description` (≤ 200), `aggregation` (`SUM | MAX | AVG | COUNT_USERS`), `public`. At most 16 per app; bad lists are `BAD_USER_INPUT` with `extensions.field = "metrics"`. A changed key is applied as remove + add (same id), so keys can be swapped in one save.
+
+Every accepted `reportUserStat` (changed value or not) also upserts `app_metric_values(app_did, metric, user_did, value, updated_at)` — right after the document write, under the same per-user lock (there is no shared transaction between documents and this table; the next report of the same value repairs a missed row). Rows are guarded "newer `updated_at` wins". Values reported before this existed are copied once at startup (job `app-metric-values-backfill-v1` in `renown_stats_jobs`; idempotent, retried on the next start until every user-stats document was read).
