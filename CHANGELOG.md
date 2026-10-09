@@ -1,3 +1,10 @@
+## [1.7.1-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.7.0...v1.7.1-staging.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **deps:** ship powerhouse 6.2.3 with a pinned ph-cmd ([c22545c](https://github.com/powerhouse-inc/renown-package/commit/c22545cf3a29290ef94f8f4203e0b3d3a7307449))
+
 # [1.7.0](https://github.com/powerhouse-inc/renown-package/compare/v1.6.0...v1.7.0) (2026-10-08)
 
 
