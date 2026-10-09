@@ -62,13 +62,46 @@ export type Scalars = {
   Upload: { input: File; output: File };
 };
 
+export type AddLinkInput = {
+  id: Scalars["OID"]["input"];
+  /** 1-40 characters after trimming */
+  label: Scalars["String"]["input"];
+  /** http(s) URL, at most 2048 characters */
+  url: Scalars["URL"]["input"];
+};
+
+export type RemoveLinkInput = {
+  id: Scalars["OID"]["input"];
+};
+
+export type RenownAppLink = {
+  id: Scalars["OID"]["output"];
+  label: Scalars["String"]["output"];
+  url: Scalars["URL"]["output"];
+};
+
 export type RenownAppProfileState = {
   appDid: Maybe<Scalars["String"]["output"]>;
+  /** At most 40 characters */
+  category: Maybe<Scalars["String"]["output"]>;
+  /** Uploaded 3:1 cover image */
+  coverRef: Maybe<Scalars["AttachmentRef"]["output"]>;
+  /** Markdown subset, at most 2000 characters; rendered sanitized */
+  description: Maybe<Scalars["String"]["output"]>;
+  /** At most 8 links, in display order */
+  links: Array<RenownAppLink>;
+  /** Legacy logo: an https URL or a raster data URL; logoRef wins when set */
   logo: Maybe<Scalars["String"]["output"]>;
+  /** Uploaded square logo */
+  logoRef: Maybe<Scalars["AttachmentRef"]["output"]>;
   name: Maybe<Scalars["String"]["output"]>;
   publisherDid: Maybe<Scalars["String"]["output"]>;
   tagline: Maybe<Scalars["String"]["output"]>;
   website: Maybe<Scalars["String"]["output"]>;
+};
+
+export type ReorderLinksInput = {
+  linkIds: Array<Scalars["OID"]["input"]>;
 };
 
 export type SetAppDidInput = {
@@ -76,7 +109,15 @@ export type SetAppDidInput = {
 };
 
 export type SetProfileInput = {
+  /** At most 40 characters; empty clears */
+  category?: InputMaybe<Scalars["String"]["input"]>;
+  /** attachment://v1:<sha256>; empty clears */
+  coverRef?: InputMaybe<Scalars["String"]["input"]>;
+  /** Markdown subset, at most 2000 characters; empty clears */
+  description?: InputMaybe<Scalars["String"]["input"]>;
   logo?: InputMaybe<Scalars["String"]["input"]>;
+  /** attachment://v1:<sha256>; empty clears */
+  logoRef?: InputMaybe<Scalars["String"]["input"]>;
   name?: InputMaybe<Scalars["String"]["input"]>;
   tagline?: InputMaybe<Scalars["String"]["input"]>;
   website?: InputMaybe<Scalars["String"]["input"]>;
@@ -84,4 +125,10 @@ export type SetProfileInput = {
 
 export type SetPublisherDidInput = {
   publisherDid: Scalars["String"]["input"];
+};
+
+export type UpdateLinkInput = {
+  id: Scalars["OID"]["input"];
+  label?: InputMaybe<Scalars["String"]["input"]>;
+  url?: InputMaybe<Scalars["URL"]["input"]>;
 };

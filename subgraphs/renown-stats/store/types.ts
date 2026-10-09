@@ -17,9 +17,32 @@ export interface AppProfileDocumentRow {
   created_at: Timestamp;
 }
 
+/** The uploaded images of one app-profile document (refs as stored on the document). */
+export interface AppProfileImagesRow {
+  document_id: string;
+  logo_ref: string | null;
+  cover_ref: string | null;
+  updated_at: Timestamp;
+}
+
 export interface StatsDB {
   user_stats_documents: UserStatsDocumentRow;
   app_profile_documents: AppProfileDocumentRow;
+  app_profile_images: AppProfileImagesRow;
+}
+
+export type AppImageField = "logo" | "cover";
+
+/** undefined leaves an image unchanged; null clears it. */
+export interface AppImagesPatch {
+  logoRef?: string | null;
+  coverRef?: string | null;
+}
+
+/** Position in the newest-first profile listing. */
+export interface AppProfileCursor {
+  createdAt: Date;
+  appDid: string;
 }
 
 export type StatsKysely = Kysely<StatsDB>;
@@ -39,4 +62,14 @@ export interface StatsIndex {
   /** Records `entry` unless the app DID is recorded; returns the recorded entry. */
   claimAppProfile(entry: AppProfileEntry, now: Date): Promise<AppProfileEntry>;
   appProfilesByPublisher(publisherAddress: string): Promise<AppProfileEntry[]>;
+  /** Records the given image refs of a profile document; others are kept. */
+  setAppImages(documentId: string, images: AppImagesPatch, now: Date): Promise<void>;
+  /** The stored ref of a profile document's image, or null. */
+  appImageRef(documentId: string, field: AppImageField): Promise<string | null>;
+  /** Up to `limit` profiles, newest first, strictly after `after`. */
+  appProfilesPage(limit: number, after?: AppProfileCursor): Promise<AppProfileListEntry[]>;
+}
+
+export interface AppProfileListEntry extends AppProfileEntry {
+  createdAt: Date;
 }

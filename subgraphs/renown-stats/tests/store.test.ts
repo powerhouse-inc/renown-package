@@ -56,3 +56,36 @@ describe("KyselyStatsIndex", () => {
     expect(await index.appProfilesByPublisher("0x0000000000000000000000000000000000000000")).toEqual([]);
   });
 });
+
+describe("KyselyStatsIndex app images and listing", () => {
+  const LOGO = `attachment://v1:${"1".repeat(64)}`;
+  const COVER = `attachment://v1:${"2".repeat(64)}`;
+
+  it("records image refs per profile document, patching only the given ones", async () => {
+    const index = await makeIndex();
+    expect(await index.appImageRef("p-1", "logo")).toBeNull();
+    await index.setAppImages("p-1", { logoRef: LOGO }, NOW);
+    expect(await index.appImageRef("p-1", "logo")).toBe(LOGO);
+    expect(await index.appImageRef("p-1", "cover")).toBeNull();
+    await index.setAppImages("p-1", { coverRef: COVER }, LATER);
+    expect(await index.appImageRef("p-1", "logo")).toBe(LOGO);
+    expect(await index.appImageRef("p-1", "cover")).toBe(COVER);
+    await index.setAppImages("p-1", { logoRef: null }, LATER);
+    expect(await index.appImageRef("p-1", "logo")).toBeNull();
+    expect(await index.appImageRef("p-1", "cover")).toBe(COVER);
+    expect(await index.appImageRef("p-2", "cover")).toBeNull();
+  });
+
+  it("pages through every profile newest first, ties by app DID", async () => {
+    const index = await makeIndex();
+    await index.claimAppProfile({ appDid: "did:a", documentId: "p-a", publisherAddress: ALICE }, NOW);
+    await index.claimAppProfile({ appDid: "did:b", documentId: "p-b", publisherAddress: BOB }, NOW);
+    await index.claimAppProfile({ appDid: "did:c", documentId: "p-c", publisherAddress: ALICE }, LATER);
+    const first = await index.appProfilesPage(2);
+    expect(first.map((e) => e.appDid)).toEqual(["did:c", "did:b"]);
+    expect(first[1]).toEqual({ appDid: "did:b", documentId: "p-b", publisherAddress: BOB, createdAt: NOW });
+    const rest = await index.appProfilesPage(2, { createdAt: first[1].createdAt, appDid: first[1].appDid });
+    expect(rest.map((e) => e.appDid)).toEqual(["did:a"]);
+    expect(await index.appProfilesPage(2, { createdAt: NOW, appDid: "did:a" })).toEqual([]);
+  });
+});

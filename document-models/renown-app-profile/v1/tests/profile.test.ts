@@ -51,6 +51,11 @@ describe("RenownAppProfile profile module", () => {
       tagline: null,
       logo: "https://cdn.example/logo.png",
       website: "http://localhost:3000",
+      description: null,
+      category: null,
+      logoRef: null,
+      coverRef: null,
+      links: [],
     });
   });
 

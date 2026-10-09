@@ -1,10 +1,15 @@
 import { BaseSubgraph } from "@powerhousedao/reactor-api";
 import type { DocumentNode } from "graphql";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
-import { statsAudience, statsProfileApps } from "./core/config.js";
+import {
+  statsAudience,
+  statsProfileApps,
+  statsRegistrationToken,
+} from "./core/config.js";
 import { createResolvers } from "./resolvers.js";
 import { schema } from "./schema.js";
 import { KyselyStatsIndex } from "./store/kysely.js";
+import { STATS_NAMESPACE } from "./store/media-lookup.js";
 import { migrate } from "./store/migrations.js";
 import type { StatsKysely } from "./store/types.js";
 
@@ -34,6 +39,8 @@ export class RenownStatsSubgraph extends BaseSubgraph {
     index: () => this.#index,
     audience: () => this.#getAudience(),
     profileApps: () => (this.#profileApps ??= statsProfileApps(process.env)),
+    // The Vetra relay's credential; read per call (cheap, and follows a rotated secret on restart).
+    registrationToken: () => statsRegistrationToken(process.env),
   });
   additionalContextFields = {};
 
@@ -48,7 +55,7 @@ export class RenownStatsSubgraph extends BaseSubgraph {
     // Never throw from here, or the host's other subgraphs go down with this one.
     try {
       const db = (await this.relationalDb.createNamespace(
-        "renown-stats",
+        STATS_NAMESPACE,
       )) as unknown as StatsKysely;
       await migrate(db);
       this.#index = new KyselyStatsIndex(db);
