@@ -142,7 +142,8 @@ export class KyselyStatsIndex implements StatsIndex {
     await this.db
       .insertInto("app_metric_values")
       .values(
-        [...newest.values()].map((v) => ({
+        // Sorted so concurrent multi-row batches lock rows in one order (no deadlocks).
+        [...newest.values()].sort(compareKeys).map((v) => ({
           app_did: v.appDid,
           metric: v.metric,
           user_did: v.userDid,
@@ -260,4 +261,12 @@ export class KyselyStatsIndex implements StatsIndex {
       .onConflict((oc) => oc.column("name").doNothing())
       .execute();
   }
+}
+
+function compareKeys(a: MetricValue, b: MetricValue): number {
+  return (
+    Number(a.appDid > b.appDid) - Number(a.appDid < b.appDid) ||
+    Number(a.metric > b.metric) - Number(a.metric < b.metric) ||
+    Number(a.userDid > b.userDid) - Number(a.userDid < b.userDid)
+  );
 }

@@ -91,8 +91,23 @@ describe("KyselyStatsIndex metric values", () => {
       ...[7, 2, 9, 0, 4, 1, 8, 3, 6, 5].map((i) => index.recordMetricValues([value("hot", "m", 100 + i, stamps[i])])),
     ]);
     const [m] = await index.metricAggregates(APP, ["m"], 1);
-    expect(m?.users).toBe(21);
-    expect(m?.top).toEqual([{ userDid: "hot", value: 109 }]);
+    expect(m).toBeDefined();
+    expect(m.users).toBe(21);
+    expect(m.top).toEqual([{ userDid: "hot", value: 109 }]);
+  });
+
+  it("completes opposite-order multi-row batches racing each other", async () => {
+    const index = await makeIndex();
+    const users = Array.from({ length: 30 }, (_, i) => `racer-${i}`);
+    const batch = (list: string[], n: number) => list.map((u) => value(u, "m", n));
+    await Promise.all(
+      Array.from({ length: 10 }, (_, i) => [
+        index.recordMetricValues(batch(users, i)),
+        index.recordMetricValues(batch([...users].reverse(), i)),
+      ]).flat(),
+    );
+    const [m] = await index.metricAggregates(APP, ["m"], 1);
+    expect(m.users).toBe(30);
   });
 
   it("counts total and recently active users of an app, and when it last heard", async () => {
