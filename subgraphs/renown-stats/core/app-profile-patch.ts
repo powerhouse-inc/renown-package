@@ -10,6 +10,8 @@ import {
 } from "../../../document-models/renown-app-profile/index.js";
 import { linkActions } from "../../renown-auth/core/profile-patch.js";
 
+const MAX_LINK_ID_LENGTH = 64;
+
 export interface AppProfileLink {
   id: string;
   label: string;
@@ -94,6 +96,9 @@ export function toRichProfilePatch(input: RichProfileFields): RichProfilePatch {
       const label = link.label.trim();
       const url = link.url.trim();
       if (!link.id || ids.has(link.id)) throw new AppProfileInputError("links", "Every link needs a unique id");
+      if (link.id.length > MAX_LINK_ID_LENGTH) {
+        throw new AppProfileInputError("links", `Link ids must be at most ${MAX_LINK_ID_LENGTH} characters`);
+      }
       ids.add(link.id);
       if (!isValidLinkLabel(label)) throw new AppProfileInputError("links", "Link labels must be 1-40 characters");
       if (!isValidLinkUrl(url)) throw new AppProfileInputError("links", "Links must be http(s) URLs");

@@ -7,6 +7,7 @@ import {
   statsRegistrationToken,
 } from "./core/config.js";
 import { createResolvers } from "./resolvers.js";
+import { backfillAppMetricValues } from "./core/backfill.js";
 import { schema } from "./schema.js";
 import { KyselyStatsIndex } from "./store/kysely.js";
 import { STATS_NAMESPACE } from "./store/media-lookup.js";
@@ -27,6 +28,7 @@ export class RenownStatsSubgraph extends BaseSubgraph {
   #audience: string | undefined;
   #profileApps: ReadonlySet<string> | undefined;
   #setUp = false;
+  #backfill: Promise<void> = Promise.resolve();
 
   name = "renown-stats";
   typeDefs: DocumentNode = schema;
@@ -58,13 +60,33 @@ export class RenownStatsSubgraph extends BaseSubgraph {
         STATS_NAMESPACE,
       )) as unknown as StatsKysely;
       await migrate(db);
-      this.#index = new KyselyStatsIndex(db);
+      const index = new KyselyStatsIndex(db);
+      this.#index = index;
+      // One-time and idempotent: app_metric_values from the user-stats
+      // documents written before Phase 3. In the background, so the host's
+      // startup never waits for it.
+      this.#backfill = backfillAppMetricValues({
+        index,
+        reactorClient: this.reactorClient,
+        now: () => new Date(),
+      }).then(
+        () => undefined,
+        (error: unknown) => {
+          const reason = error instanceof Error ? error.message : "unknown error";
+          console.warn(`[renown-stats] metric backfill failed (${reason}); retried on the next start`);
+        },
+      );
     } catch (error) {
       const reason = error instanceof Error ? error.message : "unknown error";
       console.error(
         `[renown-stats] relational namespace/migration failed (${reason}) — stats and app profiles disabled`,
       );
     }
+  }
+
+  /** Resolves once the setup backfill has finished (successfully or not). */
+  backfillSettled(): Promise<void> {
+    return this.#backfill;
   }
 
   onDisconnect(): Promise<void> {

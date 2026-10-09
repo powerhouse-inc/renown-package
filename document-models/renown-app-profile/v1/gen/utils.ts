@@ -36,6 +36,7 @@ export const initialGlobalState: RenownAppProfileGlobalState = {
   logoRef: null,
   coverRef: null,
   links: [],
+  metrics: [],
 };
 export const initialLocalState: RenownAppProfileLocalState = {};
 

@@ -8,6 +8,7 @@ export * from "./creators.js";
 export * from "./document-model.js";
 export * from "./document-schema.js";
 export * from "./document-type.js";
+export * from "./metrics/operations.js";
 export {
   createRenownAppProfileDocument,
   createState,

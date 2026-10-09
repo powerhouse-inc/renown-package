@@ -3,14 +3,20 @@
 import * as z from "zod";
 import type {
   AddLinkInput,
+  AddMetricInput,
   RemoveLinkInput,
+  RemoveMetricInput,
   RenownAppLink,
+  RenownAppMetric,
   RenownAppProfileState,
+  RenownMetricAggregation,
   ReorderLinksInput,
+  ReorderMetricsInput,
   SetAppDidInput,
   SetProfileInput,
   SetPublisherDidInput,
   UpdateLinkInput,
+  UpdateMetricInput,
 } from "./types.js";
 
 type Properties<T> = Required<{
@@ -26,6 +32,13 @@ export const definedNonNullAnySchema = z
   .any()
   .refine((v) => isDefinedNonNullAny(v));
 
+export const RenownMetricAggregationSchema = z.enum([
+  "AVG",
+  "COUNT_USERS",
+  "MAX",
+  "SUM",
+]);
+
 export function AddLinkInputSchema(): z.ZodObject<Properties<AddLinkInput>> {
   return z.object({
     id: z.string(),
@@ -34,8 +47,30 @@ export function AddLinkInputSchema(): z.ZodObject<Properties<AddLinkInput>> {
   });
 }
 
+export function AddMetricInputSchema(): z.ZodObject<
+  Properties<AddMetricInput>
+> {
+  return z.object({
+    aggregation: RenownMetricAggregationSchema,
+    description: z.string().nullish(),
+    id: z.string(),
+    key: z.string(),
+    label: z.string(),
+    public: z.boolean(),
+    unit: z.string().nullish(),
+  });
+}
+
 export function RemoveLinkInputSchema(): z.ZodObject<
   Properties<RemoveLinkInput>
+> {
+  return z.object({
+    id: z.string(),
+  });
+}
+
+export function RemoveMetricInputSchema(): z.ZodObject<
+  Properties<RemoveMetricInput>
 > {
   return z.object({
     id: z.string(),
@@ -48,6 +83,21 @@ export function RenownAppLinkSchema(): z.ZodObject<Properties<RenownAppLink>> {
     id: z.string(),
     label: z.string(),
     url: z.url(),
+  });
+}
+
+export function RenownAppMetricSchema(): z.ZodObject<
+  Properties<RenownAppMetric>
+> {
+  return z.object({
+    __typename: z.literal("RenownAppMetric").optional(),
+    aggregation: RenownMetricAggregationSchema,
+    description: z.string().nullish(),
+    id: z.string(),
+    key: z.string(),
+    label: z.string(),
+    public: z.boolean(),
+    unit: z.string().nullish(),
   });
 }
 
@@ -71,6 +121,7 @@ export function RenownAppProfileStateSchema(): z.ZodObject<
         /^attachment:\/\/v\d+:.+$/.test(val as string),
       )
       .nullish(),
+    metrics: z.array(z.lazy(() => RenownAppMetricSchema())),
     name: z.string().nullish(),
     publisherDid: z.string().nullish(),
     tagline: z.string().nullish(),
@@ -83,6 +134,14 @@ export function ReorderLinksInputSchema(): z.ZodObject<
 > {
   return z.object({
     linkIds: z.array(z.string()),
+  });
+}
+
+export function ReorderMetricsInputSchema(): z.ZodObject<
+  Properties<ReorderMetricsInput>
+> {
+  return z.object({
+    metricIds: z.array(z.string()),
   });
 }
 
@@ -124,5 +183,19 @@ export function UpdateLinkInputSchema(): z.ZodObject<
     id: z.string(),
     label: z.string().nullish(),
     url: z.url().nullish(),
+  });
+}
+
+export function UpdateMetricInputSchema(): z.ZodObject<
+  Properties<UpdateMetricInput>
+> {
+  return z.object({
+    aggregation: RenownMetricAggregationSchema.nullish(),
+    description: z.string().nullish(),
+    id: z.string(),
+    key: z.string().nullish(),
+    label: z.string().nullish(),
+    public: z.boolean().nullish(),
+    unit: z.string().nullish(),
   });
 }

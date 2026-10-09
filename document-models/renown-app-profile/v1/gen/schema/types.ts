@@ -70,7 +70,25 @@ export type AddLinkInput = {
   url: Scalars["URL"]["input"];
 };
 
+export type AddMetricInput = {
+  aggregation: RenownMetricAggregation;
+  /** At most 200 characters; empty means none */
+  description?: InputMaybe<Scalars["String"]["input"]>;
+  id: Scalars["OID"]["input"];
+  /** ^[A-Za-z][A-Za-z0-9_.:-]{0,63}$, unique per app */
+  key: Scalars["String"]["input"];
+  /** 1-40 characters after trimming */
+  label: Scalars["String"]["input"];
+  public: Scalars["Boolean"]["input"];
+  /** At most 16 characters; empty means none */
+  unit?: InputMaybe<Scalars["String"]["input"]>;
+};
+
 export type RemoveLinkInput = {
+  id: Scalars["OID"]["input"];
+};
+
+export type RemoveMetricInput = {
   id: Scalars["OID"]["input"];
 };
 
@@ -78,6 +96,21 @@ export type RenownAppLink = {
   id: Scalars["OID"]["output"];
   label: Scalars["String"]["output"];
   url: Scalars["URL"]["output"];
+};
+
+export type RenownAppMetric = {
+  aggregation: RenownMetricAggregation;
+  /** At most 200 characters */
+  description: Maybe<Scalars["String"]["output"]>;
+  id: Scalars["OID"]["output"];
+  /** The metric name the app reports: ^[A-Za-z][A-Za-z0-9_.:-]{0,63}$ */
+  key: Scalars["String"]["output"];
+  /** 1-40 characters */
+  label: Scalars["String"]["output"];
+  /** Shown on the app page and on user profiles */
+  public: Scalars["Boolean"]["output"];
+  /** At most 16 characters, e.g. notes */
+  unit: Maybe<Scalars["String"]["output"]>;
 };
 
 export type RenownAppProfileState = {
@@ -94,14 +127,22 @@ export type RenownAppProfileState = {
   logo: Maybe<Scalars["String"]["output"]>;
   /** Uploaded square logo */
   logoRef: Maybe<Scalars["AttachmentRef"]["output"]>;
+  /** Publisher-defined metrics, at most 16, in display order */
+  metrics: Array<RenownAppMetric>;
   name: Maybe<Scalars["String"]["output"]>;
   publisherDid: Maybe<Scalars["String"]["output"]>;
   tagline: Maybe<Scalars["String"]["output"]>;
   website: Maybe<Scalars["String"]["output"]>;
 };
 
+export type RenownMetricAggregation = "AVG" | "COUNT_USERS" | "MAX" | "SUM";
+
 export type ReorderLinksInput = {
   linkIds: Array<Scalars["OID"]["input"]>;
+};
+
+export type ReorderMetricsInput = {
+  metricIds: Array<Scalars["OID"]["input"]>;
 };
 
 export type SetAppDidInput = {
@@ -131,4 +172,14 @@ export type UpdateLinkInput = {
   id: Scalars["OID"]["input"];
   label?: InputMaybe<Scalars["String"]["input"]>;
   url?: InputMaybe<Scalars["URL"]["input"]>;
+};
+
+export type UpdateMetricInput = {
+  aggregation?: InputMaybe<RenownMetricAggregation>;
+  description?: InputMaybe<Scalars["String"]["input"]>;
+  id: Scalars["OID"]["input"];
+  key?: InputMaybe<Scalars["String"]["input"]>;
+  label?: InputMaybe<Scalars["String"]["input"]>;
+  public?: InputMaybe<Scalars["Boolean"]["input"]>;
+  unit?: InputMaybe<Scalars["String"]["input"]>;
 };

@@ -37,12 +37,36 @@ type RenownAppProfileState {
   coverRef: AttachmentRef
   "At most 8 links, in display order"
   links: [RenownAppLink!]!
+  "Publisher-defined metrics, at most 16, in display order"
+  metrics: [RenownAppMetric!]!
 }
 
 type RenownAppLink {
   id: OID!
   label: String!
   url: URL!
+}
+
+enum RenownMetricAggregation {
+  SUM
+  MAX
+  AVG
+  COUNT_USERS
+}
+
+type RenownAppMetric {
+  id: OID!
+  "The metric name the app reports: ^[A-Za-z][A-Za-z0-9_.:-]{0,63}$"
+  key: String!
+  "1-40 characters"
+  label: String!
+  "At most 16 characters, e.g. notes"
+  unit: String
+  "At most 200 characters"
+  description: String
+  aggregation: RenownMetricAggregation!
+  "Shown on the app page and on user profiles"
+  public: Boolean!
 }
 
 # profile
@@ -90,4 +114,38 @@ input RemoveLinkInput {
 
 input ReorderLinksInput {
   linkIds: [OID!]!
+}
+
+# metrics
+
+input AddMetricInput {
+  id: OID!
+  "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$, unique per app"
+  key: String!
+  "1-40 characters after trimming"
+  label: String!
+  "At most 16 characters; empty means none"
+  unit: String
+  "At most 200 characters; empty means none"
+  description: String
+  aggregation: RenownMetricAggregation!
+  public: Boolean!
+}
+
+input UpdateMetricInput {
+  id: OID!
+  key: String
+  label: String
+  unit: String
+  description: String
+  aggregation: RenownMetricAggregation
+  public: Boolean
+}
+
+input RemoveMetricInput {
+  id: OID!
+}
+
+input ReorderMetricsInput {
+  metricIds: [OID!]!
 }

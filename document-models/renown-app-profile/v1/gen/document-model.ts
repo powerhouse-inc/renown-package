@@ -20,10 +20,10 @@ export const documentModel: DocumentModelGlobalState = {
         },
         global: {
           schema:
-            'type RenownAppProfileState {\n  appDid: String\n  publisherDid: String\n  name: String\n  tagline: String\n  "Legacy logo: an https URL or a raster data URL; logoRef wins when set"\n  logo: String\n  website: String\n  "Markdown subset, at most 2000 characters; rendered sanitized"\n  description: String\n  "At most 40 characters"\n  category: String\n  "Uploaded square logo"\n  logoRef: AttachmentRef\n  "Uploaded 3:1 cover image"\n  coverRef: AttachmentRef\n  "At most 8 links, in display order"\n  links: [RenownAppLink!]!\n}\n\ntype RenownAppLink {\n  id: OID!\n  label: String!\n  url: URL!\n}',
+            'type RenownAppProfileState {\n  appDid: String\n  publisherDid: String\n  name: String\n  tagline: String\n  "Legacy logo: an https URL or a raster data URL; logoRef wins when set"\n  logo: String\n  website: String\n  "Markdown subset, at most 2000 characters; rendered sanitized"\n  description: String\n  "At most 40 characters"\n  category: String\n  "Uploaded square logo"\n  logoRef: AttachmentRef\n  "Uploaded 3:1 cover image"\n  coverRef: AttachmentRef\n  "At most 8 links, in display order"\n  links: [RenownAppLink!]!\n  "Publisher-defined metrics, at most 16, in display order"\n  metrics: [RenownAppMetric!]!\n}\n\ntype RenownAppLink {\n  id: OID!\n  label: String!\n  url: URL!\n}\n\nenum RenownMetricAggregation {\n  SUM\n  MAX\n  AVG\n  COUNT_USERS\n}\n\ntype RenownAppMetric {\n  id: OID!\n  "The metric name the app reports: ^[A-Za-z][A-Za-z0-9_.:-]{0,63}$"\n  key: String!\n  "1-40 characters"\n  label: String!\n  "At most 16 characters, e.g. notes"\n  unit: String\n  "At most 200 characters"\n  description: String\n  aggregation: RenownMetricAggregation!\n  "Shown on the app page and on user profiles"\n  public: Boolean!\n}',
           examples: [],
           initialValue:
-            '{\n  "appDid": null,\n  "publisherDid": null,\n  "name": null,\n  "tagline": null,\n  "logo": null,\n  "website": null,\n  "description": null,\n  "category": null,\n  "logoRef": null,\n  "coverRef": null,\n  "links": []\n}',
+            '{\n  "appDid": null,\n  "publisherDid": null,\n  "name": null,\n  "tagline": null,\n  "logo": null,\n  "website": null,\n  "description": null,\n  "category": null,\n  "logoRef": null,\n  "coverRef": null,\n  "links": [],\n  "metrics": []\n}',
         },
       },
       modules: [
@@ -211,6 +211,101 @@ export const documentModel: DocumentModelGlobalState = {
               description:
                 "Moves the listed links to the front in the given order; unlisted links keep their relative order after them",
               schema: "input ReorderLinksInput {\n  linkIds: [OID!]!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+          ],
+        },
+        {
+          id: "renown-app-profile-metrics",
+          name: "metrics",
+          description:
+            "Publisher-defined metrics: what the app reports and how Renown aggregates and shows it",
+          operations: [
+            {
+              id: "add-app-metric",
+              name: "ADD_METRIC",
+              description: "Declares a metric at the end of the list",
+              schema:
+                'input AddMetricInput {\n  id: OID!\n  "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$, unique per app"\n  key: String!\n  "1-40 characters after trimming"\n  label: String!\n  "At most 16 characters; empty means none"\n  unit: String\n  "At most 200 characters; empty means none"\n  description: String\n  aggregation: RenownMetricAggregation!\n  public: Boolean!\n}',
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "too-many-metrics-error",
+                  name: "TooManyMetricsError",
+                  code: "TOO_MANY_METRICS",
+                  description: "The profile already declares 16 metrics",
+                  template: "",
+                },
+                {
+                  id: "duplicate-metric-id-error",
+                  name: "DuplicateMetricIdError",
+                  code: "DUPLICATE_METRIC_ID",
+                  description: "A metric with this id already exists",
+                  template: "",
+                },
+                {
+                  id: "duplicate-metric-key-error",
+                  name: "DuplicateMetricKeyError",
+                  code: "DUPLICATE_METRIC_KEY",
+                  description: "Another metric already uses this key",
+                  template: "",
+                },
+                {
+                  id: "invalid-metric-error",
+                  name: "InvalidMetricError",
+                  code: "INVALID_METRIC",
+                  description:
+                    "The key does not match the metric rule, or the label, unit or description is out of bounds",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "update-app-metric",
+              name: "UPDATE_METRIC",
+              description:
+                "Changes fields of a metric; absent fields are unchanged, an empty unit or description clears it",
+              schema:
+                "input UpdateMetricInput {\n  id: OID!\n  key: String\n  label: String\n  unit: String\n  description: String\n  aggregation: RenownMetricAggregation\n  public: Boolean\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "metric-not-found-error",
+                  name: "MetricNotFoundError",
+                  code: "METRIC_NOT_FOUND",
+                  description: "No metric with this id exists",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "remove-app-metric",
+              name: "REMOVE_METRIC",
+              description:
+                "Removes a metric definition (reported values are kept)",
+              schema: "input RemoveMetricInput {\n  id: OID!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "reorder-app-metrics",
+              name: "REORDER_METRICS",
+              description:
+                "Moves the listed metrics to the front in the given order; unlisted metrics keep their relative order after them",
+              schema: "input ReorderMetricsInput {\n  metricIds: [OID!]!\n}",
               template: "",
               reducer: "",
               errors: [],
