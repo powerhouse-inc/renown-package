@@ -10,7 +10,7 @@ export type MediaFieldLookup = (documentId: string) => Promise<string | null>;
 
 export interface MediaRouteDeps {
   backend: () => MediaBackend | null;
-  /** Whitelist: only these fields are ever served. Phase 2 adds app-profile `logo`/`cover`. */
+  /** Whitelist: only these fields are ever served (avatar; app-profile logo and cover). */
   fields: Record<string, MediaFieldLookup>;
 }
 

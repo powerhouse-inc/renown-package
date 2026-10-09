@@ -3,7 +3,13 @@ export const IMAGE_MIME_TYPES = ["image/png", "image/jpeg", "image/webp"] as con
 export type ImageMimeType = (typeof IMAGE_MIME_TYPES)[number];
 
 /** What an upload is for, and the most bytes it may have. */
-export const UPLOAD_LIMITS = { avatar: 2 * 1024 * 1024 } as const;
+export const UPLOAD_LIMITS = {
+  avatar: 2 * 1024 * 1024,
+  /** App-profile logo (cropped square in the browser). */
+  logo: 1024 * 1024,
+  /** App-profile cover (cropped 3:1 in the browser). */
+  cover: 2 * 1024 * 1024,
+} as const;
 export type UploadPurpose = keyof typeof UPLOAD_LIMITS;
 
 export const EXTENSIONS: Record<ImageMimeType, string> = {
