@@ -18,6 +18,11 @@ export function defaultGlobalState(): RenownUserGlobalState {
     username: null,
     ethAddress: null,
     userImage: null,
+    displayName: null,
+    handle: null,
+    bio: null,
+    links: [],
+    avatar: null,
   };
 }
 

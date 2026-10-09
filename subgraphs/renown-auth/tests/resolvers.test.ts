@@ -314,7 +314,7 @@ describe("renown-auth schema", () => {
       "renown_revokeCredential(credentialId: String!, signature: String, timestamp: String): Boolean",
     );
     expect(sdl).toContain(
-      "renown_upsertProfile(address: String!, username: String, userImage: String, signature: String, timestamp: String): String",
+      "renown_upsertProfile(address: String!, username: String, userImage: String, displayName: String, handle: String, bio: String, links: [RenownProfileLinkInput!], avatar: String, signature: String, timestamp: String): String",
     );
   });
 

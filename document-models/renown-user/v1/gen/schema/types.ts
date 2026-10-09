@@ -62,16 +62,68 @@ export type Scalars = {
   Upload: { input: File; output: File };
 };
 
+export type AddLinkInput = {
+  id: Scalars["OID"]["input"];
+  /** 1-40 characters after trimming */
+  label: Scalars["String"]["input"];
+  /** http(s) URL, at most 2048 characters */
+  url: Scalars["URL"]["input"];
+};
+
+export type RemoveLinkInput = {
+  id: Scalars["OID"]["input"];
+};
+
+export type RenownUserLink = {
+  id: Scalars["OID"]["output"];
+  label: Scalars["String"]["output"];
+  url: Scalars["URL"]["output"];
+};
+
 export type RenownUserState = {
+  /** Uploaded avatar; userImage stays the external (ENS) image URL */
+  avatar: Maybe<Scalars["AttachmentRef"]["output"]>;
+  /** Short bio, at most 280 characters */
+  bio: Maybe<Scalars["String"]["output"]>;
+  /** Display name, 1-64 characters */
+  displayName: Maybe<Scalars["String"]["output"]>;
   ethAddress: Maybe<Scalars["EthereumAddress"]["output"]>;
+  /** Unique handle; uniqueness is enforced by the write path, not the reducer */
+  handle: Maybe<Scalars["String"]["output"]>;
+  /** Profile links, at most 8, in display order */
+  links: Array<RenownUserLink>;
   userImage: Maybe<Scalars["String"]["output"]>;
   /** Add your global state fields here */
   username: Maybe<Scalars["String"]["output"]>;
 };
 
+export type ReorderLinksInput = {
+  linkIds: Array<Scalars["OID"]["input"]>;
+};
+
+export type SetAvatarInput = {
+  /** attachment://v1:<sha256>; null clears */
+  avatar?: InputMaybe<Scalars["AttachmentRef"]["input"]>;
+};
+
+export type SetBioInput = {
+  /** At most 280 characters; null or empty clears */
+  bio?: InputMaybe<Scalars["String"]["input"]>;
+};
+
+export type SetDisplayNameInput = {
+  /** 1-64 characters after trimming; null clears */
+  displayName?: InputMaybe<Scalars["String"]["input"]>;
+};
+
 export type SetEthAddressInput = {
   /** Add your inputs here */
   ethAddress: Scalars["EthereumAddress"]["input"];
+};
+
+export type SetHandleInput = {
+  /** ^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$; null clears */
+  handle?: InputMaybe<Scalars["String"]["input"]>;
 };
 
 export type SetUserImageInput = {
@@ -82,4 +134,10 @@ export type SetUserImageInput = {
 export type SetUsernameInput = {
   /** Add your inputs here */
   username: Scalars["String"]["input"];
+};
+
+export type UpdateLinkInput = {
+  id: Scalars["OID"]["input"];
+  label?: InputMaybe<Scalars["String"]["input"]>;
+  url?: InputMaybe<Scalars["URL"]["input"]>;
 };

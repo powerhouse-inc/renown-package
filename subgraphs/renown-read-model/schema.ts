@@ -10,8 +10,21 @@ export const schema: DocumentNode = gql`
     username: String
     ethAddress: String
     userImage: String
+    displayName: String
+    "Lowercase, unique across profiles"
+    handle: String
+    bio: String
+    links: [ReadRenownUserLink!]!
+    "attachment://v1:<sha256> of the uploaded avatar; serve it via the package media route"
+    avatar: String
     createdAt: DateTime
     updatedAt: DateTime
+  }
+
+  type ReadRenownUserLink {
+    id: String!
+    label: String!
+    url: String!
   }
 
   input RenownUserInput {
@@ -19,6 +32,8 @@ export const schema: DocumentNode = gql`
     phid: String
     ethAddress: String
     username: String
+    "Case-insensitive"
+    handle: String
   }
 
   input RenownUsersInput {
@@ -26,6 +41,21 @@ export const schema: DocumentNode = gql`
     phids: [String!]
     ethAddresses: [String!]
     usernames: [String!]
+    handles: [String!]
+  }
+
+  enum RenownHandleProblem {
+    INVALID
+    RESERVED
+    TAKEN
+  }
+
+  type RenownHandleAvailability {
+    "The handle as it would be stored (trimmed, lowercased)"
+    handle: String!
+    available: Boolean!
+    "Why it is not available; null when it is"
+    reason: RenownHandleProblem
   }
 
   type ReadRenownCredential {
@@ -70,5 +100,10 @@ export const schema: DocumentNode = gql`
     renownUser(input: RenownUserInput!): ReadRenownUser
     renownUsers(input: RenownUsersInput!): [ReadRenownUser!]!
     renownCredentials(input: RenownCredentialsInput!): [ReadRenownCredential!]!
+    """
+    Whether a handle can be claimed. A handle the profile of \`address\` already
+    holds counts as available to that address.
+    """
+    renownHandleAvailability(handle: String!, address: String): RenownHandleAvailability!
   }
 `;

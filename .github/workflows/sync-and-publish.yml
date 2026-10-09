@@ -227,9 +227,11 @@ jobs:
       - name: Build package
         run: pnpm build
 
+      - name: Type check
+        run: pnpm tsc
+
       - name: Run tests
-        run: pnpm test || true
-        continue-on-error: true
+        run: pnpm test
 
       - name: Run semantic-release
         id: semantic-release
@@ -381,11 +383,18 @@ jobs:
       - name: Determine ph-cmd version
         id: ph-tag
         run: |
-          # Pin ph-cmd to the Powerhouse version the package is built against,
-          # so images never float on a channel dist-tag.
-          V=$(node -p "require('./package.json').devDependencies?.['@powerhousedao/ph-cli'] ?? require('./package.json').dependencies?.['@powerhousedao/ph-cli']")
-          V="${V#^}"; V="${V#~}"
-          [ -n "$V" ] && [ "$V" != "undefined" ] || { echo "no ph-cli pin"; exit 1; }
+          # Pin ph-cmd to the @powerhousedao/ph-cli version the lockfile
+          # actually resolves, so images never float on a channel dist-tag.
+          # `version:` looks like `6.2.3(peer-hash)`; keep the semver part only.
+          V=$(awk '
+            /^  \.:/ {inroot=1; next}
+            inroot && /^  [^ ]/ {inroot=0}
+            inroot && /^      .@powerhousedao\/ph-cli.:/ {found=1; next}
+            found && /^        version:/ {sub(/^        version: */, ""); sub(/\(.*/, ""); print; exit}
+          ' pnpm-lock.yaml)
+          if ! printf '%s' "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "ph-cli version '$V' is not plain semver"; exit 1
+          fi
           echo "tag=$V" >> $GITHUB_OUTPUT
 
       - name: Build and push ${{ matrix.target }}
@@ -424,7 +433,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.prepare.outputs.branch }}
+          # The workflow's own commit, not the target branch: the helper script
+          # must exist even when the release branch (e.g. dev) predates it.
+          ref: ${{ github.sha }}
           sparse-checkout: scripts/ci
 
       - name: Update Helm values in k8s-hosting repo
