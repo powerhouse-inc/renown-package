@@ -244,6 +244,32 @@ describe("renown_upsertProfile identity fields", () => {
     expect(reactor.createEmpty).toHaveBeenCalledTimes(1);
   });
 
+  it("lets exactly one of two concurrent upserts take a handle", async () => {
+    const { signed } = setup();
+    const results = await Promise.allSettled([signed(ALICE, { handle: "x-ray" }), signed(BOB, { handle: "x-ray" })]);
+    const failed = results.filter((r) => r.status === "rejected");
+    expect(failed).toHaveLength(1);
+    expect(failed[0].reason).toMatchObject({ extensions: { code: "HANDLE_TAKEN", field: "handle" } });
+    const rows = await root.withSchema(USER_NS).selectFrom("renown_user").select("handle").execute();
+    expect(rows.filter((r) => r.handle === "x-ray")).toHaveLength(1);
+  });
+
+  it("releases the reservation when the request fails, and when a profile moves handles", async () => {
+    const { signed } = setup(null);
+    await expect(signed(ALICE, { handle: "held", avatar: REF })).rejects.toMatchObject({ extensions: { code: "SERVICE_UNAVAILABLE" } });
+    await expect(signed(BOB, { handle: "held" })).resolves.toBeTruthy();
+    await signed(ALICE, { handle: "one" });
+    await signed(ALICE, { handle: "two" });
+    await expect(signed(BOB, { handle: "one" })).resolves.toBeTruthy();
+  });
+
+  it("clears displayName and bio given only whitespace", async () => {
+    const { signed } = setup();
+    const id = await signed(ALICE, { displayName: "Alice", bio: "Hi" });
+    await signed(ALICE, { displayName: "   ", bio: "  " });
+    expect(await row(id)).toMatchObject({ display_name: null, bio: null });
+  });
+
   it.each([
     ["a reserved handle", { handle: "Admin" }, "handle", /reserved/],
     ["a malformed handle", { handle: "a_b" }, "handle", /3-30/],

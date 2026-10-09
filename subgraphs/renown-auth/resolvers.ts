@@ -255,7 +255,7 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
 
   /** HANDLE_TAKEN unless `handle` is free or already this profile's. */
   async function assertHandleFree(handle: string, documentId: string | undefined): Promise<void> {
-    const owner = handleClaims.holder(handle, now().getTime()) ?? (await findHandleOwner(relationalDb, handle));
+    const owner = await findHandleOwner(relationalDb, handle);
     if (owner !== undefined && owner !== documentId) {
       throw fieldError("HANDLE_TAKEN", "handle", `The handle "${handle}" is taken`);
     }
@@ -418,21 +418,35 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
         const lowercased = address.toLowerCase();
         if (!profileRateLimiter.take(lowercased, now().getTime())) throw rateLimited();
 
-        const existing = await findNewestProfileDoc(relationalDb, lowercased);
-        if (patch.handle) await assertHandleFree(patch.handle, existing);
-        if (patch.avatar) await assertAvatar(patch.avatar);
-        const links = await linkPatch(existing, patch.links);
+        // Reserve the handle before any await so a concurrent upsert for the
+        // same handle sees it as held; release it if this request fails.
+        const handle = patch.handle || undefined;
+        if (handle) {
+          const holder = handleClaims.holder(handle, now().getTime());
+          if (holder !== undefined && holder !== lowercased) {
+            throw fieldError("HANDLE_TAKEN", "handle", `The handle "${handle}" is taken`);
+          }
+          handleClaims.claim(handle, lowercased, now().getTime());
+        }
+        try {
+          const existing = await findNewestProfileDoc(relationalDb, lowercased);
+          if (handle) await assertHandleFree(handle, existing);
+          if (patch.avatar) await assertAvatar(patch.avatar);
+          const links = await linkPatch(existing, patch.links);
 
-        const documentId = existing ?? (await create(renownUserDocumentType));
-        const actions = [
-          ...(existing ? [] : [userActions.setEthAddress({ ethAddress: lowercased })]),
-          ...profileActions({ username, userImage }),
-          ...identityActions(patch),
-          ...links,
-        ];
-        if (patch.handle) handleClaims.claim(patch.handle, documentId, now().getTime());
-        if (actions.length > 0) await execute(documentId, actions);
-        return documentId;
+          const documentId = existing ?? (await create(renownUserDocumentType));
+          const actions = [
+            ...(existing ? [] : [userActions.setEthAddress({ ethAddress: lowercased })]),
+            ...profileActions({ username, userImage }),
+            ...identityActions(patch),
+            ...links,
+          ];
+          if (actions.length > 0) await execute(documentId, actions);
+          return documentId;
+        } catch (error) {
+          if (handle) handleClaims.release(handle, lowercased);
+          throw error;
+        }
       },
     },
   };
