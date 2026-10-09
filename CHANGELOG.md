@@ -1,3 +1,13 @@
+# [1.8.0-staging.3](https://github.com/powerhouse-inc/renown-package/compare/v1.8.0-staging.2...v1.8.0-staging.3) (2026-10-09)
+
+
+### Features
+
+* **media:** logo and cover uploads and public media URLs ([b8edb10](https://github.com/powerhouse-inc/renown-package/commit/b8edb100c4f35dcd2c97e1541d6170db9c9941ac))
+* **renown-app-profile:** description, category, logo and cover images, links ([f07b9d3](https://github.com/powerhouse-inc/renown-package/commit/f07b9d3bd7480a67a4ec3efb602cfbcbcfa6cfb6))
+* **renown-stats:** index app profile images and page through profiles ([beb72e6](https://github.com/powerhouse-inc/renown-package/commit/beb72e6d324e70b11ac9dd272058d3103cb6596f))
+* **renown-stats:** rich app profiles through the Vetra relay, appProfiles listing ([8e95b08](https://github.com/powerhouse-inc/renown-package/commit/8e95b089ba4d0fd11a44a1192251c20e411d74f8))
+
 # [1.8.0-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.8.0-staging.1...v1.8.0-staging.2) (2026-10-09)
 
 
