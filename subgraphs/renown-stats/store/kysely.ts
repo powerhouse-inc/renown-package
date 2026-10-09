@@ -125,7 +125,7 @@ export class KyselyStatsIndex implements StatsIndex {
       );
     }
     if (category !== undefined) {
-      query = query.where((eb) => eb(eb.fn("lower", ["category"]), "=", eb.fn("lower", [eb.val(category)])));
+      query = query.where((eb) => eb(eb.fn("lower", ["category"]), "=", eb.fn("lower", [eb.val(category.trim())])));
     }
     const rows = await query.execute();
     return rows.map((row) => ({

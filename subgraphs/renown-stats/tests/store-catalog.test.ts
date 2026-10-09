@@ -69,6 +69,26 @@ describe("KyselyStatsIndex app catalog", () => {
     expect(await index.appProfilesPage(10)).toHaveLength(5);
   });
 
+  it("trims the category filter, so a padded filter matches the same rows", async () => {
+    const { index } = await makeIndex();
+    await profile(index, "did:key:zA", 1, "DeFi");
+    await profile(index, "did:key:zB", 2, "Games");
+    await profile(index, "did:key:zC", 3, "defi");
+    const plain = await index.appProfilesPage(10, undefined, "defi");
+    expect(plain.map((e) => e.appDid)).toEqual(["did:key:zC", "did:key:zA"]);
+    expect(await index.appProfilesPage(10, undefined, " DeFi ")).toEqual(plain);
+  });
+
+  it("trims a category on write: blank stores null, padded keeps the name", async () => {
+    const { index, db } = await makeIndex();
+    await profile(index, "did:key:zA", 1, null);
+    const read = () => db.selectFrom("app_profile_documents").select(["app_did", "category"]).execute();
+    await index.setAppCategory("did:key:zA", "  ");
+    expect(await read()).toEqual([{ app_did: "did:key:zA", category: null }]);
+    await index.setAppCategory("did:key:zA", " Games ");
+    expect(await read()).toEqual([{ app_did: "did:key:zA", category: "Games" }]);
+  });
+
   it("records, replaces and clears a profile's category", async () => {
     const { index, db } = await makeIndex();
     await profile(index, "did:key:zA", 1, "Tools");
