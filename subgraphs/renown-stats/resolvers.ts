@@ -37,6 +37,7 @@ import {
   type AppMetric,
   type AppMetricInput,
 } from "./core/app-metrics-patch.js";
+import { ACTIVE_WINDOW_MS, metricValue, TOP_CONTRIBUTORS } from "./core/app-stats.js";
 import { REGISTRAR_HEADER } from "./core/config.js";
 import {
   addressOf,
@@ -45,7 +46,12 @@ import {
   pkhDidFor,
 } from "./core/dids.js";
 import { createKeyedLock } from "./core/keyed-lock.js";
-import { hasDelegation, workloadOwner } from "./lookups.js";
+import {
+  contributorProfiles,
+  hasDelegation,
+  workloadOwner,
+  type ContributorProfile,
+} from "./lookups.js";
 import type {
   AppImagesPatch,
   AppProfileCursor,
@@ -132,6 +138,54 @@ interface UserStatOutput {
   metric: string;
   value: number;
   updatedAt: string;
+  /** The app's profile, when it has one. */
+  appName: string | null;
+  appDocumentId: string | null;
+  appHasLogo: boolean;
+  appLogo: string | null;
+  /** Set when the app declares this metric public. */
+  label: string | null;
+  unit: string | null;
+}
+
+interface MetricContributorOutput {
+  userDid: string;
+  value: number;
+  /** The wallet behind a did:pkh user; null for did:key users. */
+  address: string | null;
+  handle: string | null;
+  displayName: string | null;
+  documentId: string | null;
+  hasAvatar: boolean;
+  userImage: string | null;
+}
+
+interface AppMetricStatOutput {
+  key: string;
+  label: string;
+  unit: string | null;
+  description: string | null;
+  aggregation: AppMetric["aggregation"];
+  value: number;
+  users: number;
+  top: MetricContributorOutput[];
+}
+
+interface AppStatsOutput {
+  appDid: string;
+  activeUsers30d: number;
+  totalUsers: number;
+  metrics: AppMetricStatOutput[];
+  updatedAt: string | null;
+}
+
+/** What stats readers need of an app's profile. */
+interface AppCard {
+  documentId: string;
+  name: string | null;
+  hasLogo: boolean;
+  logo: string | null;
+  metrics: AppMetric[];
 }
 
 interface AppProfileOutput {
@@ -469,6 +523,58 @@ export function createResolvers(
     };
   }
 
+  /** The app's profile as stats readers need it; null without one (or when it cannot be read). */
+  async function appCard(index: StatsIndex, appDid: string): Promise<AppCard | null> {
+    const entry = await index.appProfile(appDid);
+    if (!entry) return null;
+    try {
+      const doc = await reactorClient.get<RenownAppProfileDocument>(entry.documentId);
+      const state = doc.state.global as Partial<RenownAppProfileDocument["state"]["global"]>;
+      return {
+        documentId: entry.documentId,
+        name: state.name ?? null,
+        hasLogo: !!state.logoRef,
+        logo: state.logo ?? null,
+        metrics: (state.metrics ?? []).map(toAppMetric),
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[renown-stats] app profile ${entry.documentId} unreadable (${reason}); stats shown without it`);
+      return null;
+    }
+  }
+
+  /** Renown profiles behind did:pkh user DIDs, by lowercase address. Never throws. */
+  async function contributors(userDids: readonly string[]): Promise<Map<string, ContributorProfile>> {
+    const addresses = [...new Set(userDids.map(addressOf).filter((a): a is string => a !== null))];
+    if (addresses.length === 0) return new Map();
+    try {
+      return await contributorProfiles(relationalDb, addresses);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[renown-stats] contributor profile lookup failed (${reason}); showing addresses`);
+      return new Map();
+    }
+  }
+
+  function contributorOutput(
+    top: { userDid: string; value: number },
+    profiles: Map<string, ContributorProfile>,
+  ): MetricContributorOutput {
+    const address = addressOf(top.userDid);
+    const profile = address ? profiles.get(address) : undefined;
+    return {
+      userDid: top.userDid,
+      value: top.value,
+      address,
+      handle: profile?.handle ?? null,
+      displayName: profile?.displayName ?? null,
+      documentId: profile?.documentId ?? null,
+      hasAvatar: profile?.hasAvatar ?? false,
+      userImage: profile?.userImage ?? null,
+    };
+  }
+
   return {
     Query: {
       userStats: async (
@@ -480,18 +586,40 @@ export function createResolvers(
           throw invalidRequest(
             "userDid must be a did:pkh:eip155 or did:key DID",
           );
-        const documentId = await requireIndex().userStatsDocument(userDid);
+        const index = requireIndex();
+        const documentId = await index.userStatsDocument(userDid);
         if (!documentId) return [];
         const doc =
           await reactorClient.get<RenownUserStatsDocument>(documentId);
-        return doc.state.global.stats.map(
-          ({ appDid, metric, value, updatedAt }) => ({
+        const cards = new Map<string, Promise<AppCard | null>>();
+        const cardOf = (appDid: string): Promise<AppCard | null> => {
+          let card = cards.get(appDid);
+          if (!card) {
+            card = appCard(index, appDid);
+            cards.set(appDid, card);
+          }
+          return card;
+        };
+        const out: UserStatOutput[] = [];
+        for (const { appDid, metric, value, updatedAt } of doc.state.global.stats) {
+          const card = await cardOf(appDid);
+          const declared = card?.metrics.find((m) => m.key === metric);
+          // A metric its publisher declared private is shown nowhere.
+          if (declared && !declared.public) continue;
+          out.push({
             appDid,
             metric,
             value,
             updatedAt,
-          }),
-        );
+            appName: card?.name ?? null,
+            appDocumentId: card?.documentId ?? null,
+            appHasLogo: card?.hasLogo ?? false,
+            appLogo: card?.logo ?? null,
+            label: declared?.label ?? null,
+            unit: declared?.unit ?? null,
+          });
+        }
+        return out;
       },
 
       appProfile: async (
@@ -536,6 +664,53 @@ export function createResolvers(
             entries.length > limit && last
               ? encodeCursor({ createdAt: last.createdAt, appDid: last.appDid })
               : null,
+        };
+      },
+
+      appStats: async (
+        _: unknown,
+        args: { appDid: string },
+      ): Promise<AppStatsOutput | null> => {
+        const appDid = canonicalAppDid(args.appDid);
+        if (appDid === null)
+          throw invalidRequest("appDid must be a did:key DID");
+        const index = requireIndex();
+        const since = new Date(now().getTime() - ACTIVE_WINDOW_MS);
+        const [card, activity] = await Promise.all([
+          appCard(index, appDid),
+          index.appActivity(appDid, since),
+        ]);
+        if (!card && activity.totalUsers === 0) return null;
+        // Only metrics the publisher declared public. Undeclared values stay
+        // stored (declaring later shows their history) but are never exposed.
+        const declared = (card?.metrics ?? []).filter((m) => m.public);
+        const aggregates = await index.metricAggregates(
+          appDid,
+          declared.map((m) => m.key),
+          TOP_CONTRIBUTORS,
+        );
+        const byMetric = new Map(aggregates.map((a) => [a.metric, a]));
+        const profiles = await contributors(
+          aggregates.flatMap((a) => a.top.map((t) => t.userDid)),
+        );
+        return {
+          appDid,
+          activeUsers30d: activity.activeUsers,
+          totalUsers: activity.totalUsers,
+          updatedAt: activity.updatedAt?.toISOString() ?? null,
+          metrics: declared.map((m) => {
+            const aggregate = byMetric.get(m.key);
+            return {
+              key: m.key,
+              label: m.label,
+              unit: m.unit,
+              description: m.description,
+              aggregation: m.aggregation,
+              value: metricValue(m.aggregation, aggregate),
+              users: aggregate?.users ?? 0,
+              top: (aggregate?.top ?? []).map((t) => contributorOutput(t, profiles)),
+            };
+          }),
         };
       },
     },
@@ -590,9 +765,19 @@ export function createResolvers(
           // The app-level aggregate row, right after the accepted report and
           // under the same per-user lock. Every report rewrites it: it marks
           // the user active, and repairs a row a crash left behind.
-          await index.recordMetricValues([
-            { appDid, metric: args.metric, userDid, value: args.value, updatedAt: at },
-          ]);
+          try {
+            await index.recordMetricValues([
+              { appDid, metric: args.metric, userDid, value: args.value, updatedAt: at },
+            ]);
+          } catch (error) {
+            // The document write above already succeeded; the next report of
+            // this metric repairs the row. Never leak the database error.
+            const reason = error instanceof Error ? error.message : String(error);
+            console.warn(`[renown-stats] metric aggregate write failed (${reason})`);
+            throw new GraphQLError("Stats are temporarily unavailable", {
+              extensions: { code: "SERVICE_UNAVAILABLE" },
+            });
+          }
         });
         return true;
       },

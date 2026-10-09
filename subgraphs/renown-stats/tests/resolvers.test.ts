@@ -325,7 +325,7 @@ describe("reportUserStat", () => {
         hostBearer(app.did),
       ),
     ).toBe(true);
-    expect(await userStats(USER)).toEqual([
+    expect(await userStats(USER)).toMatchObject([
       {
         appDid: app.did,
         metric: "messagesSent",
@@ -428,7 +428,7 @@ describe("reportUserStat", () => {
       { appDid: app.did, userDid: USER, metric: "m", value: 7 },
       ctx,
     );
-    expect(await userStats(USER)).toEqual([
+    expect(await userStats(USER)).toMatchObject([
       { appDid: app.did, metric: "m", value: 7, updatedAt: NOW.toISOString() },
     ]);
     expect(reactor.ofType(renownUserStatsDocumentType)).toHaveLength(1);
@@ -1242,7 +1242,7 @@ describe("tokens minted by renown-workload's issueAppStatsToken", () => {
     await insertDelegation(OWNER, did);
     const { report, userStats } = setup();
     expect(await report(args(did), await appHeader(issue(did)))).toBe(true);
-    expect(await userStats(USER)).toEqual([
+    expect(await userStats(USER)).toMatchObject([
       { appDid: did, metric: "m", value: 1, updatedAt: NOW.toISOString() },
     ]);
   });
