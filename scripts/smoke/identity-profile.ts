@@ -48,6 +48,15 @@ const APP_NAME = "renown-identity-smoke";
 
 class SmokeFailure extends Error {}
 
+/** A GraphQL endpoint answered with something that is not JSON. */
+class HttpFailure extends SmokeFailure {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
 interface Args {
   switchboard: string;
   app: string;
@@ -137,6 +146,8 @@ function solidPng(size: number, rgb: [number, number, number]): Uint8Array<Array
 const randomRgb = (): [number, number, number] => [0, 1, 2].map(() => Math.floor(Math.random() * 256)) as [number, number, number];
 
 interface GraphqlResult<T> {
+  /** HTTP status of the response. */
+  status?: number;
   data?: T;
   errors?: { message: string; extensions?: { code?: string; field?: string } }[];
 }
@@ -149,9 +160,9 @@ async function graphql<T>(switchboard: string, query: string, variables: unknown
   });
   const text = await res.text();
   try {
-    return JSON.parse(text) as GraphqlResult<T>;
+    return { ...(JSON.parse(text) as GraphqlResult<T>), status: res.status };
   } catch {
-    throw new SmokeFailure(`GraphQL HTTP ${res.status}: ${clip(text)}`);
+    throw new HttpFailure(res.status, `GraphQL HTTP ${res.status}: ${clip(text)}`);
   }
 }
 
@@ -176,14 +187,17 @@ const MUTATE_DOCUMENT = `mutation Mutate($id: String!, $actions: [JSONObject!]!)
   mutateDocument(documentIdentifier: $id, actions: $actions) { id }
 }`;
 
-interface Identity {
+interface Credential {
   account: PrivateKeyAccount;
-  bearer: string;
   credentialId: string;
 }
 
+interface Identity extends Credential {
+  bearer: string;
+}
+
 /** Throwaway wallet + app did:key, a stored delegation credential, and a bearer for it. */
-async function identity(switchboard: string): Promise<Identity> {
+async function identity(switchboard: string, onIssued: (credential: Credential) => void): Promise<Identity> {
   const account = privateKeyToAccount(generatePrivateKey());
   // @renown/sdk 6.2.3 ships DEFAULT_RENOWN_CHAIN_ID as the string "1".
   const chainId = Number(DEFAULT_RENOWN_CHAIN_ID);
@@ -219,14 +233,15 @@ async function identity(switchboard: string): Promise<Identity> {
     },
   };
   data(await graphql<{ renown_issueCredential: string }>(switchboard, ISSUE_CREDENTIAL, { input }), "renown_issueCredential");
+  onIssued({ account, credentialId: vc.id }); // recorded before anything else can fail, so it is always revoked
   const bearer = await crypto.getBearerToken(account.address, { expiresIn: 600 });
   return { account, bearer, credentialId: vc.id };
 }
 
 /** Revokes the throwaway credential with its wallet's signature; false if that failed. */
 async function revoke(switchboard: string, account: PrivateKeyAccount, credentialId: string): Promise<boolean> {
-  const { revokeMessage } = (await import(SIGNED_MESSAGE)) as typeof SignedMessageModule;
   try {
+    const { revokeMessage } = (await import(SIGNED_MESSAGE)) as typeof SignedMessageModule;
     const timestamp = new Date().toISOString();
     const signature = await account.signMessage({ message: revokeMessage(credentialId, timestamp) });
     data(await graphql<{ renown_revokeCredential: boolean }>(switchboard, REVOKE_CREDENTIAL, { credentialId, signature, timestamp }), "renown_revokeCredential");
@@ -282,15 +297,12 @@ async function main(): Promise<void> {
   step("switchboard", switchboard);
   step("app", app);
 
-  const first = await identity(switchboard);
-  step("wallet", first.account.address);
-  const issued: Identity[] = [first];
+  const issued: Credential[] = [];
+  const onIssued = (credential: Credential) => issued.push(credential);
   try {
-    await run(switchboard, app, first, async () => {
-      const second = await identity(switchboard);
-      issued.push(second);
-      return second;
-    });
+    const first = await identity(switchboard, onIssued);
+    step("wallet", first.account.address);
+    await run(switchboard, app, first, () => identity(switchboard, onIssued));
   } finally {
     const results: boolean[] = [];
     for (const id of issued) results.push(await revoke(switchboard, id.account, id.credentialId));
@@ -316,11 +328,11 @@ async function tamperedPuts(switchboard: string, bearer: string): Promise<void> 
     Object.entries(headers).map(([k, v]) => [k, k.toLowerCase() === "x-amz-checksum-sha256" ? sha256Base64(Buffer.from("not the avatar")) : v]),
   );
   const wrongType = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, k.toLowerCase() === "content-type" ? "text/html" : v]));
-  const cases: [string, Record<string, string>, Uint8Array][] = [
-    ["extra bytes", headers, new Uint8Array([...bytes, 0])],
-    ["wrong checksum", wrongChecksum, bytes],
-    ["wrong content-type", wrongType, bytes],
-  ];
+  const hasChecksum = Object.keys(headers).some((k) => k.toLowerCase() === "x-amz-checksum-sha256");
+  const cases: [string, Record<string, string>, Uint8Array][] = [["extra bytes", headers, new Uint8Array([...bytes, 0])]];
+  if (hasChecksum) cases.push(["wrong checksum", wrongChecksum, bytes]);
+  else step("tampered PUT", "wrong checksum: skipped (no checksum header to tamper)");
+  cases.push(["wrong content-type", wrongType, bytes]);
   for (const [label, h, body] of cases) {
     const put = await fetch(url, { method: "PUT", headers: h, body: body as Uint8Array<ArrayBuffer> });
     step("tampered PUT", `${label}: HTTP ${put.status}`);
@@ -328,25 +340,82 @@ async function tamperedPuts(switchboard: string, bearer: string): Promise<void> 
   }
 }
 
-/** Probe only: can a second identity edit the first profile through the generic reactor mutation? */
-async function bypassProbe(switchboard: string, documentId: string, attacker: Identity): Promise<void> {
-  const actions = [
-    { type: "SET_HANDLE", input: { handle: "hijacked-by-smoke" }, scope: "global" },
-    { type: "SET_AVATAR", input: { avatar: "" }, scope: "global" },
-  ];
+const AUTH_MESSAGE = /unauthori[sz]ed|forbidden|permission|not allowed/i;
+
+type Verdict = { kind: "ok" } | { kind: "auth"; detail: string } | { kind: "other"; detail: string };
+
+/** Runs mutateDocument as `bearer` and classifies the outcome: accepted, refused for authorization, or something else. */
+async function mutate(switchboard: string, bearer: string, documentId: string, actions: unknown[]): Promise<Verdict> {
+  let res: GraphqlResult<{ mutateDocument: { id: string } }>;
   try {
-    const res = await graphql<{ mutateDocument: { id: string } }>(switchboard, MUTATE_DOCUMENT, { id: documentId, actions }, { path: "/graphql/r", bearer: attacker.bearer });
-    if (res.data?.mutateDocument && !res.errors?.length) {
-      console.error("PROBE_BYPASS_POSSIBLE: a second identity mutated the profile through /graphql/r mutateDocument");
-    } else {
-      step("bypass probe", `refused: ${clip(JSON.stringify(res.errors ?? res))}`);
-    }
+    res = await graphql(switchboard, MUTATE_DOCUMENT, { id: documentId, actions }, { path: "/graphql/r", bearer });
   } catch (error) {
-    step("bypass probe", `refused: ${error instanceof Error ? clip(error.message) : String(error)}`);
+    const detail = error instanceof Error ? clip(error.message) : String(error);
+    if (error instanceof HttpFailure && (error.status === 401 || error.status === 403)) return { kind: "auth", detail };
+    return { kind: "other", detail };
+  }
+  if (res.data?.mutateDocument && !res.errors?.length) return { kind: "ok" };
+  const detail = clip(JSON.stringify(res.errors ?? res));
+  const code = res.errors?.[0]?.extensions?.code;
+  const message = res.errors?.map((e) => e.message).join(" ") ?? "";
+  if (res.status === 401 || res.status === 403 || code === "UNAUTHENTICATED" || code === "FORBIDDEN" || AUTH_MESSAGE.test(message)) {
+    return { kind: "auth", detail: `HTTP ${res.status ?? "?"} ${detail}` };
+  }
+  return { kind: "other", detail: `HTTP ${res.status ?? "?"} ${detail}` };
+}
+
+/** Polls until the bearer is accepted (the gated reserve route stops answering 401); false on timeout. */
+async function waitForBearer(switchboard: string, bearer: string): Promise<boolean> {
+  const body = { purpose: "avatar", mimeType: "image/png", sizeBytes: 3 * 1024 * 1024, sha256: "0".repeat(64) };
+  for (let attempt = 1; attempt <= 15; attempt++) {
+    if ((await reserve(switchboard, bearer, body)).status !== 401) return true;
+    await sleep(2000);
+  }
+  return false;
+}
+
+/**
+ * Probe only: can a second identity edit the first profile through the generic reactor mutation?
+ * A positive control (the owner with a harmless action) shows whether the query shape is accepted at all.
+ */
+async function bypassProbe(switchboard: string, documentId: string, owner: Identity, attacker: Identity, handle: string, avatar: string): Promise<void> {
+  const inconclusive = (reason: string) => console.error(`PROBE_INCONCLUSIVE: ${reason}`);
+  if (!(await waitForBearer(switchboard, attacker.bearer))) return inconclusive("the second credential was never accepted (401), so its refusal proves nothing");
+
+  const control = await mutate(switchboard, owner.bearer, documentId, [{ type: "SET_BIO", input: { bio: "Created by scripts/smoke/identity-profile.ts" }, scope: "global" }]);
+  if (control.kind === "ok") step("bypass probe control", "mutateDocument shape accepted for the owner");
+  else if (control.kind === "other") return inconclusive(`positive control failed for a non-auth reason, the query shape is unproven: ${control.detail}`);
+  else step("bypass probe control", `owner also refused by authorization (generic path closed to everyone): ${control.detail}`);
+
+  const hijacked = "hijacked-by-smoke";
+  const verdict = await mutate(switchboard, attacker.bearer, documentId, [
+    { type: "SET_HANDLE", input: { handle: hijacked }, scope: "global" },
+    { type: "SET_AVATAR", input: { avatar: "" }, scope: "global" },
+  ]);
+  if (verdict.kind === "auth") return step("bypass probe", `REFUSED: ${verdict.detail}`);
+  if (verdict.kind === "other") return inconclusive(verdict.detail);
+
+  console.error("PROBE_BYPASS_POSSIBLE: a second identity mutated the profile through /graphql/r mutateDocument");
+  type Indexed = { documentId: string; avatar: string | null } | null;
+  const lookup = async (h: string) => data(await graphql<{ renownUser: Indexed }>(switchboard, BY_HANDLE, { handle: h }), "renownUser").renownUser;
+  for (let attempt = 1; attempt <= 8; attempt++) {
+    await sleep(1500);
+    const original = await lookup(handle);
+    const moved = await lookup(hijacked);
+    const changed = [
+      original?.documentId !== documentId ? "handle (original no longer resolves)" : null,
+      moved?.documentId === documentId ? "handle (hijacked resolves)" : null,
+      (moved ?? original)?.avatar !== avatar ? "avatar" : null,
+    ].filter(Boolean);
+    if (changed.length || attempt === 8) {
+      console.error(`PROBE_BYPASS_POSSIBLE: read model shows changed fields: ${changed.length ? changed.join(", ") : "none yet"}`);
+      return;
+    }
   }
 }
 
-async function run(switchboard: string, app: string, { account, bearer }: Identity, secondIdentity: () => Promise<Identity>): Promise<void> {
+async function run(switchboard: string, app: string, owner: Identity, secondIdentity: () => Promise<Identity>): Promise<void> {
+  const { account, bearer } = owner;
   // 2. The upload route's gates.
   const png = solidPng(64, randomRgb());
   const valid = { purpose: "avatar", mimeType: "image/png", sizeBytes: png.length, sha256: sha256(png) };
@@ -409,7 +478,7 @@ async function run(switchboard: string, app: string, { account, bearer }: Identi
   step("validation", "INVALID_AVATAR and HANDLE_TAKEN as expected");
 
   // 6. Probe: the generic reactor mutation must not let another identity edit the profile.
-  await bypassProbe(switchboard, documentId, await secondIdentity());
+  await bypassProbe(switchboard, documentId, owner, await secondIdentity(), handle, reservation.ref);
 
   // 7. Public media and pages.
   const media = await fetch(`${switchboard}${PACKAGE}/media/${documentId}/avatar`, { redirect: "manual" });
