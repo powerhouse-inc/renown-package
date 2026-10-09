@@ -139,3 +139,22 @@ describe("KyselyStatsIndex app catalog", () => {
     expect(await index.networkActivity(at(0))).toEqual({ apps: 2, activeUsers: 3 });
   });
 });
+
+describe("migrate on an already-migrated schema", () => {
+  it("does not issue the ALTER (no ACCESS EXCLUSIVE lock) a second time", async () => {
+    const statements: string[] = [];
+    const root = new Kysely<any>({
+      dialect: new PGliteDialect(new PGlite()),
+      log: (event) => {
+        statements.push(event.query.sql);
+      },
+    });
+    await sql`create schema "renown-stats"`.execute(root);
+    const db = root.withSchema("renown-stats");
+    await migrate(db); // a fresh table gets its column once
+    statements.length = 0;
+    await migrate(db);
+    expect(statements.some((s) => /alter table/i.test(s))).toBe(false);
+    await root.destroy();
+  });
+});

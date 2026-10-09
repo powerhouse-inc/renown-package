@@ -1,6 +1,7 @@
 import type { IRelationalDb } from "@powerhousedao/reactor-browser";
 import { generateId } from "document-model";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { NETWORK_STATS_FAILURE_BACKOFF_MS } from "../resolvers.js";
 import { pkhDidFor } from "../core/dids.js";
 import {
   CRED_NS,
@@ -158,7 +159,8 @@ describe("renownNetworkStats", () => {
         return h.root.withSchema(namespace);
       },
     } as unknown as IRelationalDb<unknown>;
-    const r = harnessResolvers(h, { now: clock().now, relationalDb });
+    const c = clock();
+    const r = harnessResolvers(h, { now: c.now, relationalDb });
     expect(await failure(r.networkStats())).toEqual({
       code: "SERVICE_UNAVAILABLE",
       field: undefined,
@@ -166,6 +168,7 @@ describe("renownNetworkStats", () => {
     });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("relation does not exist"));
     down = false;
+    c.advance(NETWORK_STATS_FAILURE_BACKOFF_MS); // past the failure backoff
     expect((await r.networkStats()).identities).toBe(0);
   });
 
@@ -174,5 +177,28 @@ describe("renownNetworkStats", () => {
     const r = harnessResolvers(h, { now: clock().now });
     vi.spyOn(r.index, "networkActivity").mockRejectedValue(new Error("db down"));
     expect((await failure(r.networkStats())).code).toBe("SERVICE_UNAVAILABLE");
+  });
+
+  it("fails fast for 5 s after a failure without querying or logging, then retries", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const c = clock();
+    const r = harnessResolvers(h, { now: c.now });
+    const activity = vi.spyOn(r.index, "networkActivity").mockRejectedValueOnce(new Error("db down"));
+    expect((await failure(r.networkStats())).code).toBe("SERVICE_UNAVAILABLE");
+    expect(activity).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    c.advance(NETWORK_STATS_FAILURE_BACKOFF_MS - 1);
+    expect(await failure(r.networkStats())).toEqual({
+      code: "SERVICE_UNAVAILABLE",
+      field: undefined,
+      message: "Stats are temporarily unavailable",
+    });
+    expect(activity).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    c.advance(1);
+    expect((await r.networkStats()).identities).toBe(0);
+    expect(activity).toHaveBeenCalledTimes(2);
   });
 });

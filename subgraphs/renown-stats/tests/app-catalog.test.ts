@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { APP_CATEGORIES_TTL_MS } from "../resolvers.js";
 import { failure, harnessResolvers, openHarness, registerApp, resetHarness, type Harness } from "./harness.js";
 
 const APP = "did:key:zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169";
@@ -99,5 +100,69 @@ describe("appProfileCategories", () => {
       field: undefined,
       message: "Stats are temporarily unavailable",
     });
+  });
+});
+
+describe("appProfileCategories cache", () => {
+  const T0 = new Date("2026-10-09T12:00:00Z");
+  function clock() {
+    let t = T0.getTime();
+    return { now: () => new Date(t), advance: (ms: number) => (t += ms) };
+  }
+
+  it("serves one scan within the TTL and recomputes after it", async () => {
+    const c = clock();
+    const r = harnessResolvers(h, { now: c.now });
+    const scan = vi.spyOn(r.index, "appProfileCategories");
+    await r.index.claimAppProfile({ appDid: APP, documentId: "d1", publisherAddress: "0xabc" }, T0);
+    await r.index.setAppCategory(APP, "DeFi");
+    expect(await r.appProfileCategories()).toEqual([{ category: "DeFi", count: 1 }]);
+    await r.index.claimAppProfile({ appDid: APP_2, documentId: "d2", publisherAddress: "0xabc" }, T0);
+    await r.index.setAppCategory(APP_2, "Games");
+    c.advance(APP_CATEGORIES_TTL_MS - 1);
+    expect(await r.appProfileCategories()).toEqual([{ category: "DeFi", count: 1 }]);
+    expect(scan).toHaveBeenCalledTimes(1);
+    c.advance(1);
+    expect(await r.appProfileCategories()).toHaveLength(2);
+    expect(scan).toHaveBeenCalledTimes(2);
+  });
+
+  it("shares one scan between concurrent requests", async () => {
+    const r = harnessResolvers(h, { now: clock().now });
+    const scan = vi.spyOn(r.index, "appProfileCategories");
+    await Promise.all([r.appProfileCategories(), r.appProfileCategories()]);
+    expect(scan).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cache a failure", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const r = harnessResolvers(h, { now: clock().now });
+    const scan = vi.spyOn(r.index, "appProfileCategories").mockRejectedValueOnce(new Error("db down"));
+    expect((await failure(r.appProfileCategories())).code).toBe("SERVICE_UNAVAILABLE");
+    expect(await r.appProfileCategories()).toEqual([]);
+    expect(scan).toHaveBeenCalledTimes(2);
+  });
+
+  it("is invalidated by a save that changes a category", async () => {
+    const c = clock();
+    const r = harnessResolvers(h, { now: c.now });
+    await r.upsert({ appDid: APP, name: "One", category: "DeFi" });
+    expect(await r.appProfileCategories()).toEqual([{ category: "DeFi", count: 1 }]);
+    await r.upsert({ appDid: APP, category: "Games" });
+    expect(await r.appProfileCategories()).toEqual([{ category: "Games", count: 1 }]);
+  });
+});
+
+describe("upsertAppProfile category index failure", () => {
+  it("reports the app index, not the image index, and logs its own line", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const r = harnessResolvers(h);
+    vi.spyOn(r.index, "setAppCategory").mockRejectedValue(new Error("db down"));
+    expect(await failure(r.upsert({ appDid: APP, name: "One", category: "DeFi" }))).toEqual({
+      code: "SERVICE_UNAVAILABLE",
+      field: undefined,
+      message: "App index is temporarily unavailable",
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("app category index write failed (db down)"));
   });
 });

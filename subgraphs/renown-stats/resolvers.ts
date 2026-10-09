@@ -82,6 +82,10 @@ const DEFAULT_PAGE = 20;
 const MAX_PAGE = 50;
 /** How long renownNetworkStats serves one computation. */
 export const NETWORK_STATS_TTL_MS = 300_000;
+/** How long a failed renownNetworkStats read is answered without querying again. */
+export const NETWORK_STATS_FAILURE_BACKOFF_MS = 5_000;
+/** How long appProfileCategories serves one computation. */
+export const APP_CATEGORIES_TTL_MS = 60_000;
 /** Which upsert argument holds which upload purpose. */
 const IMAGE_FIELDS = [
   ["logoRef", "logo"],
@@ -312,6 +316,13 @@ export function createResolvers(
   /** The last renownNetworkStats answer, until expiresAt (ms); failures are never cached. */
   let networkStats: { value: NetworkStatsOutput; expiresAt: number } | undefined;
   let networkStatsLoad: Promise<NetworkStatsOutput> | undefined;
+  /** Until this time (ms) a request fails fast after a failed computation. */
+  let networkStatsBackoffUntil = 0;
+  /** The last appProfileCategories answer, until expiresAt (ms); failures are never cached. */
+  let appCategories: { value: AppCategoryCount[]; expiresAt: number } | undefined;
+  let appCategoriesLoad: Promise<AppCategoryCount[]> | undefined;
+  /** Bumped when a save changes a category, so a load already in flight is not cached. */
+  let appCategoriesGeneration = 0;
 
   function requireIndex(): StatsIndex {
     const index = deps.index();
@@ -798,8 +809,27 @@ export function createResolvers(
 
       appProfileCategories: async (): Promise<AppCategoryCount[]> => {
         const index = requireIndex();
+        if (appCategories && now().getTime() < appCategories.expiresAt) {
+          return appCategories.value;
+        }
+        // Concurrent requests share one scan.
+        const generation = appCategoriesGeneration;
+        appCategoriesLoad ??= index
+          .appProfileCategories()
+          .then((value) => {
+            if (generation === appCategoriesGeneration) {
+              appCategories = {
+                value,
+                expiresAt: now().getTime() + APP_CATEGORIES_TTL_MS,
+              };
+            }
+            return value;
+          })
+          .finally(() => {
+            appCategoriesLoad = undefined;
+          });
         try {
-          return await index.appProfileCategories();
+          return await appCategoriesLoad;
         } catch (error) {
           throw unavailable(error);
         }
@@ -810,6 +840,12 @@ export function createResolvers(
         if (networkStats && now().getTime() < networkStats.expiresAt) {
           return networkStats.value;
         }
+        // After a failure, answer the same error without querying or logging.
+        if (now().getTime() < networkStatsBackoffUntil) {
+          throw new GraphQLError("Stats are temporarily unavailable", {
+            extensions: { code: "SERVICE_UNAVAILABLE" },
+          });
+        }
         // Concurrent requests share one computation.
         networkStatsLoad ??= computeNetworkStats(index)
           .then((value) => {
@@ -818,6 +854,11 @@ export function createResolvers(
               expiresAt: new Date(value.updatedAt).getTime() + NETWORK_STATS_TTL_MS,
             };
             return value;
+          })
+          .catch((error: unknown) => {
+            networkStatsBackoffUntil =
+              now().getTime() + NETWORK_STATS_FAILURE_BACKOFF_MS;
+            throw error;
           })
           .finally(() => {
             networkStatsLoad = undefined;
@@ -1032,6 +1073,7 @@ export function createResolvers(
           if (actions.length > 0) await execute(entry.documentId, actions);
           // Every save heals the image and category index from the resulting document, so a
           // failed write on an earlier save is repaired by the next one.
+          let category: string | null = null;
           try {
             const saved = await reactorClient.get<RenownAppProfileDocument>(
               entry.documentId,
@@ -1047,7 +1089,7 @@ export function createResolvers(
               },
               now(),
             );
-            await index.setAppCategory(appDid, state.category ?? null);
+            category = state.category ?? null;
           } catch (error) {
             // The document is already saved; a retry of the save repairs the index.
             const reason =
@@ -1059,6 +1101,21 @@ export function createResolvers(
               extensions: { code: "SERVICE_UNAVAILABLE" },
             });
           }
+          try {
+            await index.setAppCategory(appDid, category);
+          } catch (error) {
+            const reason =
+              error instanceof Error ? error.message : String(error);
+            console.warn(
+              `[renown-stats] app category index write failed (${reason})`,
+            );
+            throw new GraphQLError("App index is temporarily unavailable", {
+              extensions: { code: "SERVICE_UNAVAILABLE" },
+            });
+          }
+          // The category may have changed: drop the cached chip counts.
+          appCategories = undefined;
+          appCategoriesGeneration += 1;
         });
         return true;
       },
