@@ -30,7 +30,7 @@ Ownership is anchored on the workload identity, never on a delegation alone
 - CI workload tokens (those carrying the `vetra` claim) are refused in
   `X-Renown-App-Token`, whatever their audience; use `issueAppStatsToken`.
 
-Reads are public: `appProfile`, `appProfilesByPublisher` and `appProfiles(limit, after)` (newest first, `limit` 1–50, opaque `next` cursor). Profile fields: `name, tagline, logo` (legacy URL), `website, description` (markdown subset, ≤ 2000), `category` (≤ 40), `logoRef, coverRef, links` (≤ 8). Stats are current values per (app, metric): resending an unchanged value is a no-op (no operation is appended).
+Reads are public: `appProfile`, `appProfilesByPublisher`, `appProfiles(limit, after, category)` (newest first, `limit` 1–50, opaque `next` cursor; `category` matches case-insensitively, blank = all), `appProfileCategories` and `renownNetworkStats`. Profile fields: `name, tagline, logo` (legacy URL), `website, description` (markdown subset, ≤ 2000), `category` (≤ 40), `logoRef, coverRef, links` (≤ 8). Stats are current values per (app, metric): resending an unchanged value is a no-op (no operation is appended).
 
 App tokens go in `X-Renown-App-Token`, not `Authorization`: the host verifies
 `Authorization` bearers without an audience and answers 401 to any token that
@@ -77,3 +77,11 @@ Every accepted `reportUserStat` (changed value or not) also upserts `app_metric_
 `userStats(userDid)` now carries the app's `appName`, `appDocumentId`, `appHasLogo`, `appLogo` and, for metrics the app declares public, `label` and `unit`. Metrics declared private are omitted; undeclared ones are returned without a label.
 
 `reportUserStat` may answer `SERVICE_UNAVAILABLE` after the value was already stored (the aggregate write failed); retrying is safe. Public reads answer `SERVICE_UNAVAILABLE` ("Stats are temporarily unavailable") when the index or read model fails, and `userStats` withholds an app's rows entirely when its profile exists but cannot be read.
+
+## Catalog and network reads (site polish)
+
+`upsertAppProfile` copies the saved category into `app_profile_documents.category` (trimmed, null when none) in the same step as the image index; profiles from before this were copied once at startup (job `app-profile-category-backfill-v1` in `renown_stats_jobs`; retried on the next start until every profile document was read).
+
+- `appProfiles(category)` filters on `lower(category)`; the cursor works within the same filter.
+- `appProfileCategories` groups case-insensitively: `{ category, count }`, label = smallest spelling (byte order), ordered count desc then name; empty categories are left out.
+- `renownNetworkStats`: `identities` = distinct lower-cased `eth_address` in `renown_user`; `apps` = app profiles; `activeCredentials` = distinct `credential_id` of `renown_credential` rows with `revoked = false` and `expiration_date` null or in the future; `activeUsers30d` = distinct users with any `app_metric_values` row updated in the last 30 days (all apps; the same source as `appStats.activeUsers30d`); `updatedAt` = when computed. Cached per replica for 300 s; concurrent requests share one computation; a failed read answers `SERVICE_UNAVAILABLE` and is not cached.

@@ -87,3 +87,21 @@ failure). With a throwaway wallet it:
 8. Clears the handle and avatar, then revokes the credentials.
 
 Prints only the wallet address and the profile document id.
+
+## network-stats.ts
+
+Read-only check of the renown.id site-polish reads (`renownNetworkStats`,
+`appProfileCategories`, `appProfiles(category)`) on a switchboard:
+
+```sh
+node scripts/smoke/network-stats.ts                                                  # Renown staging
+node scripts/smoke/network-stats.ts --switchboard https://switchboard.renown.vetra.io # production
+```
+
+Anonymous queries only, so no `--allow-prod` and nothing to clean up. It
+checks the network counts are non-negative integers with an ISO `updatedAt`
+(and reports whether a second request hit the 300 s cache — several replicas
+each keep their own), that categories are ordered count desc then name, that a
+blank category equals no filter, and that the first category, asked in swapped
+case, pages to the end with only matching profiles and at most its count.
+Exits 1 on any failure.
