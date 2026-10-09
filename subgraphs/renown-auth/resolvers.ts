@@ -12,7 +12,19 @@ import {
 import {
   actions as userActions,
   renownUserDocumentType,
+  type RenownUserDocument,
 } from "../../document-models/renown-user/index.js";
+import { avatarProblem } from "../../media/avatar.js";
+import type { MediaBackend } from "../../media/backend.js";
+import { mediaBackend } from "../../media/slot.js";
+import { createHandleClaims, type HandleClaims } from "./core/handle-claims.js";
+import {
+  identityActions,
+  linkActions,
+  ProfileInputError,
+  toIdentityPatch,
+  type IdentityPatch,
+} from "./core/profile-patch.js";
 import { issuerAddressOf, validateCredentialInput } from "./core/credential-input.js";
 import { createRateLimiter } from "./core/rate-limit.js";
 import {
@@ -21,7 +33,7 @@ import {
   revokeMessage,
   verifySignedMessage,
 } from "./core/signed-message.js";
-import { findCredentialDocs, findNewestProfileDoc, type ReadModelDb } from "./lookups.js";
+import { findCredentialDocs, findHandleOwner, findNewestProfileDoc, type ReadModelDb } from "./lookups.js";
 import { verifyMessageOnChain, verifyTypedDataOnChain } from "./core/smart-wallet.js";
 
 // Signed revoke/profile messages carry no chain; smart-wallet signatures over
@@ -51,11 +63,14 @@ interface SignedMessage {
 }
 
 export interface ResolverDeps {
-  reactorClient: Pick<IReactorClient, "createEmpty" | "execute">;
+  reactorClient: Pick<IReactorClient, "createEmpty" | "execute" | "get">;
   relationalDb: ReadModelDb;
   now?: () => Date;
   issuanceRateLimiter?: RateLimiter;
   profileRateLimiter?: RateLimiter;
+  /** Where avatar uploads are checked; defaults to the backend the media processor published. */
+  media?: () => MediaBackend | null;
+  handleClaims?: HandleClaims;
 }
 
 type RateLimiter = { take(key: string, now?: number): boolean };
@@ -78,6 +93,11 @@ interface UpsertProfileArgs {
   address: string;
   username?: string | null;
   userImage?: string | null;
+  displayName?: string | null;
+  handle?: string | null;
+  bio?: string | null;
+  links?: { id: string; label: string; url: string }[] | null;
+  avatar?: string | null;
   signature?: string | null;
   timestamp?: string | null;
 }
@@ -88,6 +108,11 @@ function forbidden(): GraphQLError {
 
 function invalidRequest(message: string): GraphQLError {
   return new GraphQLError(message, { extensions: { code: "BAD_USER_INPUT" } });
+}
+
+/** A profile field the caller must fix; `field` lets a form show it inline. */
+function fieldError(code: string, field: string, message: string): GraphQLError {
+  return new GraphQLError(message, { extensions: { code, field } });
 }
 
 function rateLimited(): GraphQLError {
@@ -215,6 +240,46 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
   const now = deps.now ?? (() => new Date());
   const issuanceRateLimiter = deps.issuanceRateLimiter ?? createRateLimiter(WRITE_LIMIT, WRITE_WINDOW_MS);
   const profileRateLimiter = deps.profileRateLimiter ?? createRateLimiter(WRITE_LIMIT, WRITE_WINDOW_MS);
+  const media = deps.media ?? mediaBackend;
+  const handleClaims = deps.handleClaims ?? createHandleClaims();
+
+  /** Validates the raw identity fields into a patch, as BAD_USER_INPUT naming the field. */
+  function identityPatch(args: UpsertProfileArgs): IdentityPatch {
+    try {
+      return toIdentityPatch(args);
+    } catch (error) {
+      if (error instanceof ProfileInputError) throw fieldError("BAD_USER_INPUT", error.field, error.message);
+      throw error;
+    }
+  }
+
+  /** HANDLE_TAKEN unless `handle` is free or already this profile's. */
+  async function assertHandleFree(handle: string, documentId: string | undefined): Promise<void> {
+    const owner = handleClaims.holder(handle, now().getTime()) ?? (await findHandleOwner(relationalDb, handle));
+    if (owner !== undefined && owner !== documentId) {
+      throw fieldError("HANDLE_TAKEN", "handle", `The handle "${handle}" is taken`);
+    }
+  }
+
+  /** INVALID_AVATAR unless `ref` is a stored image within the avatar limits. */
+  async function assertAvatar(ref: string): Promise<void> {
+    const backend = media();
+    if (!backend) {
+      throw new GraphQLError("Avatar uploads are not available", { extensions: { code: "SERVICE_UNAVAILABLE" } });
+    }
+    const problem = await avatarProblem(ref, backend);
+    if (problem) throw fieldError("INVALID_AVATAR", "avatar", `Invalid avatar: ${problem}`);
+  }
+
+  /** The actions that bring `documentId`'s links to `desired` (a new profile has none). */
+  async function linkPatch(documentId: string | undefined, desired: IdentityPatch["links"]): Promise<Action[]> {
+    if (desired === undefined) return [];
+    if (documentId === undefined) return linkActions([], desired);
+    const document = await reactorClient.get<RenownUserDocument>(documentId);
+    // Profiles from before links existed have no list at all.
+    const current = (document.state.global as { links?: typeof desired }).links ?? [];
+    return linkActions(current, desired);
+  }
 
   /** Applies `actions` and throws if the reactor rejected any of them. */
   async function execute(documentId: string, actions: Action[]): Promise<void> {
@@ -324,12 +389,26 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
           throw invalidRequest("Invalid request: address is not a valid Ethereum address");
         }
         assertProfileBounds({ username, userImage });
+        const patch = identityPatch(args);
 
+        // The signature covers the fields exactly as sent, before any trimming.
         await authorizeAddress(
           ctx,
           address,
           {
-            message: await profileMessage(address, { username, userImage }, timestamp ?? ""),
+            message: await profileMessage(
+              address,
+              {
+                username,
+                userImage,
+                displayName: args.displayName,
+                handle: args.handle,
+                bio: args.bio,
+                links: args.links,
+                avatar: args.avatar,
+              },
+              timestamp ?? "",
+            ),
             signature,
             timestamp,
           },
@@ -340,11 +419,18 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
         if (!profileRateLimiter.take(lowercased, now().getTime())) throw rateLimited();
 
         const existing = await findNewestProfileDoc(relationalDb, lowercased);
+        if (patch.handle) await assertHandleFree(patch.handle, existing);
+        if (patch.avatar) await assertAvatar(patch.avatar);
+        const links = await linkPatch(existing, patch.links);
+
         const documentId = existing ?? (await create(renownUserDocumentType));
         const actions = [
           ...(existing ? [] : [userActions.setEthAddress({ ethAddress: lowercased })]),
           ...profileActions({ username, userImage }),
+          ...identityActions(patch),
+          ...links,
         ];
+        if (patch.handle) handleClaims.claim(patch.handle, documentId, now().getTime());
         if (actions.length > 0) await execute(documentId, actions);
         return documentId;
       },

@@ -60,3 +60,16 @@ export async function findNewestProfileDoc(
     .executeTakeFirst();
   return row?.document_id;
 }
+
+/**
+ * The profile document holding `handle` (case-insensitive), if any. The
+ * unique index on LOWER(handle) allows at most one.
+ */
+export async function findHandleOwner(db: ReadModelDb, handle: string): Promise<string | undefined> {
+  const row = await RenownUserProcessor.query<RenownUserDB>("renown-user", db)
+    .selectFrom("renown_user")
+    .select("document_id")
+    .where((eb) => eb(eb.fn("LOWER", ["renown_user.handle"]), "=", handle.toLowerCase()))
+    .executeTakeFirst();
+  return row?.document_id;
+}
