@@ -4,16 +4,21 @@ import type { Reducer, StateReducer } from "document-model";
 import { createReducer, isDocumentAction } from "document-model";
 import type { RenownAppProfilePHState } from "document-models/renown-app-profile/v1";
 
+import { renownAppProfileMetricsOperations } from "../src/reducers/metrics.js";
 import { renownAppProfileProfileOperations } from "../src/reducers/profile.js";
 
 import {
   AddLinkInputSchema,
+  AddMetricInputSchema,
   RemoveLinkInputSchema,
+  RemoveMetricInputSchema,
   ReorderLinksInputSchema,
+  ReorderMetricsInputSchema,
   SetAppDidInputSchema,
   SetProfileInputSchema,
   SetPublisherDidInputSchema,
   UpdateLinkInputSchema,
+  UpdateMetricInputSchema,
 } from "./schema/zod.js";
 
 const schemaMemo = new Map<() => unknown, unknown>();
@@ -112,6 +117,54 @@ const stateReducer: StateReducer<RenownAppProfilePHState> = (
       memoizedSchema(ReorderLinksInputSchema).parse(action.input);
 
       renownAppProfileProfileOperations.reorderLinksOperation(
+        (state as any)[action.scope],
+        action as any,
+        dispatch,
+      );
+
+      break;
+    }
+
+    case "ADD_METRIC": {
+      memoizedSchema(AddMetricInputSchema).parse(action.input);
+
+      renownAppProfileMetricsOperations.addMetricOperation(
+        (state as any)[action.scope],
+        action as any,
+        dispatch,
+      );
+
+      break;
+    }
+
+    case "UPDATE_METRIC": {
+      memoizedSchema(UpdateMetricInputSchema).parse(action.input);
+
+      renownAppProfileMetricsOperations.updateMetricOperation(
+        (state as any)[action.scope],
+        action as any,
+        dispatch,
+      );
+
+      break;
+    }
+
+    case "REMOVE_METRIC": {
+      memoizedSchema(RemoveMetricInputSchema).parse(action.input);
+
+      renownAppProfileMetricsOperations.removeMetricOperation(
+        (state as any)[action.scope],
+        action as any,
+        dispatch,
+      );
+
+      break;
+    }
+
+    case "REORDER_METRICS": {
+      memoizedSchema(ReorderMetricsInputSchema).parse(action.input);
+
+      renownAppProfileMetricsOperations.reorderMetricsOperation(
         (state as any)[action.scope],
         action as any,
         dispatch,

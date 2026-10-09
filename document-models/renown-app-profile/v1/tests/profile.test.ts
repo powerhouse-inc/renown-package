@@ -56,6 +56,7 @@ describe("RenownAppProfile profile module", () => {
       logoRef: null,
       coverRef: null,
       links: [],
+      metrics: [],
     });
   });
 
