@@ -64,4 +64,25 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("name", "text", (col) => col.primaryKey())
     .addColumn("completed_at", "timestamptz", (col) => col.notNull())
     .execute();
+
+  // Site polish: each profile's category (trimmed, null when none), copied
+  // from the document on every save, for the category filter and counts.
+  // ADD COLUMN IF NOT EXISTS takes an ACCESS EXCLUSIVE lock even when the
+  // column exists, which can stall startup behind another replica; probe first
+  // and alter only a table created before the column existed.
+  const hasCategory = await db
+    .selectFrom("app_profile_documents")
+    .select("category")
+    .limit(0)
+    .execute()
+    .then(
+      () => true,
+      () => false,
+    );
+  if (!hasCategory) {
+    await db.schema
+      .alterTable("app_profile_documents")
+      .addColumn("category", "text", (col) => col.ifNotExists())
+      .execute();
+  }
 }

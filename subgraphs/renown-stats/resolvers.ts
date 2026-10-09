@@ -51,12 +51,15 @@ import {
 } from "./core/dids.js";
 import { createKeyedLock } from "./core/keyed-lock.js";
 import {
+  activeCredentialCount,
   contributorProfiles,
   hasDelegation,
+  identityCount,
   workloadOwner,
   type ContributorProfile,
 } from "./lookups.js";
 import type {
+  AppCategoryCount,
   AppProfileCursor,
   AppProfileEntry,
   StatsIndex,
@@ -77,6 +80,12 @@ const MAX_LENGTH = {
 /** appProfiles page sizes. */
 const DEFAULT_PAGE = 20;
 const MAX_PAGE = 50;
+/** How long renownNetworkStats serves one computation. */
+export const NETWORK_STATS_TTL_MS = 300_000;
+/** How long a failed renownNetworkStats read is answered without querying again. */
+export const NETWORK_STATS_FAILURE_BACKOFF_MS = 5_000;
+/** How long appProfileCategories serves one computation. */
+export const APP_CATEGORIES_TTL_MS = 60_000;
 /** Which upsert argument holds which upload purpose. */
 const IMAGE_FIELDS = [
   ["logoRef", "logo"],
@@ -184,6 +193,14 @@ interface AppStatsOutput {
   totalUsers: number;
   metrics: AppMetricStatOutput[];
   updatedAt: string | null;
+}
+
+interface NetworkStatsOutput {
+  identities: number;
+  apps: number;
+  activeCredentials: number;
+  activeUsers30d: number;
+  updatedAt: string;
 }
 
 /** What stats readers need of an app's profile. */
@@ -296,6 +313,16 @@ export function createResolvers(
   const registrationToken = deps.registrationToken ?? (() => null);
   const media = deps.media ?? mediaBackend;
   const lock = createKeyedLock();
+  /** The last renownNetworkStats answer, until expiresAt (ms); failures are never cached. */
+  let networkStats: { value: NetworkStatsOutput; expiresAt: number } | undefined;
+  let networkStatsLoad: Promise<NetworkStatsOutput> | undefined;
+  /** Until this time (ms) a request fails fast after a failed computation. */
+  let networkStatsBackoffUntil = 0;
+  /** The last appProfileCategories answer, until expiresAt (ms); failures are never cached. */
+  let appCategories: { value: AppCategoryCount[]; expiresAt: number } | undefined;
+  let appCategoriesLoad: Promise<AppCategoryCount[]> | undefined;
+  /** Bumped when a save changes a category, so a load already in flight is not cached. */
+  let appCategoriesGeneration = 0;
 
   function requireIndex(): StatsIndex {
     const index = deps.index();
@@ -627,6 +654,30 @@ export function createResolvers(
     });
   }
 
+  /** Fresh network-wide counts, read from three namespaces in parallel. */
+  async function computeNetworkStats(
+    index: StatsIndex,
+  ): Promise<NetworkStatsOutput> {
+    const at = now();
+    const since = new Date(at.getTime() - ACTIVE_WINDOW_MS);
+    try {
+      const [activity, identities, activeCredentials] = await Promise.all([
+        index.networkActivity(since),
+        identityCount(relationalDb),
+        activeCredentialCount(relationalDb, at),
+      ]);
+      return {
+        identities,
+        apps: activity.apps,
+        activeCredentials,
+        activeUsers30d: activity.activeUsers,
+        updatedAt: at.toISOString(),
+      };
+    } catch (error) {
+      throw unavailable(error);
+    }
+  }
+
   function contributorOutput(
     top: { userDid: string; value: number },
     profiles: Map<string, ContributorProfile>,
@@ -727,14 +778,24 @@ export function createResolvers(
 
       appProfiles: async (
         _: unknown,
-        args: { limit?: number | null; after?: string | null },
+        args: {
+          limit?: number | null;
+          after?: string | null;
+          category?: string | null;
+        },
       ): Promise<{ items: AppProfileOutput[]; next: string | null }> => {
         const limit = args.limit ?? DEFAULT_PAGE;
         if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE) {
           throw invalidRequest(`limit must be 1-${MAX_PAGE}`);
         }
         const after = args.after ? decodeCursor(args.after) : undefined;
-        const entries = await requireIndex().appProfilesPage(limit + 1, after);
+        // Stored categories are trimmed; blank means no filter.
+        const category = args.category?.trim() || undefined;
+        const entries = await requireIndex().appProfilesPage(
+          limit + 1,
+          after,
+          category,
+        );
         const page = entries.slice(0, limit);
         const last = page.at(-1);
         return {
@@ -744,6 +805,65 @@ export function createResolvers(
               ? encodeCursor({ createdAt: last.createdAt, appDid: last.appDid })
               : null,
         };
+      },
+
+      appProfileCategories: async (): Promise<AppCategoryCount[]> => {
+        const index = requireIndex();
+        if (appCategories && now().getTime() < appCategories.expiresAt) {
+          return appCategories.value;
+        }
+        // Concurrent requests share one scan.
+        const generation = appCategoriesGeneration;
+        appCategoriesLoad ??= index
+          .appProfileCategories()
+          .then((value) => {
+            if (generation === appCategoriesGeneration) {
+              appCategories = {
+                value,
+                expiresAt: now().getTime() + APP_CATEGORIES_TTL_MS,
+              };
+            }
+            return value;
+          })
+          .finally(() => {
+            appCategoriesLoad = undefined;
+          });
+        try {
+          return await appCategoriesLoad;
+        } catch (error) {
+          throw unavailable(error);
+        }
+      },
+
+      renownNetworkStats: async (): Promise<NetworkStatsOutput> => {
+        const index = requireIndex();
+        if (networkStats && now().getTime() < networkStats.expiresAt) {
+          return networkStats.value;
+        }
+        // After a failure, answer the same error without querying or logging.
+        if (now().getTime() < networkStatsBackoffUntil) {
+          throw new GraphQLError("Stats are temporarily unavailable", {
+            extensions: { code: "SERVICE_UNAVAILABLE" },
+          });
+        }
+        // Concurrent requests share one computation.
+        networkStatsLoad ??= computeNetworkStats(index)
+          .then((value) => {
+            networkStats = {
+              value,
+              expiresAt: new Date(value.updatedAt).getTime() + NETWORK_STATS_TTL_MS,
+            };
+            return value;
+          })
+          .catch((error: unknown) => {
+            networkStatsBackoffUntil =
+              now().getTime() + NETWORK_STATS_FAILURE_BACKOFF_MS;
+            throw error;
+          })
+          .finally(() => {
+            networkStatsLoad = undefined;
+          });
+        return networkStatsLoad;
       },
 
       appStats: async (
@@ -951,8 +1071,9 @@ export function createResolvers(
             metrics,
           );
           if (actions.length > 0) await execute(entry.documentId, actions);
-          // Every save heals the image index from the resulting document, so a
+          // Every save heals the image and category index from the resulting document, so a
           // failed write on an earlier save is repaired by the next one.
+          let category: string | null = null;
           try {
             const saved = await reactorClient.get<RenownAppProfileDocument>(
               entry.documentId,
@@ -968,6 +1089,7 @@ export function createResolvers(
               },
               now(),
             );
+            category = state.category ?? null;
           } catch (error) {
             // The document is already saved; a retry of the save repairs the index.
             const reason =
@@ -979,6 +1101,21 @@ export function createResolvers(
               extensions: { code: "SERVICE_UNAVAILABLE" },
             });
           }
+          try {
+            await index.setAppCategory(appDid, category);
+          } catch (error) {
+            const reason =
+              error instanceof Error ? error.message : String(error);
+            console.warn(
+              `[renown-stats] app category index write failed (${reason})`,
+            );
+            throw new GraphQLError("App index is temporarily unavailable", {
+              extensions: { code: "SERVICE_UNAVAILABLE" },
+            });
+          }
+          // The category may have changed: drop the cached chip counts.
+          appCategories = undefined;
+          appCategoriesGeneration += 1;
         });
         return true;
       },

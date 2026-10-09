@@ -8,6 +8,7 @@ import {
 } from "./core/config.js";
 import { createResolvers } from "./resolvers.js";
 import { backfillAppMetricValues } from "./core/backfill.js";
+import { backfillAppCategories } from "./core/category-backfill.js";
 import { schema } from "./schema.js";
 import { KyselyStatsIndex } from "./store/kysely.js";
 import { STATS_NAMESPACE } from "./store/media-lookup.js";
@@ -63,19 +64,18 @@ export class RenownStatsSubgraph extends BaseSubgraph {
       const index = new KyselyStatsIndex(db);
       this.#index = index;
       // One-time and idempotent: app_metric_values from the user-stats
-      // documents written before Phase 3. In the background, so the host's
-      // startup never waits for it.
-      this.#backfill = backfillAppMetricValues({
-        index,
-        reactorClient: this.reactorClient,
-        now: () => new Date(),
-      }).then(
-        () => undefined,
-        (error: unknown) => {
-          const reason = error instanceof Error ? error.message : "unknown error";
-          console.warn(`[renown-stats] metric backfill failed (${reason}); retried on the next start`);
-        },
-      );
+      // documents written before Phase 3, then each profile's category. In
+      // the background, so the host's startup never waits for them; one
+      // failing never stops the other.
+      const deps = { index, reactorClient: this.reactorClient, now: () => new Date() };
+      const settle = (what: string) => (error: unknown) => {
+        const reason = error instanceof Error ? error.message : "unknown error";
+        console.warn(`[renown-stats] ${what} backfill failed (${reason}); retried on the next start`);
+      };
+      this.#backfill = backfillAppMetricValues(deps)
+        .then(() => undefined, settle("metric"))
+        .then(() => backfillAppCategories(deps))
+        .then(() => undefined, settle("category"));
     } catch (error) {
       const reason = error instanceof Error ? error.message : "unknown error";
       console.error(

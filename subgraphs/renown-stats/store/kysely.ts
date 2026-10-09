@@ -1,6 +1,7 @@
 import { sql } from "kysely";
 import type {
   AppActivity,
+  AppCategoryCount,
   AppImageField,
   AppImagesPatch,
   AppProfileCursor,
@@ -8,6 +9,7 @@ import type {
   AppProfileListEntry,
   MetricAggregate,
   MetricValue,
+  NetworkActivity,
   StatsIndex,
   StatsKysely,
   UserStatsDocumentEntry,
@@ -107,7 +109,7 @@ export class KyselyStatsIndex implements StatsIndex {
     return field === "logo" ? row.logo_ref : row.cover_ref;
   }
 
-  async appProfilesPage(limit: number, after?: AppProfileCursor): Promise<AppProfileListEntry[]> {
+  async appProfilesPage(limit: number, after?: AppProfileCursor, category?: string): Promise<AppProfileListEntry[]> {
     let query = this.db
       .selectFrom("app_profile_documents")
       .select(["app_did", "document_id", "publisher_address", "created_at"])
@@ -122,6 +124,9 @@ export class KyselyStatsIndex implements StatsIndex {
         ]),
       );
     }
+    if (category !== undefined) {
+      query = query.where((eb) => eb(eb.fn("lower", ["category"]), "=", eb.fn("lower", [eb.val(category.trim())])));
+    }
     const rows = await query.execute();
     return rows.map((row) => ({
       appDid: row.app_did,
@@ -129,6 +134,45 @@ export class KyselyStatsIndex implements StatsIndex {
       publisherAddress: row.publisher_address,
       createdAt: new Date(row.created_at),
     }));
+  }
+
+  async setAppCategory(appDid: string, category: string | null): Promise<void> {
+    await this.db
+      .updateTable("app_profile_documents")
+      .set({ category: category?.trim() || null })
+      .where("app_did", "=", appDid)
+      .execute();
+  }
+
+  async appProfileCategories(): Promise<AppCategoryCount[]> {
+    // Grouped case-insensitively (the filter is); "C" collation keeps the
+    // label and the order the same whatever the database's locale.
+    const rows = await this.db
+      .selectFrom("app_profile_documents")
+      .select([
+        sql<string>`min(category collate "C")`.as("label"),
+        sql<number>`count(*)::int`.as("count"),
+      ])
+      .where("category", "is not", null)
+      .where("category", "<>", "")
+      .groupBy(sql`lower(category)`)
+      .orderBy(sql`count(*)`, "desc")
+      .orderBy(sql`lower(category) collate "C"`, "asc")
+      .execute();
+    return rows.map((row) => ({ category: row.label, count: Number(row.count) }));
+  }
+
+  async networkActivity(since: Date): Promise<NetworkActivity> {
+    const apps = await this.db
+      .selectFrom("app_profile_documents")
+      .select(sql<number>`count(*)::int`.as("apps"))
+      .executeTakeFirstOrThrow();
+    const active = await this.db
+      .selectFrom("app_metric_values")
+      .select(sql<number>`count(distinct user_did)::int`.as("users"))
+      .where("updated_at", ">=", since)
+      .executeTakeFirstOrThrow();
+    return { apps: Number(apps.apps), activeUsers: Number(active.users) };
   }
 
   async recordMetricValues(values: readonly MetricValue[]): Promise<void> {

@@ -111,6 +111,27 @@ export const schema: DocumentNode = gql`
     next: String
   }
 
+  "A category used by app profiles, and how many carry it (case-insensitively)."
+  type AppProfileCategory {
+    "The smallest spelling (byte order) among the profiles that carry it."
+    category: String!
+    count: Int!
+  }
+
+  "Network-wide counts, recomputed at most every 300 s."
+  type RenownNetworkStats {
+    "Distinct wallets (lower-cased) with a Renown profile."
+    identities: Int!
+    "App profiles."
+    apps: Int!
+    "Unrevoked credentials with no expiry or an expiry in the future (by credential id)."
+    activeCredentials: Int!
+    "Distinct users any app reported a stat for in the last 30 days."
+    activeUsers30d: Int!
+    "ISO time the counts were computed."
+    updatedAt: String!
+  }
+
   input AppProfileLinkInput {
     id: String!
     label: String!
@@ -135,8 +156,16 @@ export const schema: DocumentNode = gql`
     userStats(userDid: String!): [UserStat!]!
     appProfile(appDid: String!): AppProfile
     appProfilesByPublisher(publisherDid: String!): [AppProfile!]!
-    "Every app profile, newest first. limit 1-50 (default 20)."
-    appProfiles(limit: Int, after: String): AppProfilePage!
+    """
+    Every app profile, newest first. limit 1-50 (default 20). category: only
+    profiles whose category equals it case-insensitively (trimmed); blank or
+    absent = all. Pass the same category with after.
+    """
+    appProfiles(limit: Int, after: String, category: String): AppProfilePage!
+    "Non-empty categories of app profiles: count desc, then name."
+    appProfileCategories: [AppProfileCategory!]!
+    "Network-wide counts; SERVICE_UNAVAILABLE when a read model cannot be read."
+    renownNetworkStats: RenownNetworkStats!
     "Public stats of an app; null when it has neither a profile nor any reported value."
     appStats(appDid: String!): AppStats
   }
