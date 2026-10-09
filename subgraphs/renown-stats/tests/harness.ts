@@ -202,6 +202,15 @@ export const relayed = (address = OWNER): Ctx => ({
   headers: { [REGISTRAR_HEADER]: TOKEN },
 });
 
+/** What renownNetworkStats answers. */
+export interface NetworkStatsOut {
+  identities: number;
+  apps: number;
+  activeCredentials: number;
+  activeUsers30d: number;
+  updatedAt: string;
+}
+
 /** Resolvers over the harness. `now` defaults to a clock that ticks one second per call. */
 export function harnessResolvers(
   h: Harness,
@@ -235,6 +244,7 @@ export function harnessResolvers(
       resolvers.Query.appProfiles(null, args, {}) as Promise<{ items: { appDid: string; category: string | null }[]; next: string | null }>,
     appProfileCategories: () =>
       resolvers.Query.appProfileCategories(null, {}, {}) as Promise<{ category: string; count: number }[]>,
+    networkStats: () => resolvers.Query.renownNetworkStats(null, {}, {}) as Promise<NetworkStatsOut>,
   };
 }
 

@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
 import type { DB as RenownCredentialDB } from "../../processors/renown-credential/schema.js";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
@@ -104,4 +105,33 @@ export async function contributorProfiles(
     });
   }
   return out;
+}
+
+/**
+ * Distinct wallets (lower-cased `eth_address`) with a Renown profile in the
+ * renown-user read model. Throws when the read model is unavailable.
+ */
+export async function identityCount(db: ReadModelDb): Promise<number> {
+  const row = await RenownUserProcessor.query<RenownUserDB>("renown-user", db)
+    .selectFrom("renown_user")
+    .select(sql<number>`count(distinct lower(eth_address))::int`.as("identities"))
+    .where("eth_address", "is not", null)
+    .where("eth_address", "<>", "")
+    .executeTakeFirstOrThrow();
+  return Number(row.identities);
+}
+
+/**
+ * Live credentials: unrevoked, and unexpired at `now` (no expiry counts as
+ * live). Counted by VC id, since copies of one credential can exist as
+ * several documents. Throws when the read model is unavailable.
+ */
+export async function activeCredentialCount(db: ReadModelDb, now: Date): Promise<number> {
+  const row = await RenownCredentialProcessor.query<RenownCredentialDB>("renown-credential", db)
+    .selectFrom("renown_credential")
+    .select(sql<number>`count(distinct credential_id)::int`.as("credentials"))
+    .where("revoked", "=", false)
+    .where((eb) => eb.or([eb("expiration_date", "is", null), eb("expiration_date", ">", now)]))
+    .executeTakeFirstOrThrow();
+  return Number(row.credentials);
 }

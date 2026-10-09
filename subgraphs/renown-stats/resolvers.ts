@@ -51,8 +51,10 @@ import {
 } from "./core/dids.js";
 import { createKeyedLock } from "./core/keyed-lock.js";
 import {
+  activeCredentialCount,
   contributorProfiles,
   hasDelegation,
+  identityCount,
   workloadOwner,
   type ContributorProfile,
 } from "./lookups.js";
@@ -78,6 +80,8 @@ const MAX_LENGTH = {
 /** appProfiles page sizes. */
 const DEFAULT_PAGE = 20;
 const MAX_PAGE = 50;
+/** How long renownNetworkStats serves one computation. */
+export const NETWORK_STATS_TTL_MS = 300_000;
 /** Which upsert argument holds which upload purpose. */
 const IMAGE_FIELDS = [
   ["logoRef", "logo"],
@@ -185,6 +189,14 @@ interface AppStatsOutput {
   totalUsers: number;
   metrics: AppMetricStatOutput[];
   updatedAt: string | null;
+}
+
+interface NetworkStatsOutput {
+  identities: number;
+  apps: number;
+  activeCredentials: number;
+  activeUsers30d: number;
+  updatedAt: string;
 }
 
 /** What stats readers need of an app's profile. */
@@ -297,6 +309,9 @@ export function createResolvers(
   const registrationToken = deps.registrationToken ?? (() => null);
   const media = deps.media ?? mediaBackend;
   const lock = createKeyedLock();
+  /** The last renownNetworkStats answer, until expiresAt (ms); failures are never cached. */
+  let networkStats: { value: NetworkStatsOutput; expiresAt: number } | undefined;
+  let networkStatsLoad: Promise<NetworkStatsOutput> | undefined;
 
   function requireIndex(): StatsIndex {
     const index = deps.index();
@@ -628,6 +643,30 @@ export function createResolvers(
     });
   }
 
+  /** Fresh network-wide counts, read from three namespaces in parallel. */
+  async function computeNetworkStats(
+    index: StatsIndex,
+  ): Promise<NetworkStatsOutput> {
+    const at = now();
+    const since = new Date(at.getTime() - ACTIVE_WINDOW_MS);
+    try {
+      const [activity, identities, activeCredentials] = await Promise.all([
+        index.networkActivity(since),
+        identityCount(relationalDb),
+        activeCredentialCount(relationalDb, at),
+      ]);
+      return {
+        identities,
+        apps: activity.apps,
+        activeCredentials,
+        activeUsers30d: activity.activeUsers,
+        updatedAt: at.toISOString(),
+      };
+    } catch (error) {
+      throw unavailable(error);
+    }
+  }
+
   function contributorOutput(
     top: { userDid: string; value: number },
     profiles: Map<string, ContributorProfile>,
@@ -764,6 +803,26 @@ export function createResolvers(
         } catch (error) {
           throw unavailable(error);
         }
+      },
+
+      renownNetworkStats: async (): Promise<NetworkStatsOutput> => {
+        const index = requireIndex();
+        if (networkStats && now().getTime() < networkStats.expiresAt) {
+          return networkStats.value;
+        }
+        // Concurrent requests share one computation.
+        networkStatsLoad ??= computeNetworkStats(index)
+          .then((value) => {
+            networkStats = {
+              value,
+              expiresAt: new Date(value.updatedAt).getTime() + NETWORK_STATS_TTL_MS,
+            };
+            return value;
+          })
+          .finally(() => {
+            networkStatsLoad = undefined;
+          });
+        return networkStatsLoad;
       },
 
       appStats: async (

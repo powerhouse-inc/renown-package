@@ -66,6 +66,10 @@ describe("RenownStatsSubgraph", () => {
     const result = await resolver("Query", "userStats")(null, { userDid: USER }, {}).catch((e: unknown) => e);
     expect(result).toBeInstanceOf(GraphQLError);
     expect((result as GraphQLError).extensions.code).toBe("SERVICE_NOT_CONFIGURED");
+    for (const field of ["appProfileCategories", "renownNetworkStats"]) {
+      const refused = await resolver("Query", field)(null, {}, {}).catch((e: unknown) => e);
+      expect((refused as GraphQLError).extensions.code).toBe("SERVICE_NOT_CONFIGURED");
+    }
     expect(error).toHaveBeenCalledWith(expect.stringContaining("[renown-stats]"));
     error.mockRestore();
   });
