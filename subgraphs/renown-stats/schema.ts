@@ -111,6 +111,13 @@ export const schema: DocumentNode = gql`
     next: String
   }
 
+  "A category used by app profiles, and how many carry it (case-insensitively)."
+  type AppProfileCategory {
+    "The smallest spelling (byte order) among the profiles that carry it."
+    category: String!
+    count: Int!
+  }
+
   input AppProfileLinkInput {
     id: String!
     label: String!
@@ -135,8 +142,14 @@ export const schema: DocumentNode = gql`
     userStats(userDid: String!): [UserStat!]!
     appProfile(appDid: String!): AppProfile
     appProfilesByPublisher(publisherDid: String!): [AppProfile!]!
-    "Every app profile, newest first. limit 1-50 (default 20)."
-    appProfiles(limit: Int, after: String): AppProfilePage!
+    """
+    Every app profile, newest first. limit 1-50 (default 20). category: only
+    profiles whose category equals it case-insensitively (trimmed); blank or
+    absent = all. Pass the same category with after.
+    """
+    appProfiles(limit: Int, after: String, category: String): AppProfilePage!
+    "Non-empty categories of app profiles: count desc, then name."
+    appProfileCategories: [AppProfileCategory!]!
     "Public stats of an app; null when it has neither a profile nor any reported value."
     appStats(appDid: String!): AppStats
   }

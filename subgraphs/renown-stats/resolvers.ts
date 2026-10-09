@@ -57,6 +57,7 @@ import {
   type ContributorProfile,
 } from "./lookups.js";
 import type {
+  AppCategoryCount,
   AppProfileCursor,
   AppProfileEntry,
   StatsIndex,
@@ -727,14 +728,24 @@ export function createResolvers(
 
       appProfiles: async (
         _: unknown,
-        args: { limit?: number | null; after?: string | null },
+        args: {
+          limit?: number | null;
+          after?: string | null;
+          category?: string | null;
+        },
       ): Promise<{ items: AppProfileOutput[]; next: string | null }> => {
         const limit = args.limit ?? DEFAULT_PAGE;
         if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE) {
           throw invalidRequest(`limit must be 1-${MAX_PAGE}`);
         }
         const after = args.after ? decodeCursor(args.after) : undefined;
-        const entries = await requireIndex().appProfilesPage(limit + 1, after);
+        // Stored categories are trimmed; blank means no filter.
+        const category = args.category?.trim() || undefined;
+        const entries = await requireIndex().appProfilesPage(
+          limit + 1,
+          after,
+          category,
+        );
         const page = entries.slice(0, limit);
         const last = page.at(-1);
         return {
@@ -744,6 +755,15 @@ export function createResolvers(
               ? encodeCursor({ createdAt: last.createdAt, appDid: last.appDid })
               : null,
         };
+      },
+
+      appProfileCategories: async (): Promise<AppCategoryCount[]> => {
+        const index = requireIndex();
+        try {
+          return await index.appProfileCategories();
+        } catch (error) {
+          throw unavailable(error);
+        }
       },
 
       appStats: async (
