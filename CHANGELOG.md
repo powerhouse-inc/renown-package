@@ -1,3 +1,20 @@
+# [1.8.0-staging.4](https://github.com/powerhouse-inc/renown-package/compare/v1.8.0-staging.3...v1.8.0-staging.4) (2026-10-09)
+
+
+### Bug Fixes
+
+* **renown-stats:** fail closed on unreadable app profiles, expose media refs, wrap public read failures ([481be46](https://github.com/powerhouse-inc/renown-package/commit/481be469c44d4cd5a1e8788f0107071a628404c5))
+* **renown-stats:** final-review fixes (image index healing, id caps, resilient lists, backfill, top contributors) ([cbe04fc](https://github.com/powerhouse-inc/renown-package/commit/cbe04fc79441a969269100c578dfe487e95b962a))
+
+
+### Features
+
+* **renown-app-profile:** publisher-defined metric definitions ([03f5a9e](https://github.com/powerhouse-inc/renown-package/commit/03f5a9ea55bb14a13eb6aad307b2b17640eb1fdf))
+* **renown-stats:** backfill app metric values from user-stats documents once ([72c3997](https://github.com/powerhouse-inc/renown-package/commit/72c3997c28bb6067e25f9234ec055b719de8c099))
+* **renown-stats:** metric definitions on app profiles, aggregate rows on every report ([efd002e](https://github.com/powerhouse-inc/renown-package/commit/efd002e4bee1bb65ea9c3820cf23cbd2384f5bf9))
+* **renown-stats:** per-user metric values with app-level aggregates ([61b0125](https://github.com/powerhouse-inc/renown-package/commit/61b0125c77afdd06dc544cfc2c0d6d129cfde15e))
+* **renown-stats:** public appStats with top contributors; userStats names apps and metrics ([63fe19a](https://github.com/powerhouse-inc/renown-package/commit/63fe19ace256509640397e51263d77cef2a49699))
+
 # [1.8.0-staging.3](https://github.com/powerhouse-inc/renown-package/compare/v1.8.0-staging.2...v1.8.0-staging.3) (2026-10-09)
 
 
