@@ -1,35 +1,25 @@
-import {
-  type ProcessorRecordLegacy,
-  type IProcessorHostModuleLegacy,
-} from "document-drive";
-import { type RelationalDbProcessorFilterLegacy } from "document-drive";
-import { type PHDocumentHeader } from "document-model";
-import { RenownUserProcessor } from "./index.js";
+import type {
+  IProcessorHostModule,
+  ProcessorFactoryBuilder,
+  ProcessorFilter,
+} from "@powerhousedao/reactor-browser";
+import { RenownUserProcessor } from "./processor.js";
 
-export const renownUserProcessorFactory =
-  (module: IProcessorHostModuleLegacy) =>
-  async (driveHeader: PHDocumentHeader): Promise<ProcessorRecordLegacy[]> => {
-    // Create a namespace for the processor and the provided drive id
+// One namespace for all drives: the renown read model is global.
+export const renownUserFactoryBuilder: ProcessorFactoryBuilder =
+  (module: IProcessorHostModule) => async () => {
     const namespace = RenownUserProcessor.getNamespace("renown-user");
-
-    // Create a namespaced db for the processor
     const store =
       await module.relationalDb.createNamespace<RenownUserProcessor>(namespace);
 
-    // Create a filter for the processor
-    const filter: RelationalDbProcessorFilterLegacy = {
+    const filter: ProcessorFilter = {
       branch: ["main"],
       documentId: ["*"],
       documentType: ["powerhouse/renown-user"],
       scope: ["global"],
     };
 
-    // Create the processor
     const processor = new RenownUserProcessor(namespace, filter, store);
-    return [
-      {
-        processor,
-        filter,
-      },
-    ];
+    await processor.initAndUpgrade();
+    return [{ processor, filter }];
   };

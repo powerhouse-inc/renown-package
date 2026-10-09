@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import type { ISubgraph } from "@powerhousedao/reactor-api";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
@@ -151,7 +152,8 @@ const getDriveId = (driveId?: string): string => {
 };
 
 export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
-  const db = subgraph.relationalDb;
+   
+  const db: any = subgraph.relationalDb;
 
   return {
     Query: {
@@ -161,6 +163,7 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
       ): Promise<ReadRenownUser | null> => {
         const { phid, ethAddress, username } = args.input;
 
+         
         let query = RenownUserProcessor.query<RenownUserDB>(
           "renown-user",
           db,
@@ -170,7 +173,12 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
         if (phid) {
           query = query.where("renown_user.document_id", "=", phid);
         } else if (ethAddress) {
-          query = query.where("renown_user.eth_address", "=", ethAddress);
+          // Match case-insensitively so clients that send checksummed or
+          // lowercase addresses resolve to the same user.
+          const addr = ethAddress.toLowerCase();
+          query = query.where((eb) =>
+            eb(eb.fn("LOWER", ["renown_user.eth_address"]), "=", addr),
+          );
         } else if (username) {
           query = query.where("renown_user.username", "=", username);
         } else {
@@ -179,7 +187,13 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           );
         }
 
-        const result = await query.selectAll().executeTakeFirst();
+        // Deterministic order (newest first) so a stable, current row is
+        // returned even if duplicate documents exist for the same address.
+        const result = await query
+          .selectAll()
+          .orderBy("renown_user.created_at", "desc")
+          .orderBy("renown_user.document_id", "desc")
+          .executeTakeFirst();
 
         return result ? mapToUser(result) : null;
       },
@@ -190,6 +204,7 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
       ): Promise<ReadRenownUser[]> => {
         const { driveId, phids, ethAddresses, usernames } = args.input;
 
+         
         let query = RenownUserProcessor.query<RenownUserDB>(
           "renown-user",
           db,
@@ -213,7 +228,14 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           }
 
           if (hasEthAddresses) {
-            conditions.push(eb("renown_user.eth_address", "in", ethAddresses));
+            // Match case-insensitively (see renownUser above).
+            conditions.push(
+              eb(
+                eb.fn("LOWER", ["renown_user.eth_address"]),
+                "in",
+                ethAddresses.map((a) => a.toLowerCase()),
+              ),
+            );
           }
 
           if (hasUsernames) {
@@ -223,7 +245,11 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           return eb.or(conditions);
         });
 
-        const results = await query.selectAll().execute();
+        const results = await query
+          .selectAll()
+          .orderBy("renown_user.created_at", "desc")
+          .orderBy("renown_user.document_id", "desc")
+          .execute();
 
         return results.map(mapToUser);
       },
@@ -240,6 +266,7 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           includeRevoked = true,
         } = args.input;
 
+         
         let query = RenownCredentialProcessor.query<RenownCredentialDB>(
           "renown-credential",
           db,

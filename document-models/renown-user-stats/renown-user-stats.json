@@ -1,0 +1,110 @@
+{
+  "id": "powerhouse/renown-user-stats",
+  "name": "RenownUserStats",
+  "author": {
+    "name": "Powerhouse Inc.",
+    "website": "https://www.powerhouse.inc"
+  },
+  "extension": "phus",
+  "description": "Per-app metrics reported about one Renown user: the current value of each (app, metric)",
+  "specifications": [
+    {
+      "state": {
+        "local": {
+          "schema": "",
+          "examples": [],
+          "initialValue": ""
+        },
+        "global": {
+          "schema": "type RenownUserStatsState {\n  userDid: String\n  stats: [RenownUserStat!]!\n}\n\ntype RenownUserStat {\n  id: OID!\n  appDid: String!\n  metric: String!\n  value: Float!\n  updatedAt: DateTime!\n}",
+          "examples": [],
+          "initialValue": "{\n  \"userDid\": null,\n  \"stats\": []\n}"
+        }
+      },
+      "modules": [
+        {
+          "id": "f39e5c5a-1d0c-4424-b2a4-e2fc8317f897",
+          "name": "stats",
+          "description": "",
+          "operations": [
+            {
+              "id": "3710c132-ce81-4d2e-b1d1-a37ce406d4c8",
+              "name": "SET_USER_DID",
+              "description": "Binds the document to the user it describes. Set once; repeating the same DID is a no-op.",
+              "schema": "input SetUserDidInput {\n  userDid: String!\n}",
+              "template": "",
+              "reducer": "",
+              "errors": [
+                {
+                  "id": "invalid-user-did-error",
+                  "name": "InvalidUserDidError",
+                  "code": "INVALID_USER_DID",
+                  "description": "The user DID is not a did:pkh:eip155 or did:key DID",
+                  "template": ""
+                },
+                {
+                  "id": "user-did-immutable-error",
+                  "name": "UserDidImmutableError",
+                  "code": "USER_DID_IMMUTABLE",
+                  "description": "The document already belongs to another user DID",
+                  "template": ""
+                }
+              ],
+              "examples": [],
+              "scope": "global"
+            },
+            {
+              "id": "88b27b0e-0f0d-4857-a16f-5511a33cb46b",
+              "name": "SET_STAT",
+              "description": "Reports the current value of one metric for one app. Upserts by (appDid, metric); a report older than the stored one is ignored.",
+              "schema": "input SetStatInput {\n  id: OID!\n  appDid: String!\n  metric: String!\n  value: Float!\n  updatedAt: DateTime!\n}",
+              "template": "",
+              "reducer": "",
+              "errors": [
+                {
+                  "id": "user-did-not-set-error",
+                  "name": "UserDidNotSetError",
+                  "code": "USER_DID_NOT_SET",
+                  "description": "SET_USER_DID must run before any stat is reported",
+                  "template": ""
+                },
+                {
+                  "id": "invalid-app-did-error",
+                  "name": "InvalidAppDidError",
+                  "code": "INVALID_APP_DID",
+                  "description": "The app DID is not a did:key DID",
+                  "template": ""
+                },
+                {
+                  "id": "invalid-metric-error",
+                  "name": "InvalidMetricError",
+                  "code": "INVALID_METRIC",
+                  "description": "The metric name must match ^[A-Za-z][A-Za-z0-9_.:-]{0,63}$",
+                  "template": ""
+                },
+                {
+                  "id": "duplicate-stat-id-error",
+                  "name": "DuplicateStatIdError",
+                  "code": "DUPLICATE_STAT_ID",
+                  "description": "A new stat reused the id of an existing one",
+                  "template": ""
+                },
+                {
+                  "id": "too-many-metrics-error",
+                  "name": "TooManyMetricsError",
+                  "code": "TOO_MANY_METRICS",
+                  "description": "The app already reports the maximum number of metrics for this user",
+                  "template": ""
+                }
+              ],
+              "examples": [],
+              "scope": "global"
+            }
+          ]
+        }
+      ],
+      "version": 1,
+      "changeLog": []
+    }
+  ]
+}

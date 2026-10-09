@@ -1,9 +1,186 @@
-## [1.2.1-staging.3](https://github.com/powerhouse-inc/renown-package/compare/v1.2.1-staging.2...v1.2.1-staging.3) (2026-03-25)
+# [1.7.0](https://github.com/powerhouse-inc/renown-package/compare/v1.6.0...v1.7.0) (2026-10-08)
 
 
 ### Bug Fixes
 
+* **stats:** accept only raster data-URL logos, not svg+xml ([e9f5d85](https://github.com/powerhouse-inc/renown-package/commit/e9f5d8596f5a4c23be07749ea00de372398a6773))
+* **stats:** anchor app ownership on the registered workload identity ([7b27b4f](https://github.com/powerhouse-inc/renown-package/commit/7b27b4f6dbe70abc6bb959055f253e8b948a362d))
+* **stats:** gate profile upserts on RENOWN_STATS_PROFILE_APPS, refuse CI tokens, skip unchanged stats ([a19a2b0](https://github.com/powerhouse-inc/renown-package/commit/a19a2b06533ee1763429d07fcad30465d55da429))
+* **stats:** log fixed reasons for token signing failures, document FORBIDDEN, sharpen malformed-token test ([d1e15cf](https://github.com/powerhouse-inc/renown-package/commit/d1e15cf43e8bb90f200257505cc9bc90e76d7ebd))
+
+
+### Features
+
+* **stats:** DID canonicalisation, stats audience and keyed lock ([261776c](https://github.com/powerhouse-inc/renown-package/commit/261776c35b070ff15efea91b0170acb9ba5eb042))
+* **stats:** DID-to-document index in the renown-stats namespace ([dfb0bd8](https://github.com/powerhouse-inc/renown-package/commit/dfb0bd84f3bb48fd261e9d1bc6c17a103edd35e7))
+* **stats:** issueAppStatsToken so the Vetra relay can report as the app ([5ce09c7](https://github.com/powerhouse-inc/renown-package/commit/5ce09c75ef7abb4a039e488d1f6ead333bff79a2))
+* **stats:** powerhouse/renown-app-profile document model ([6a5de69](https://github.com/powerhouse-inc/renown-package/commit/6a5de693c5574466a42dc89bf3233d93b9302c40))
+* **stats:** powerhouse/renown-user-stats document model ([06b0904](https://github.com/powerhouse-inc/renown-package/commit/06b0904f21fe322565bc9a6396c8d8944bbcf596))
+* **stats:** register the renown-stats subgraph ([b5ef6c4](https://github.com/powerhouse-inc/renown-package/commit/b5ef6c4d0ccf4adaffc8696456fdeb2e66add3d1))
+* **stats:** reportUserStat and app profile resolvers with app-DID authorisation ([9ecfcb8](https://github.com/powerhouse-inc/renown-package/commit/9ecfcb845b45e360421a694b5f39717bb626d8df))
+
+# [1.6.0](https://github.com/powerhouse-inc/renown-package/compare/v1.5.1...v1.6.0) (2026-10-02)
+
+
+### Bug Fixes
+
+* **renown-workload:** classify runs by event_name, not ref alone ([f746b81](https://github.com/powerhouse-inc/renown-package/commit/f746b814c8d2224209f4b8ba2e1c324b095b90c6))
+* **renown-workload:** default audience is the vetra-apps endpoints, not the whole switchboard ([6e9fbd8](https://github.com/powerhouse-inc/renown-package/commit/6e9fbd8ae2f37b48d962cca8318b40ebb83acf8e))
+
+
+### Features
+
+* **renown-workload:** GitHub OIDC verification, ref policy and did:key signing ([503f243](https://github.com/powerhouse-inc/renown-package/commit/503f2436e5cdac9bc234c9d0e231de7211e5323a))
+* **renown-workload:** POST workload/token exchange handler ([069bee4](https://github.com/powerhouse-inc/renown-package/commit/069bee4402d74775b801024173e3ef02e94b8367))
+* **renown-workload:** register the renown-workload subgraph ([00b1b87](https://github.com/powerhouse-inc/renown-package/commit/00b1b87c565184670e3224f0cf244ad0b15494f5))
+* **renown-workload:** token-gated workload identity registration API ([ff402e7](https://github.com/powerhouse-inc/renown-package/commit/ff402e730062be300b0084c53f30d6ddc5cb1db7))
+* **renown-workload:** workload_identities store with kysely and memory backends ([a4b4e89](https://github.com/powerhouse-inc/renown-package/commit/a4b4e89112e0fa5f0f27f073e6181ff93d84c1c0))
+
+## [1.5.1](https://github.com/powerhouse-inc/renown-package/compare/v1.5.0...v1.5.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **renown-auth:** accept smart-wallet (ERC-1271/6492) signatures ([9cd5a5c](https://github.com/powerhouse-inc/renown-package/commit/9cd5a5cc2d9866ea2115b43e6549d0028616104c))
+
+# [1.5.0](https://github.com/powerhouse-inc/renown-package/compare/v1.4.0...v1.5.0) (2026-09-28)
+
+
+### Bug Fixes
+
+* **processors:** skip an operation whose write fails instead of wedging the cursor ([f82176c](https://github.com/powerhouse-inc/renown-package/commit/f82176c13ddafb8229654f0d0f28edfb194eb1ed))
+* **processors:** skip only data exceptions, rethrow transient errors ([17c905b](https://github.com/powerhouse-inc/renown-package/commit/17c905b26349cd3d5727f6b44cfdd2b4bd0cd2fc))
+* **renown-auth:** bound rate-limiter memory, harden did:pkh parsing, strict timestamp check ([59e94a7](https://github.com/powerhouse-inc/renown-package/commit/59e94a70d96fcda42ca51b6c08e969497675c832))
+* **renown-auth:** cap credential fields at their read-model column sizes ([fa9a9bb](https://github.com/powerhouse-inc/renown-package/commit/fa9a9bb02175afc15a017bd635ff70fd30319e87))
+* **renown-auth:** recover the revoke signer once ([710a3b2](https://github.com/powerhouse-inc/renown-package/commit/710a3b2fa6c0fb31bfa22cf7effb48d32580ceae))
+* **renown-auth:** replay-safe rate limits, profile size caps, revoke by proven issuer ([04bc170](https://github.com/powerhouse-inc/renown-package/commit/04bc17061188ad9ed2393691049e6200c0681d85))
+* **renown-user:** remove unauthenticated profile mutations ([43b3969](https://github.com/powerhouse-inc/renown-package/commit/43b39695eff29ae7d9b41a88f8b33251ce8dc5c6))
+
+
+### Features
+
+* **renown-auth:** credential validation, signed messages, rate limit ([077a09c](https://github.com/powerhouse-inc/renown-package/commit/077a09c2ac4bceead625a5ba8b2ec38512ac1f8a))
+* **renown-auth:** self-authenticating issue, revoke and profile mutations ([d012c09](https://github.com/powerhouse-inc/renown-package/commit/d012c0915ae2925f4fc9fe2e0a0bb8e92e99c5c6))
+
+# [1.4.0](https://github.com/powerhouse-inc/renown-package/compare/v1.3.8...v1.4.0) (2026-09-26)
+
+
+### Bug Fixes
+
+* accept any newer 6.x document-model and reactor-browser as peers ([2062cf5](https://github.com/powerhouse-inc/renown-package/commit/2062cf5febafb12e245a16c94979656b33b0c8cc))
+* derive document ids via baseCreateDocument instead of overwriting them ([302d209](https://github.com/powerhouse-inc/renown-package/commit/302d209038e930b8dd92e88009c1ad0e8a9c3a25))
+* **editors:** call hooks unconditionally ([4eac43a](https://github.com/powerhouse-inc/renown-package/commit/4eac43a8c46d92dc98a0423f6de30a65ce75437b))
+* import generateMock from document-model/mock and drop redundant assertions ([9bec240](https://github.com/powerhouse-inc/renown-package/commit/9bec240df13a71c2d27019244c340acd4be97fc7))
+* **renown-oidc:** 403 all SIWE mismatches, catch malformed-signature throw, allowlist JWKS fields, don't leak signing-key JSON ([8bf4325](https://github.com/powerhouse-inc/renown-package/commit/8bf4325e49d03acbddad3794a69df9b43578b4f6))
+* **renown-oidc:** chain-independent sub, always did:pkh:eip155:1 (I2) ([2bd31bd](https://github.com/powerhouse-inc/renown-package/commit/2bd31bda85f228e215c8965af464b737d1ddbb6c))
+* **renown-oidc:** disable OIDC endpoints instead of throwing on namespace/migration failure; idempotent onSetup ([5f4edf3](https://github.com/powerhouse-inc/renown-package/commit/5f4edf398269f1b96b5bcc285fd601f126bdf4e9))
+* **renown-oidc:** keep auth codes an hour past expiry so replays are still revoked ([be2da58](https://github.com/powerhouse-inc/renown-package/commit/be2da584d04ff39fcb45cb993dca378aab96d327))
+* **renown-oidc:** store chain_id as bigint (I3) ([f3adbf2](https://github.com/powerhouse-inc/renown-package/commit/f3adbf259ca8a4f0f0176924179abfa84ed98227))
+
+
+### Features
+
+* **oidc-client:** editor with one-time secret rotation ([647dd9f](https://github.com/powerhouse-inc/renown-package/commit/647dd9f264e3d2d1f1dd70912122f27bdef6f931))
+* **oidc-client:** read-only editor for the audit-mirror document (C1) ([d2f5de3](https://github.com/powerhouse-inc/renown-package/commit/d2f5de3ceae13dfddd0df1443d60d953cc8df08b))
+* **oidc-client:** renown/oidc-client document model ([75e88b3](https://github.com/powerhouse-inc/renown-package/commit/75e88b33b156c5745112101a71f27ad33fa67dab))
+* **renown-oidc:** authorize, interaction, token and userinfo handlers ([029ac62](https://github.com/powerhouse-inc/renown-package/commit/029ac620546f4cc647a5ec40674f8109ec354818))
+* **renown-oidc:** client registration and client/profile directories ([29d988a](https://github.com/powerhouse-inc/renown-package/commit/29d988ac719d74eba9cd341e837d46aca2193f76))
+* **renown-oidc:** client registry in the relational namespace, documents as audit mirror (C1) ([69bcec7](https://github.com/powerhouse-inc/renown-package/commit/69bcec7ec32e2dec8909c4914afc38005d4ed9e1))
+* **renown-oidc:** login-request, code and token store ([b4dfdcc](https://github.com/powerhouse-inc/renown-package/commit/b4dfdcc464d6c45ac2b28dd9fe02e1094d877932))
+* **renown-oidc:** oidc_clients table and client store methods (C1) ([a23a2ae](https://github.com/powerhouse-inc/renown-package/commit/a23a2aeeaa17e3b5765004898fd67e8d6022a88f))
+* **renown-oidc:** POST /authorize and explicit discovery capabilities ([03907d0](https://github.com/powerhouse-inc/renown-package/commit/03907d06c332b6c8da16f41e50deb05b4b02d29b))
+* **renown-oidc:** protocol core — keys, PKCE, SIWE, claims ([8dad27a](https://github.com/powerhouse-inc/renown-package/commit/8dad27a19fe3e326c5eb1ead7aeeb3e077557a15))
+* **renown-oidc:** sign ID tokens with RS256 (C2) ([ac069ea](https://github.com/powerhouse-inc/renown-package/commit/ac069eaa20b5213b62f6ea96f905100360499015))
+* **renown-oidc:** subgraph serving the OIDC endpoints and client registration ([5193216](https://github.com/powerhouse-inc/renown-package/commit/5193216d4a615ec9b068a0d598276bdd52ba0247))
+* **renown-oidc:** take the registration token from X-Renown-OIDC-Registration-Token (I1) ([929b667](https://github.com/powerhouse-inc/renown-package/commit/929b6678d90a7682c987136b5465c3239c2fe2a4))
+
+
+### Performance Improvements
+
+* **read-model:** drop superseded raw eth indexes; order newest-first ([332e29c](https://github.com/powerhouse-inc/renown-package/commit/332e29c3d1294d538dc692af68cc653c1e1a50ee))
+* **read-model:** index-backed, case-insensitive credential/user lookups ([64bcd5d](https://github.com/powerhouse-inc/renown-package/commit/64bcd5d26a6619930b948760b3a4a27999564b85))
+
+## [1.3.8](https://github.com/powerhouse-inc/renown-package/compare/v1.3.7...v1.3.8) (2026-03-26)
+
+
+### Bug Fixes
+
+* prefer action.input over resultingState for credential INIT ([390878a](https://github.com/powerhouse-inc/renown-package/commit/390878a0e3cd4e130ad68feafeb9ee91e78648f5))
+
+## [1.3.7](https://github.com/powerhouse-inc/renown-package/compare/v1.3.6...v1.3.7) (2026-03-26)
+
+
+### Bug Fixes
+
+* handle duplicate keys and missing resultingState in processors ([1003058](https://github.com/powerhouse-inc/renown-package/commit/1003058be1bb67d6fc29d650ebbb856d0e79b73c))
+
+## [1.3.6](https://github.com/powerhouse-inc/renown-package/compare/v1.3.5...v1.3.6) (2026-03-26)
+
+
+### Bug Fixes
+
+* run migrations in processor factories and make factory sync ([3c848a6](https://github.com/powerhouse-inc/renown-package/commit/3c848a64da8da980801b36eb438e2b60aedd8750))
+
+## [1.3.5](https://github.com/powerhouse-inc/renown-package/compare/v1.3.4...v1.3.5) (2026-03-25)
+
+
+### Bug Fixes
+
+* update reactor-api to dev for v6 BaseSubgraph with reactorClient ([3f8789a](https://github.com/powerhouse-inc/renown-package/commit/3f8789ab0a97d7f33f58f67f8a9b5a05aced3c5c))
+
+## [1.3.4](https://github.com/powerhouse-inc/renown-package/compare/v1.3.3...v1.3.4) (2026-03-25)
+
+
+### Bug Fixes
+
+* use switchboard@dev with Postgres read model fix, remove Prisma ([37beb21](https://github.com/powerhouse-inc/renown-package/commit/37beb21b9ef095ac04c3ca570246adbae81e49f6))
+
+## [1.3.3](https://github.com/powerhouse-inc/renown-package/compare/v1.3.2...v1.3.3) (2026-03-25)
+
+
+### Bug Fixes
+
+* simplify Dockerfile — skip ph init, build from source directly ([f4082fe](https://github.com/powerhouse-inc/renown-package/commit/f4082fec6864d170b75190be829893fb5ee12889))
+
+## [1.3.2](https://github.com/powerhouse-inc/renown-package/compare/v1.3.1...v1.3.2) (2026-03-25)
+
+
+### Bug Fixes
+
+* default Docker TAG to dev and remove unused prisma global install ([fbd81f4](https://github.com/powerhouse-inc/renown-package/commit/fbd81f44a6448389c8cf66235341330fb61722dd))
+
+## [1.3.1](https://github.com/powerhouse-inc/renown-package/compare/v1.3.0...v1.3.1) (2026-03-25)
+
+
+### Bug Fixes
+
+* simplify Docker build — use pnpm install instead of ph install ([420a442](https://github.com/powerhouse-inc/renown-package/commit/420a4428f76496db2daa3bfa94a15c9120cf10bc))
+
+# [1.3.0](https://github.com/powerhouse-inc/renown-package/compare/v1.2.2...v1.3.0) (2026-03-25)
+
+
+### Features
+
+* migrate processors to v6 reactor API ([de1c934](https://github.com/powerhouse-inc/renown-package/commit/de1c934695abd9cd8b9a0de5d5f9851e585765d7))
+
+## [1.2.2](https://github.com/powerhouse-inc/renown-package/compare/v1.2.1...v1.2.2) (2026-03-25)
+
+
+### Bug Fixes
+
+* use dev ph-cmd tag for latest channel to pick up switchboard fix ([e29d12a](https://github.com/powerhouse-inc/renown-package/commit/e29d12ada1f05b16837ac0adf4e41dbaf57df7dc))
+
+## [1.2.1](https://github.com/powerhouse-inc/renown-package/compare/v1.2.0...v1.2.1) (2026-03-25)
+
+
+### Bug Fixes
+
+* build local project in Docker and remove PH_PACKAGES from deploy ([02cb07d](https://github.com/powerhouse-inc/renown-package/commit/02cb07dcb4a5bb797bddcf6c2a3708026fda4be4))
 * copy full project source in Docker to build document-models from source ([4669bdd](https://github.com/powerhouse-inc/renown-package/commit/4669bddbf6528fc9edd406b9eb65971a7f7b849e))
+* remove PH_PACKAGES update from deploy step ([3724a3c](https://github.com/powerhouse-inc/renown-package/commit/3724a3ca362f087424d830e9d1a566620f2ec163))
+* remove PH_PACKAGES update from deploy step ([4bf66b4](https://github.com/powerhouse-inc/renown-package/commit/4bf66b43fbdab5b96e719e315e170ecab6aac248))
+* restore PH_PACKAGES update in deploy step with double quotes ([a3f3c76](https://github.com/powerhouse-inc/renown-package/commit/a3f3c765222f9eba04175468ca72a589e1b4b25d))
+* restore PH_PACKAGES update in deploy step with double quotes ([2a8520a](https://github.com/powerhouse-inc/renown-package/commit/2a8520aeb858031b065c7bf32efe1eee74a7f054))
 
 ## [1.2.1-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.2.1-staging.1...v1.2.1-staging.2) (2026-03-25)
 

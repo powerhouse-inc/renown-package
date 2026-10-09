@@ -1,0 +1,68 @@
+scalar Unknown
+scalar DateTime
+scalar Address
+scalar AttachmentRef
+scalar Amount_Tokens
+scalar EthereumAddress
+scalar EmailAddress
+scalar Amount_Percentage
+scalar Date
+scalar URL
+scalar Amount_Money
+scalar OLabel
+scalar Currency
+scalar PHID
+scalar OID
+scalar Amount_Fiat
+scalar Amount_Currency
+scalar Amount_Crypto
+scalar Amount
+scalar Upload
+
+type RenownOidcClientState {
+  name: String
+  redirectUris: [URL!]!
+  allowedSubjects: [String!]!
+  allowAnySubject: Boolean!
+  clientSecretHash: String
+  status: RenownOidcClientStatus!
+}
+
+enum RenownOidcClientStatus {
+  ACTIVE
+  DISABLED
+}
+
+# client
+
+input SetClientInfoInput {
+  name: String!
+}
+
+input AddRedirectUriInput {
+  uri: URL!
+}
+
+input RemoveRedirectUriInput {
+  uri: URL!
+}
+
+input AddAllowedSubjectInput {
+  subject: String!
+}
+
+input RemoveAllowedSubjectInput {
+  subject: String!
+}
+
+input SetAllowAnySubjectInput {
+  allow: Boolean!
+}
+
+input SetClientSecretHashInput {
+  hash: String
+}
+
+input SetStatusInput {
+  status: RenownOidcClientStatus!
+}

@@ -1,0 +1,157 @@
+{
+  "id": "renown/oidc-client",
+  "name": "RenownOidcClient",
+  "author": {
+    "name": "Powerhouse Inc.",
+    "website": "https://www.powerhouse.inc"
+  },
+  "extension": "phdm",
+  "description": "A registered OIDC client for Renown as an OpenID Connect provider",
+  "specifications": [
+    {
+      "state": {
+        "local": {
+          "schema": "",
+          "examples": [],
+          "initialValue": ""
+        },
+        "global": {
+          "schema": "type RenownOidcClientState {\n  name: String\n  redirectUris: [URL!]!\n  allowedSubjects: [String!]!\n  allowAnySubject: Boolean!\n  clientSecretHash: String\n  status: RenownOidcClientStatus!\n}\n\nenum RenownOidcClientStatus {\n  ACTIVE\n  DISABLED\n}",
+          "examples": [],
+          "initialValue": "{\n  \"name\": null,\n  \"redirectUris\": [],\n  \"allowedSubjects\": [],\n  \"allowAnySubject\": false,\n  \"clientSecretHash\": null,\n  \"status\": \"ACTIVE\"\n}"
+        }
+      },
+      "modules": [
+        {
+          "id": "737adcec-701a-451a-9c0f-e870b6319e30",
+          "name": "client",
+          "description": "",
+          "operations": [
+            {
+              "id": "109f554f-6271-4c98-af41-10fa11c94042",
+              "name": "SET_CLIENT_INFO",
+              "description": "",
+              "schema": "input SetClientInfoInput {\n  name: String!\n}",
+              "template": "",
+              "reducer": "",
+              "errors": [
+                {
+                  "id": "empty-name-error",
+                  "name": "EmptyName",
+                  "code": "EMPTY_NAME",
+                  "description": "Client name must not be empty",
+                  "template": ""
+                }
+              ],
+              "examples": [],
+              "scope": "global"
+            },
+            {
+              "id": "f955fc30-10bf-4868-b0fb-1eab22004807",
+              "name": "ADD_REDIRECT_URI",
+              "description": "",
+              "schema": "input AddRedirectUriInput {\n  uri: URL!\n}",
+              "template": "",
+              "reducer": "",
+              "errors": [
+                {
+                  "id": "invalid-redirect-uri-error",
+                  "name": "InvalidRedirectUri",
+                  "code": "INVALID_REDIRECT_URI",
+                  "description": "The redirect URI is not a valid https URI (or http on localhost/127.0.0.1) without a fragment",
+                  "template": ""
+                }
+              ],
+              "examples": [],
+              "scope": "global"
+            },
+            {
+              "id": "44c059e8-97f8-47e9-950d-1c5ce4787b74",
+              "name": "REMOVE_REDIRECT_URI",
+              "description": "",
+              "schema": "input RemoveRedirectUriInput {\n  uri: URL!\n}",
+              "template": "",
+              "reducer": "",
+              "errors": [],
+              "examples": [],
+              "scope": "global"
+            },
+            {
+              "id": "fe3a3ce5-1812-4f9f-b615-ff13ad6ce4da",
+              "name": "ADD_ALLOWED_SUBJECT",
+              "description": "",
+              "schema": "input AddAllowedSubjectInput {\n  subject: String!\n}",
+              "template": "",
+              "reducer": "",
+              "errors": [
+                {
+                  "id": "invalid-subject-error",
+                  "name": "InvalidSubject",
+                  "code": "INVALID_SUBJECT",
+                  "description": "The subject is not an address or a did:pkh:eip155:<chainId>:<address>",
+                  "template": ""
+                }
+              ],
+              "examples": [],
+              "scope": "global"
+            },
+            {
+              "id": "2b77f11a-acde-436f-9b3f-1425bef4a5b9",
+              "name": "REMOVE_ALLOWED_SUBJECT",
+              "description": "",
+              "schema": "input RemoveAllowedSubjectInput {\n  subject: String!\n}",
+              "template": "",
+              "reducer": "",
+              "errors": [],
+              "examples": [],
+              "scope": "global"
+            },
+            {
+              "id": "0b9e3268-2bce-4f8b-b551-592b380739e2",
+              "name": "SET_ALLOW_ANY_SUBJECT",
+              "description": "",
+              "schema": "input SetAllowAnySubjectInput {\n  allow: Boolean!\n}",
+              "template": "",
+              "reducer": "",
+              "errors": [],
+              "examples": [],
+              "scope": "global"
+            },
+            {
+              "id": "47b63a22-f1db-4ee6-be8c-dde1ca83b88a",
+              "name": "SET_CLIENT_SECRET_HASH",
+              "description": "",
+              "schema": "input SetClientSecretHashInput {\n  hash: String\n}",
+              "template": "",
+              "reducer": "",
+              "errors": [
+                {
+                  "id": "invalid-secret-hash-error",
+                  "name": "InvalidSecretHash",
+                  "code": "INVALID_SECRET_HASH",
+                  "description": "The client secret hash must be null or sha256:<64 hex characters>",
+                  "template": ""
+                }
+              ],
+              "examples": [],
+              "scope": "global"
+            },
+            {
+              "id": "ccf633b9-6714-4251-b99a-13f4268608d9",
+              "name": "SET_STATUS",
+              "description": "",
+              "schema": "input SetStatusInput {\n  status: RenownOidcClientStatus!\n}",
+              "template": "",
+              "reducer": "",
+              "errors": [],
+              "examples": [],
+              "scope": "global"
+            }
+          ]
+        }
+      ],
+      "version": 1,
+      "changeLog": []
+    }
+  ]
+}

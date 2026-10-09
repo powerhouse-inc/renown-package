@@ -1,41 +1,92 @@
 {
-    "name": "Renown",
-    "description": "All document models, editors, processors and subgraphs related to renown.",
-    "category": "People & Culture",
-    "publisher": {
-        "name": "Powerhouse Inc.",
-        "url": "https://www.powerhouse.inc"
+  "name": "@powerhousedao/renown-package",
+  "description": "All document models, editors, processors and subgraphs related to renown.",
+  "category": "People & Culture",
+  "publisher": {
+    "name": "Powerhouse Inc.",
+    "url": "https://www.powerhouse.inc"
+  },
+  "documentModels": [
+    {
+      "id": "powerhouse/renown-user",
+      "name": "RenownUser"
     },
-    "documentModels": [
-        {
-            "id": "powerhouse/renown-user",
-            "name": "RenownUser"
-        },
-        {
-            "id": "renown/credential",
-            "name": "RenownCredential"
-        },
-        {
-            "id": "powerhouse/renown-credential",
-            "name": "RenownCredential"
-        }
-    ],
-    "editors": [
-        {
-            "id": "renown-user-editor",
-            "name": "Renown User Editor",
-            "documentTypes": [
-                "powerhouse/renown-user"
-            ]
-        }
-    ],
-    "apps": [],
-    "subgraphs": [
-        {
-            "id": "renown-read-model",
-            "name": "Renown Read Model",
-            "documentTypes": []
-        }
-    ],
-    "importScripts": []
+    {
+      "id": "powerhouse/renown-credential",
+      "name": "RenownCredential"
+    },
+    {
+      "id": "renown/oidc-client",
+      "name": "RenownOidcClient"
+    },
+    {
+      "name": "RenownUserStats",
+      "id": "powerhouse/renown-user-stats"
+    },
+    {
+      "name": "RenownAppProfile",
+      "id": "powerhouse/renown-app-profile"
+    }
+  ],
+  "apps": [],
+  "editors": [
+    {
+      "id": "renown-credential-editor",
+      "name": "Renown Credential Editor",
+      "documentTypes": [
+        "powerhouse/renown-credential"
+      ]
+    },
+    {
+      "id": "renown-user-editor",
+      "name": "Renown User Editor",
+      "documentTypes": [
+        "powerhouse/renown-user"
+      ]
+    },
+    {
+      "name": "Renown OIDC Client Editor",
+      "id": "renown-oidc-client-editor",
+      "documentTypes": [
+        "renown/oidc-client"
+      ]
+    }
+  ],
+  "processors": [
+    {
+      "id": "renown-credential",
+      "name": "renown-credential"
+    },
+    {
+      "id": "renown-user",
+      "name": "renown-user"
+    }
+  ],
+  "subgraphs": [
+    {
+      "id": "renown-read-model",
+      "name": "renown-read-model"
+    },
+    {
+      "id": "renown-user",
+      "name": "renown-user"
+    },
+    {
+      "id": "renown-oidc",
+      "name": "renown-oidc"
+    },
+    {
+      "id": "renown-auth",
+      "name": "renown-auth"
+    },
+    {
+      "id": "renown-workload",
+      "name": "renown-workload"
+    },
+    {
+      "id": "renown-stats",
+      "name": "renown-stats"
+    }
+  ],
+  "config": []
 }

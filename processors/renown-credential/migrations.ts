@@ -1,7 +1,7 @@
-import { type IRelationalDbLegacy } from "document-drive";
+import type { IRelationalDb } from "@powerhousedao/reactor-browser";
+import { sql } from "kysely";
 
-export async function up(db: IRelationalDbLegacy<any>): Promise<void> {
-  await down(db);
+export async function up(db: IRelationalDb<any>): Promise<void> {
   // Create renown_credential table with EIP-712 signed credential schema
   await db.schema
     .createTable("renown_credential")
@@ -55,27 +55,11 @@ export async function up(db: IRelationalDbLegacy<any>): Promise<void> {
     .ifNotExists()
     .execute();
 
-  // Create index on issuer_ethereum_address for faster lookups
-  await db.schema
-    .createIndex("idx_renown_credential_issuer_eth")
-    .on("renown_credential")
-    .column("issuer_ethereum_address")
-    .ifNotExists()
-    .execute();
-
   // Create index on credential_subject_app for faster lookups
   await db.schema
     .createIndex("idx_renown_credential_subject_app")
     .on("renown_credential")
     .column("credential_subject_app")
-    .ifNotExists()
-    .execute();
-
-  // Create index on proof_ethereum_address for faster lookups
-  await db.schema
-    .createIndex("idx_renown_credential_proof_eth")
-    .on("renown_credential")
-    .column("proof_ethereum_address")
     .ifNotExists()
     .execute();
 
@@ -86,10 +70,45 @@ export async function up(db: IRelationalDbLegacy<any>): Promise<void> {
     .column("revoked")
     .ifNotExists()
     .execute();
+
+  // Expression indexes matching the resolver's LOWER(address) filters; plain
+  // column indexes can't serve them, so without these the lookup seq-scans.
+  await db.schema
+    .createIndex("idx_renown_credential_issuer_eth_lower")
+    .on("renown_credential")
+    .expression(sql`LOWER(issuer_ethereum_address)`)
+    .ifNotExists()
+    .execute();
+
+  await db.schema
+    .createIndex("idx_renown_credential_proof_eth_lower")
+    .on("renown_credential")
+    .expression(sql`LOWER(proof_ethereum_address)`)
+    .ifNotExists()
+    .execute();
+
+  // Drop plain-column address indexes superseded by the LOWER() ones above;
+  // resolvers filter these columns only via LOWER, so the raw indexes are unused.
+  await db.schema
+    .dropIndex("idx_renown_credential_issuer_eth")
+    .ifExists()
+    .execute();
+  await db.schema
+    .dropIndex("idx_renown_credential_proof_eth")
+    .ifExists()
+    .execute();
 }
 
-export async function down(db: IRelationalDbLegacy<any>): Promise<void> {
+export async function down(db: IRelationalDb<any>): Promise<void> {
   // Drop renown_credential indexes
+  await db.schema
+    .dropIndex("idx_renown_credential_proof_eth_lower")
+    .ifExists()
+    .execute();
+  await db.schema
+    .dropIndex("idx_renown_credential_issuer_eth_lower")
+    .ifExists()
+    .execute();
   await db.schema
     .dropIndex("idx_renown_credential_revoked")
     .ifExists()
