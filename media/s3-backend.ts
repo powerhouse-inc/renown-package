@@ -20,9 +20,13 @@ import { SNIFF_BYTES } from "./image.js";
 type AttachmentClient = IProcessorHostModule["attachments"];
 type Primitives = ReturnType<typeof createS3AttachmentPrimitives>;
 
-/** Upload targets live 15 minutes; download redirects 5 (the media route's cache window). */
+/**
+ * Upload targets and download redirects both live 15 minutes. The media route
+ * lets a redirect be reused for 60 s + 240 s stale-while-revalidate (300 s), so
+ * a cached redirect never points at an expired URL.
+ */
 const UPLOAD_TTL_SECONDS = 900;
-export const DOWNLOAD_TTL_SECONDS = 300;
+export const DOWNLOAD_TTL_SECONDS = 900;
 
 /**
  * Presigns with `content-type` signed (the SDK leaves it out by default) and
@@ -82,6 +86,13 @@ export function createS3MediaBackend(deps: S3MediaBackendDeps): MediaBackend {
   return {
     kind: "s3",
     async reserve(request: ReserveRequest): Promise<ReserveResult> {
+      // Bytes already in the bucket are never uploaded again (under another content type).
+      try {
+        await primitives.headObject(request.sha256);
+        return { kind: "deduped", ref: refOf(request.sha256) };
+      } catch (error) {
+        if (!isNotFound(error)) throw error;
+      }
       const outcome = await reserveVia(attachments, request);
       if (outcome.kind === "deduped") return outcome;
       const checksum = hexToBase64(request.sha256);
@@ -117,7 +128,8 @@ export function createS3MediaBackend(deps: S3MediaBackendDeps): MediaBackend {
       const response = await fetchImpl(await presignedGet(hash), {
         headers: { range: `bytes=0-${SNIFF_BYTES - 1}` },
       });
-      if (!response.ok) return null;
+      // The object exists (HEAD succeeded): a failed read is a storage fault, not "not uploaded".
+      if (!response.ok) throw new Error(`Reading ${hash} from storage failed with HTTP ${response.status}`);
       return {
         mimeType: head.ContentType ?? "application/octet-stream",
         sizeBytes: head.ContentLength ?? 0,

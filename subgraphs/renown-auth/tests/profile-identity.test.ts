@@ -277,6 +277,7 @@ describe("renown_upsertProfile identity fields", () => {
     ["a 281-character bio", { bio: "b".repeat(281) }, "bio", /280/],
     ["nine links", { links: Array.from({ length: 9 }, (_, i) => ({ id: `i${i}`, label: "L", url: "https://x.example" })) }, "links", /at most 8/],
     ["duplicate link ids", { links: [L1, { ...L2, id: "l1" }] }, "links", /unique id/],
+    ["a 65-character link id", { links: [{ ...L1, id: "i".repeat(65) }] }, "links", /id/],
     ["a link without an id", { links: [{ ...L1, id: "" }] }, "links", /unique id/],
     ["an empty link label", { links: [{ ...L1, label: "  " }] }, "links", /labels/],
     ["a javascript: link", { links: [{ ...L1, url: "javascript:alert(1)" }] }, "links", /http/],
@@ -301,6 +302,12 @@ describe("renown_upsertProfile identity fields", () => {
     const error = await rejection(signed(ALICE, { avatar: REF }));
     expect(error.message).toMatch(message);
     expect(error.extensions).toMatchObject({ code: "INVALID_AVATAR", field: "avatar" });
+    expect(reactor.createEmpty).not.toHaveBeenCalled();
+  });
+
+  it("answers SERVICE_UNAVAILABLE, not INVALID_AVATAR, when storage cannot be read", async () => {
+    const { reactor, signed } = setup({ ...storedAvatar(), inspect: vi.fn(() => Promise.reject(new Error("storage 500"))) });
+    await expect(signed(ALICE, { avatar: REF })).rejects.toMatchObject({ extensions: { code: "SERVICE_UNAVAILABLE" } });
     expect(reactor.createEmpty).not.toHaveBeenCalled();
   });
 
