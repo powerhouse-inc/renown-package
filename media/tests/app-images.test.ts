@@ -122,15 +122,22 @@ describe("appImageLookup", () => {
     expect(await appImageLookup(db, "logo")("doc-2")).toBeNull();
   });
 
-  it("answers null, never throws, when the namespace is unavailable", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  it("answers null when the namespace or its table does not exist yet", async () => {
+    const root = new Kysely<StatsDB>({ dialect: new PGliteDialect(new PGlite()) });
+    opened.push(root);
+    const db = { queryNamespace: (namespace: string) => root.withSchema(namespace) };
+    // No schema at all (3F000), then a schema without the table (42P01).
+    expect(await appImageLookup(db, "logo")("doc-1")).toBeNull();
+    await sql`create schema ${sql.id(STATS_NAMESPACE)}`.execute(root);
+    expect(await appImageLookup(db, "logo")("doc-1")).toBeNull();
+  });
+
+  it("rethrows any other failure", async () => {
     const broken = {
       queryNamespace: () => {
-        throw new Error("namespace unavailable");
+        throw new Error("connection reset");
       },
     };
-    expect(await appImageLookup(broken, "logo")("doc-1")).toBeNull();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("namespace unavailable"));
-    warn.mockRestore();
+    await expect(appImageLookup(broken, "logo")("doc-1")).rejects.toThrow("connection reset");
   });
 });

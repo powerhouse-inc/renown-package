@@ -24,18 +24,34 @@ function notFound(): Response {
   });
 }
 
+function unavailable(): Response {
+  return new Response(JSON.stringify({ error: "Media is temporarily unavailable" }), {
+    status: 503,
+    headers: { "content-type": "application/json", "cache-control": "no-store" },
+  });
+}
+
 /**
  * `GET <package>/media/:documentId/:field` — the stable public URL of a
  * profile image. Reads the ref from the read model (never from the request),
  * then 302s to a 5-minute presigned URL (S3) or streams the bytes
- * (filesystem). 404 when the field is unknown, unset or not stored.
+ * (filesystem). 404 when the field is unknown, unset or not stored; 503
+ * (`no-store`) when the read model cannot be read.
  */
 export function createMediaHandler(deps: MediaRouteDeps): RouteHandler {
   return async (_request, ctx) => {
     const { documentId, field } = ctx.params;
     const lookup = Object.hasOwn(deps.fields, field) ? deps.fields[field] : undefined;
     if (!lookup || !documentId || documentId.length > DOCUMENT_ID_MAX) return notFound();
-    const hash = REF_RE.exec((await lookup(documentId)) ?? "")?.[1];
+    let ref: string | null;
+    try {
+      ref = await lookup(documentId);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[renown-media] ${field} lookup failed (${reason}); answering 503`);
+      return unavailable();
+    }
+    const hash = REF_RE.exec(ref ?? "")?.[1];
     const backend = deps.backend();
     if (!hash || !backend) return notFound();
 

@@ -593,8 +593,14 @@ describe("upsertAppProfile", () => {
     );
     const expected = {
       appDid: app.did,
+      documentId: expect.any(String) as string,
       publisherDid: pkhDidFor(OWNER),
       ...fields,
+      description: null,
+      category: null,
+      logoRef: null,
+      coverRef: null,
+      links: [],
     };
     expect(await appProfile(app.did)).toEqual(expected);
     expect(await byPublisher(`did:pkh:eip155:137:${OWNER}`)).toEqual([
