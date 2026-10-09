@@ -498,8 +498,8 @@ async function run(switchboard: string, app: string, owner: Identity, secondIden
   step("renown.id", "/media 302, /@handle 200, /profile/<doc> → /@handle");
 
   // 8. Release the handle and avatar.
-  data(await signedUpsert(switchboard, account, { handle: "", avatar: "" }), "cleanup upsert");
-  step("cleanup", "handle and avatar cleared");
+  data(await signedUpsert(switchboard, account, { displayName: "", bio: "", links: [], handle: "", avatar: "" }), "cleanup upsert");
+  step("cleanup", "identity fields cleared");
 
   console.log("");
   console.log(`address: ${account.address}`);

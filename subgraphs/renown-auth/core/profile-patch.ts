@@ -10,6 +10,9 @@ import {
   type RenownUserLink,
 } from "../../../document-models/renown-user/index.js";
 import { handleProblem, normalizeHandle } from "./handle.js";
+
+/** Link ids are client-generated; keep them short. */
+const MAX_LINK_ID_LENGTH = 64;
 import type { ProfileFields, ProfileLink } from "./signed-message.js";
 
 /**
@@ -83,6 +86,9 @@ export function toIdentityPatch(input: ProfileFields): IdentityPatch {
       const label = link.label.trim();
       const url = link.url.trim();
       if (!link.id || ids.has(link.id)) throw new ProfileInputError("links", "Every link needs a unique id");
+      if (link.id.length > MAX_LINK_ID_LENGTH) {
+        throw new ProfileInputError("links", `Link ids must be at most ${MAX_LINK_ID_LENGTH} characters`);
+      }
       ids.add(link.id);
       if (!isValidLinkLabel(label)) throw new ProfileInputError("links", "Link labels must be 1-40 characters");
       if (!isValidLinkUrl(url)) throw new ProfileInputError("links", "Links must be http(s) URLs");
