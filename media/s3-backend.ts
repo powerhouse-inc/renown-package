@@ -1,4 +1,5 @@
 import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { IProcessorHostModule } from "@powerhousedao/reactor-browser";
 import {
   createS3AttachmentPrimitives,
@@ -23,6 +24,22 @@ type Primitives = ReturnType<typeof createS3AttachmentPrimitives>;
 const UPLOAD_TTL_SECONDS = 900;
 export const DOWNLOAD_TTL_SECONDS = 300;
 
+/**
+ * Presigns with `content-type` signed (the SDK leaves it out by default) and
+ * the checksum header kept as a signed header rather than hoisted into the
+ * query, so the bucket refuses a re-PUT of the same bytes under another type.
+ */
+export const presignPinned: NonNullable<Parameters<typeof createS3AttachmentPrimitives>[1]>["presign"] = (
+  client,
+  command,
+  expiresIn,
+) =>
+  getSignedUrl(client as never, command as never, {
+    expiresIn,
+    unhoistableHeaders: new Set(["x-amz-checksum-sha256"]),
+    signableHeaders: new Set(["content-type"]),
+  });
+
 function hexToBase64(hex: string): string {
   const bytes = hex.match(/../g)?.map((pair) => Number.parseInt(pair, 16)) ?? [];
   return btoa(String.fromCharCode(...bytes));
@@ -46,13 +63,14 @@ export interface S3MediaBackendDeps {
  * Production backend: the switchboard's private S3 bucket.
  *
  * The upload target is presigned here rather than taken from the host's
- * reservation: the host signs content-type and checksum but not the length,
- * so its URL accepts any number of bytes. This one also signs
- * `content-length`, so the bucket refuses a body of any other size.
+ * reservation: the host's URL signs the checksum but neither the length nor
+ * the content type, so it accepts any number of bytes under any type. This one
+ * signs `content-length`, `content-type` and the checksum, so the bucket
+ * refuses a body of another size or type.
  */
 export function createS3MediaBackend(deps: S3MediaBackendDeps): MediaBackend {
   const { attachments, config } = deps;
-  const primitives = deps.primitives ?? createS3AttachmentPrimitives(config);
+  const primitives = deps.primitives ?? createS3AttachmentPrimitives(config, { presign: presignPinned });
   const fetchImpl = deps.fetch ?? fetch;
   const now = deps.now ?? (() => new Date());
 

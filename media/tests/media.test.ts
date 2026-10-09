@@ -158,6 +158,14 @@ describe("GET media/:documentId/:field", () => {
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(PNG);
   });
 
+  it("refuses to stream a non-image type, and sandboxes streamed images", async () => {
+    const html = fakeBackend({ serve: vi.fn(async () => ({ kind: "stream" as const, mimeType: "text/html", sizeBytes: 1, body: new Blob(["x"]).stream() })) });
+    expect((await get(createMediaHandler({ backend: () => html, fields }), { documentId: "doc-1", field: "avatar" })).status).toBe(404);
+    const png = fakeBackend({ serve: vi.fn(async () => ({ kind: "stream" as const, mimeType: "image/png", sizeBytes: PNG.length, body: new Blob([PNG]).stream() })) });
+    const res = await get(createMediaHandler({ backend: () => png, fields }), { documentId: "doc-1", field: "avatar" });
+    expect(res.headers.get("content-security-policy")).toBe("sandbox");
+  });
+
   it.each([
     ["an unknown field", { documentId: "doc-1", field: "constructor" }],
     ["an unset avatar", { documentId: "doc-2", field: "avatar" }],
@@ -243,6 +251,17 @@ describe("S3 media backend", () => {
         expiresAtUtc: "2026-10-09T12:15:00.000Z",
       },
     });
+  });
+
+  it("signs content-length, content-type and the checksum with the real presigner", async () => {
+    const real = createS3MediaBackend({
+      attachments: { reserve: async (_o: unknown, send: (h: unknown) => Promise<unknown>) => send({ ref: REF, reservationId: "r", expiresAtUtc: "t" }) } as never,
+      config,
+    });
+    const result = await real.reserve({ sha256: HASH, mimeType: "image/webp", sizeBytes: 1234, extension: "webp", fileName: "a.webp" });
+    if (result.kind !== "reserved" || !result.uploadTarget) throw new Error("expected an upload target");
+    const signed = new URL(result.uploadTarget.url).searchParams.get("X-Amz-SignedHeaders")?.split(";") ?? [];
+    expect(signed).toEqual(expect.arrayContaining(["content-length", "content-type", "x-amz-checksum-sha256"]));
   });
 
   it("inspects size and type from HEAD and the first bytes from a ranged GET", async () => {

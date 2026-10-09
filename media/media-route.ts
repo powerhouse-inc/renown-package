@@ -1,5 +1,6 @@
 import type { RouteHandler } from "@powerhousedao/shared/processors";
 import type { MediaBackend } from "./backend.js";
+import { isImageMimeType } from "./image.js";
 
 /** Shared by the 302 and the bytes: browsers and CDNs may reuse it for a minute, then revalidate. */
 export const MEDIA_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=240";
@@ -46,6 +47,7 @@ export function createMediaHandler(deps: MediaRouteDeps): RouteHandler {
         headers: { location: served.url, "cache-control": MEDIA_CACHE_CONTROL },
       });
     }
+    if (!isImageMimeType(served.mimeType)) return notFound();
     return new Response(served.body, {
       status: 200,
       headers: {
@@ -53,6 +55,7 @@ export function createMediaHandler(deps: MediaRouteDeps): RouteHandler {
         "content-length": String(served.sizeBytes),
         "cache-control": MEDIA_CACHE_CONTROL,
         "x-content-type-options": "nosniff",
+        "content-security-policy": "sandbox",
       },
     });
   };
