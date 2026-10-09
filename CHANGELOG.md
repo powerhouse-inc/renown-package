@@ -1,3 +1,21 @@
+# [1.8.0](https://github.com/powerhouse-inc/renown-package/compare/v1.7.1...v1.8.0) (2026-10-09)
+
+
+### Bug Fixes
+
+* **media:** sign content-type on upload URLs; harden streamed media responses ([2cb4bc9](https://github.com/powerhouse-inc/renown-package/commit/2cb4bc912caac019d215cb2df59c736183d7506c))
+* **renown-auth:** reserve a handle before any await and release it on failure ([c3dd1a4](https://github.com/powerhouse-inc/renown-package/commit/c3dd1a4043daaa9b9468d494a56d1c2d2f25dcd8))
+* **smoke:** classify the bypass probe, add a positive control, revoke every credential ([5740572](https://github.com/powerhouse-inc/renown-package/commit/5740572951bf43119079197919c8241186367c99))
+
+
+### Features
+
+* **media:** gated avatar uploads and public media URLs on the switchboard ([73a297b](https://github.com/powerhouse-inc/renown-package/commit/73a297b07011199318a6472572aa53359e4c081d))
+* **read-model:** index profile identity with a unique case-insensitive handle ([454a79d](https://github.com/powerhouse-inc/renown-package/commit/454a79db3d57fb80da84cdbb2e44d67cc8204621))
+* **read-model:** profile identity fields, handle lookup and availability ([c4a2214](https://github.com/powerhouse-inc/renown-package/commit/c4a22148387d1456bffaa4b841390e2f9f33d4c9))
+* **renown-auth:** profile identity fields with patch semantics on renown_upsertProfile ([e9642dd](https://github.com/powerhouse-inc/renown-package/commit/e9642dd165786ca0d70a5655bcb148abf38a22dd))
+* **renown-user:** display name, handle, bio, links and avatar ([603bd65](https://github.com/powerhouse-inc/renown-package/commit/603bd658d779fe7eff363447d27adf259b5af617))
+
 ## [1.7.1](https://github.com/powerhouse-inc/renown-package/compare/v1.7.0...v1.7.1) (2026-10-09)
 
 
