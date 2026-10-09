@@ -38,9 +38,31 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
     .dropIndex("idx_renown_user_eth_address")
     .ifExists()
     .execute();
+
+  // Identity fields (identity hub phase 1). Additive and idempotent: every
+  // boot re-runs up() against an existing table.
+  await db.schema
+    .alterTable("renown_user")
+    .addColumn("display_name", "varchar(64)", (col) => col.ifNotExists())
+    .addColumn("handle", "varchar(30)", (col) => col.ifNotExists())
+    .addColumn("bio", "varchar(280)", (col) => col.ifNotExists())
+    .addColumn("links", "jsonb", (col) => col.ifNotExists().notNull().defaultTo(sql`'[]'::jsonb`))
+    .addColumn("avatar_ref", "varchar(90)", (col) => col.ifNotExists())
+    .execute();
+
+  // Handles are unique case-insensitively across all profiles. The write
+  // path checks before dispatching; this index is the last line of defence.
+  await db.schema
+    .createIndex("idx_renown_user_handle_lower")
+    .on("renown_user")
+    .unique()
+    .expression(sql`LOWER(handle)`)
+    .ifNotExists()
+    .execute();
 }
 
 export async function down(db: IRelationalDb<any>): Promise<void> {
+  await db.schema.dropIndex("idx_renown_user_handle_lower").ifExists().execute();
   // Drop renown_user indexes
   await db.schema
     .dropIndex("idx_renown_user_eth_address_lower")
