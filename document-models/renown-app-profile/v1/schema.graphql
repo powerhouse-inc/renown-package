@@ -24,8 +24,25 @@ type RenownAppProfileState {
   publisherDid: String
   name: String
   tagline: String
+  "Legacy logo: an https URL or a raster data URL; logoRef wins when set"
   logo: String
   website: String
+  "Markdown subset, at most 2000 characters; rendered sanitized"
+  description: String
+  "At most 40 characters"
+  category: String
+  "Uploaded square logo"
+  logoRef: AttachmentRef
+  "Uploaded 3:1 cover image"
+  coverRef: AttachmentRef
+  "At most 8 links, in display order"
+  links: [RenownAppLink!]!
+}
+
+type RenownAppLink {
+  id: OID!
+  label: String!
+  url: URL!
 }
 
 # profile
@@ -43,4 +60,34 @@ input SetProfileInput {
   tagline: String
   logo: String
   website: String
+  "Markdown subset, at most 2000 characters; empty clears"
+  description: String
+  "At most 40 characters; empty clears"
+  category: String
+  "attachment://v1:<sha256>; empty clears"
+  logoRef: String
+  "attachment://v1:<sha256>; empty clears"
+  coverRef: String
+}
+
+input AddLinkInput {
+  id: OID!
+  "1-40 characters after trimming"
+  label: String!
+  "http(s) URL, at most 2048 characters"
+  url: URL!
+}
+
+input UpdateLinkInput {
+  id: OID!
+  label: String
+  url: URL
+}
+
+input RemoveLinkInput {
+  id: OID!
+}
+
+input ReorderLinksInput {
+  linkIds: [OID!]!
 }
