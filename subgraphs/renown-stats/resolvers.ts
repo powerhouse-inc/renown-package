@@ -951,7 +951,7 @@ export function createResolvers(
             metrics,
           );
           if (actions.length > 0) await execute(entry.documentId, actions);
-          // Every save heals the image index from the resulting document, so a
+          // Every save heals the image and category index from the resulting document, so a
           // failed write on an earlier save is repaired by the next one.
           try {
             const saved = await reactorClient.get<RenownAppProfileDocument>(
@@ -968,6 +968,7 @@ export function createResolvers(
               },
               now(),
             );
+            await index.setAppCategory(appDid, state.category ?? null);
           } catch (error) {
             // The document is already saved; a retry of the save repairs the index.
             const reason =

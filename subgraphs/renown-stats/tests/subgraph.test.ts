@@ -148,7 +148,7 @@ describe("RenownStatsSubgraph metric backfill", () => {
     });
     await subgraph.onSetup();
     await subgraph.backfillSettled();
-    const jobs = await namespace!.selectFrom("renown_stats_jobs").select("name").execute();
-    expect(jobs.map((job) => job.name)).toEqual(["app-metric-values-backfill-v1"]);
+    const jobs = await namespace!.selectFrom("renown_stats_jobs").select("name").orderBy("name").execute();
+    expect(jobs.map((job) => job.name)).toEqual(["app-metric-values-backfill-v1", "app-profile-category-backfill-v1"]);
   });
 });
