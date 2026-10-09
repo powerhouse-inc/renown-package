@@ -190,6 +190,15 @@ describe("GET media/:documentId/:field", () => {
     expect((await get(createMediaHandler({ backend: () => empty, fields }), { documentId: "doc-1", field: "avatar" })).status).toBe(404);
     expect((await get(createMediaHandler({ backend: () => null, fields }), { documentId: "doc-1", field: "avatar" })).status).toBe(404);
   });
+
+  it("answers 503 with no-store when the lookup fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const failing = { avatar: vi.fn(async () => { throw new Error("db down"); }) };
+    const res = await get(createMediaHandler({ backend: () => fakeBackend(), fields: failing }), { documentId: "doc-1", field: "avatar" });
+    expect(res.status).toBe(503);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    warn.mockRestore();
+  });
 });
 
 describe("avatarProblem", () => {

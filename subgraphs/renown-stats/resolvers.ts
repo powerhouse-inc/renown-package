@@ -7,6 +7,7 @@ import {
   isLogo,
   isWebsite,
   renownAppProfileDocumentType,
+  type RenownAppMetric,
   type RenownAppProfileDocument,
 } from "../../document-models/renown-app-profile/index.js";
 import {
@@ -15,8 +16,33 @@ import {
   renownUserStatsDocumentType,
   type RenownUserStatsDocument,
 } from "../../document-models/renown-user-stats/index.js";
+import type { MediaBackend } from "../../media/backend.js";
+import { mediaBackend } from "../../media/slot.js";
+import { storedImageProblem } from "../../media/stored-image.js";
 import { createRateLimiter } from "../renown-auth/core/rate-limit.js";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
+import { constantTimeEqual } from "../renown-oidc/core/crypto.js";
+import {
+  AppProfileInputError,
+  appLinkActions,
+  toRichProfilePatch,
+  type AppProfileLink,
+  type RichProfileFields,
+  type RichProfilePatch,
+} from "./core/app-profile-patch.js";
+import {
+  metricActions,
+  toAppMetric,
+  toMetricsPatch,
+  type AppMetric,
+  type AppMetricInput,
+} from "./core/app-metrics-patch.js";
+import {
+  ACTIVE_WINDOW_MS,
+  metricValue,
+  TOP_CONTRIBUTORS,
+} from "./core/app-stats.js";
+import { REGISTRAR_HEADER } from "./core/config.js";
 import {
   addressOf,
   canonicalAppDid,
@@ -24,8 +50,17 @@ import {
   pkhDidFor,
 } from "./core/dids.js";
 import { createKeyedLock } from "./core/keyed-lock.js";
-import { hasDelegation, workloadOwner } from "./lookups.js";
-import type { AppProfileEntry, StatsIndex } from "./store/types.js";
+import {
+  contributorProfiles,
+  hasDelegation,
+  workloadOwner,
+  type ContributorProfile,
+} from "./lookups.js";
+import type {
+  AppProfileCursor,
+  AppProfileEntry,
+  StatsIndex,
+} from "./store/types.js";
 
 /** Carries an app token whose `aud` is the stats audience (the host would 401 it as a bearer). */
 export const APP_TOKEN_HEADER = "x-renown-app-token";
@@ -39,6 +74,14 @@ const MAX_LENGTH = {
   website: 2048,
   logo: 524_288,
 } as const;
+/** appProfiles page sizes. */
+const DEFAULT_PAGE = 20;
+const MAX_PAGE = 50;
+/** Which upsert argument holds which upload purpose. */
+const IMAGE_FIELDS = [
+  ["logoRef", "logo"],
+  ["coverRef", "cover"],
+] as const;
 
 type RateLimiter = { take(key: string, now?: number): boolean };
 
@@ -55,10 +98,19 @@ export interface StatsResolverDeps {
   index(): StatsIndex | undefined;
   audience(): string;
   /**
-   * App DIDs whose host bearers may upsert profiles (`RENOWN_STATS_PROFILE_APPS`).
-   * Empty refuses every upsert.
+   * App DIDs whose host bearers may upsert profiles (`RENOWN_STATS_PROFILE_APPS`),
+   * for server-held stable keys only: a browser's bearer is signed by a random
+   * per-browser did:key. Empty (the default) leaves the relay as the only way.
    */
   profileApps(): ReadonlySet<string>;
+  /**
+   * `RENOWN_WORKLOAD_REGISTRATION_TOKEN`. Its holder (the Vetra relay) may
+   * write a profile for the wallet whose bearer it forwards. Null or absent:
+   * relaying is off.
+   */
+  registrationToken?: () => string | null;
+  /** Where image refs are checked; defaults to the backend the media processor published. */
+  media?: () => MediaBackend | null;
   now?: () => Date;
   reportRateLimiter?: RateLimiter;
   profileRateLimiter?: RateLimiter;
@@ -78,8 +130,10 @@ interface ProfileFields {
   website?: string | null;
 }
 
-interface UpsertAppProfileArgs extends ProfileFields {
+interface UpsertAppProfileArgs extends ProfileFields, RichProfileFields {
   appDid: string;
+  /** The whole desired metric list; absent or null leaves it unchanged. */
+  metrics?: readonly AppMetricInput[] | null;
 }
 
 interface UserStatOutput {
@@ -87,21 +141,87 @@ interface UserStatOutput {
   metric: string;
   value: number;
   updatedAt: string;
+  /** The app's profile, when it has one. */
+  appName: string | null;
+  appDocumentId: string | null;
+  appHasLogo: boolean;
+  /** The app profile's logo attachment ref (versions the media URL). */
+  appLogoRef: string | null;
+  appLogo: string | null;
+  /** Set when the app declares this metric public. */
+  label: string | null;
+  unit: string | null;
 }
+
+interface MetricContributorOutput {
+  userDid: string;
+  value: number;
+  /** The wallet behind a did:pkh user; null for did:key users. */
+  address: string | null;
+  handle: string | null;
+  displayName: string | null;
+  documentId: string | null;
+  hasAvatar: boolean;
+  /** The profile's avatar attachment ref (versions the media URL). */
+  avatar: string | null;
+  userImage: string | null;
+}
+
+interface AppMetricStatOutput {
+  key: string;
+  label: string;
+  unit: string | null;
+  description: string | null;
+  aggregation: AppMetric["aggregation"];
+  value: number;
+  users: number;
+  top: MetricContributorOutput[];
+}
+
+interface AppStatsOutput {
+  appDid: string;
+  activeUsers30d: number;
+  totalUsers: number;
+  metrics: AppMetricStatOutput[];
+  updatedAt: string | null;
+}
+
+/** What stats readers need of an app's profile. */
+interface AppCard {
+  documentId: string;
+  name: string | null;
+  hasLogo: boolean;
+  logoRef: string | null;
+  logo: string | null;
+  metrics: AppMetric[];
+}
+
+/** An app profile exists but could not be read: its stats are withheld. */
+const UNREADABLE = Symbol("unreadable");
 
 interface AppProfileOutput {
   appDid: string;
+  documentId: string;
   name: string | null;
   tagline: string | null;
   logo: string | null;
   website: string | null;
   publisherDid: string | null;
+  description: string | null;
+  category: string | null;
+  logoRef: string | null;
+  coverRef: string | null;
+  links: AppProfileLink[];
+  metrics: AppMetric[];
 }
 
 const forbidden = () =>
   new GraphQLError("Forbidden", { extensions: { code: "FORBIDDEN" } });
 const invalidRequest = (message: string) =>
   new GraphQLError(message, { extensions: { code: "BAD_USER_INPUT" } });
+/** A profile argument the caller must fix; `field` lets a form show it inline. */
+const fieldError = (code: string, field: string, message: string) =>
+  new GraphQLError(message, { extensions: { code, field } });
 const rateLimited = () =>
   new GraphQLError("Rate limited", { extensions: { code: "RATE_LIMITED" } });
 const notConfigured = () =>
@@ -109,22 +229,59 @@ const notConfigured = () =>
     extensions: { code: "SERVICE_NOT_CONFIGURED" },
   });
 
-/** Rejects oversized or unsafe profile fields before anything is written ("" means clear). */
+/** Rejects oversized or unsafe legacy profile fields before anything is written ("" means clear). */
 function assertProfileFields(fields: ProfileFields): void {
   for (const key of ["name", "tagline", "website", "logo"] as const) {
     const value = fields[key];
     if (value != null && value.length > MAX_LENGTH[key]) {
-      throw invalidRequest(`${key} exceeds ${MAX_LENGTH[key]} characters`);
+      throw fieldError(
+        "BAD_USER_INPUT",
+        key,
+        `${key} exceeds ${MAX_LENGTH[key]} characters`,
+      );
     }
   }
   const website = fields.website?.trim();
   if (website && !isWebsite(website))
-    throw invalidRequest("website must be an http(s) URL");
+    throw fieldError(
+      "BAD_USER_INPUT",
+      "website",
+      "website must be an http(s) URL",
+    );
   const logo = fields.logo?.trim();
   if (logo && !isLogo(logo))
-    throw invalidRequest(
+    throw fieldError(
+      "BAD_USER_INPUT",
+      "logo",
       "logo must be an https URL or a base64 image data URL",
     );
+}
+
+/** The opaque appProfiles cursor: base64url of {t: createdAt ISO, d: appDid}. */
+function encodeCursor(cursor: AppProfileCursor): string {
+  return Buffer.from(
+    JSON.stringify({ t: cursor.createdAt.toISOString(), d: cursor.appDid }),
+  ).toString("base64url");
+}
+
+function decodeCursor(raw: string): AppProfileCursor {
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(raw, "base64url").toString("utf8"),
+    ) as {
+      t?: unknown;
+      d?: unknown;
+    };
+    const createdAt = new Date(
+      typeof parsed.t === "string" ? parsed.t : Number.NaN,
+    );
+    if (typeof parsed.d !== "string" || Number.isNaN(createdAt.getTime())) {
+      throw new Error("malformed cursor");
+    }
+    return { createdAt, appDid: parsed.d };
+  } catch {
+    throw invalidRequest("after is not a cursor from appProfiles");
+  }
 }
 
 export function createResolvers(
@@ -136,6 +293,8 @@ export function createResolvers(
     deps.reportRateLimiter ?? createRateLimiter(REPORT_LIMIT, WINDOW_MS);
   const profileRateLimiter =
     deps.profileRateLimiter ?? createRateLimiter(PROFILE_LIMIT, WINDOW_MS);
+  const registrationToken = deps.registrationToken ?? (() => null);
+  const media = deps.media ?? mediaBackend;
   const lock = createKeyedLock();
 
   function requireIndex(): StatsIndex {
@@ -255,6 +414,90 @@ export function createResolvers(
     return actsFor(caller.address, appDid);
   }
 
+  /**
+   * "absent" without the relay header, "valid" when it carries the configured
+   * registration token, else "invalid" (a wrong, empty or repeated header, or
+   * no token configured) — which never falls back to the app-key rule.
+   */
+  function relayHeader(ctx: ResolverContext): "absent" | "valid" | "invalid" {
+    const header = ctx.headers?.[REGISTRAR_HEADER];
+    if (header === undefined) return "absent";
+    const token = registrationToken();
+    return typeof header === "string" &&
+      token !== null &&
+      constantTimeEqual(header, token)
+      ? "valid"
+      : "invalid";
+  }
+
+  /** INVALID_IMAGE unless every image ref the patch sets is a stored image within its limits. */
+  async function assertImages(patch: RichProfilePatch): Promise<void> {
+    for (const [field, purpose] of IMAGE_FIELDS) {
+      const ref = patch[field];
+      if (!ref) continue;
+      const backend = media();
+      if (!backend) {
+        throw new GraphQLError("Image uploads are not available", {
+          extensions: { code: "SERVICE_UNAVAILABLE" },
+        });
+      }
+      let problem: string | null;
+      try {
+        problem = await storedImageProblem(ref, backend, purpose);
+      } catch (error) {
+        // Storage could not be read: say so, rather than blaming the image.
+        const reason = error instanceof Error ? error.message : String(error);
+        console.warn(`[renown-stats] ${purpose} inspection failed (${reason})`);
+        throw new GraphQLError("Image storage is unavailable", {
+          extensions: { code: "SERVICE_UNAVAILABLE" },
+        });
+      }
+      if (problem)
+        throw fieldError(
+          "INVALID_IMAGE",
+          field,
+          `Invalid ${purpose}: ${problem}`,
+        );
+    }
+  }
+
+  /** The actions that apply `fields`, `patch` and `metrics` to the profile document. */
+  async function profileWrite(
+    documentId: string,
+    fields: ProfileFields,
+    patch: RichProfilePatch,
+    metrics: AppMetric[] | undefined,
+  ): Promise<Action[]> {
+    const scalars = {
+      ...fields,
+      description: patch.description,
+      category: patch.category,
+      logoRef: patch.logoRef,
+      coverRef: patch.coverRef,
+    };
+    const actions: Action[] = [];
+    if (Object.values(scalars).some((value) => value != null)) {
+      actions.push(profileActions.setProfile(scalars));
+    }
+    if (patch.links || metrics) {
+      const document =
+        await reactorClient.get<RenownAppProfileDocument>(documentId);
+      // Profiles from before links (Phase 2) or metrics (Phase 3) have no list at all.
+      const state = document.state.global as {
+        links?: AppProfileLink[];
+        metrics?: RenownAppMetric[];
+      };
+      if (patch.links)
+        actions.push(...appLinkActions(state.links ?? [], patch.links));
+      if (metrics) {
+        actions.push(
+          ...metricActions((state.metrics ?? []).map(toAppMetric), metrics),
+        );
+      }
+    }
+    return actions;
+  }
+
   /** The user's stats document, created (and bound to the user) on first use. */
   async function userStatsDocument(
     index: StatsIndex,
@@ -276,14 +519,130 @@ export function createResolvers(
     const doc = await reactorClient.get<RenownAppProfileDocument>(
       entry.documentId,
     );
-    const { name, tagline, logo, website, publisherDid } = doc.state.global;
+    // Profiles from before the rich fields have none of their keys.
+    const state = doc.state.global as Partial<
+      RenownAppProfileDocument["state"]["global"]
+    >;
     return {
       appDid: entry.appDid,
-      name: name ?? null,
-      tagline: tagline ?? null,
-      logo: logo ?? null,
-      website: website ?? null,
-      publisherDid: publisherDid ?? null,
+      documentId: entry.documentId,
+      name: state.name ?? null,
+      tagline: state.tagline ?? null,
+      logo: state.logo ?? null,
+      website: state.website ?? null,
+      publisherDid: state.publisherDid ?? null,
+      description: state.description ?? null,
+      category: state.category ?? null,
+      logoRef: state.logoRef ?? null,
+      coverRef: state.coverRef ?? null,
+      links: (state.links ?? []).map(({ id, label, url }) => ({
+        id,
+        label,
+        url,
+      })),
+      metrics: (state.metrics ?? []).map(toAppMetric),
+    };
+  }
+
+  /** The outputs of the entries whose document loads; an unloadable one is skipped and logged. */
+  async function profileOutputs(
+    entries: readonly AppProfileEntry[],
+  ): Promise<AppProfileOutput[]> {
+    const settled = await Promise.allSettled(entries.map(profileOutput));
+    const out: AppProfileOutput[] = [];
+    settled.forEach((result, i) => {
+      if (result.status === "fulfilled") {
+        out.push(result.value);
+        return;
+      }
+      const reason =
+        result.reason instanceof Error
+          ? result.reason.message
+          : String(result.reason);
+      console.warn(
+        `[renown-stats] app profile ${entries[i]?.documentId} unreadable (${reason}); skipped`,
+      );
+    });
+    return out;
+  }
+
+  /** The app's profile as stats readers need it; null without one ; UNREADABLE when it exists but cannot be read. */
+  async function appCard(
+    index: StatsIndex,
+    appDid: string,
+  ): Promise<AppCard | null | typeof UNREADABLE> {
+    const entry = await index.appProfile(appDid);
+    if (!entry) return null;
+    try {
+      const doc = await reactorClient.get<RenownAppProfileDocument>(
+        entry.documentId,
+      );
+      const state = doc.state.global as Partial<
+        RenownAppProfileDocument["state"]["global"]
+      >;
+      return {
+        documentId: entry.documentId,
+        name: state.name ?? null,
+        hasLogo: !!state.logoRef,
+        logoRef: state.logoRef || null,
+        logo: state.logo ?? null,
+        metrics: (state.metrics ?? []).map(toAppMetric),
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[renown-stats] app profile ${entry.documentId} unreadable (${reason}); its stats are withheld`,
+      );
+      return UNREADABLE;
+    }
+  }
+
+  /** Renown profiles behind did:pkh user DIDs, by lowercase address. Never throws. */
+  async function contributors(
+    userDids: readonly string[],
+  ): Promise<Map<string, ContributorProfile>> {
+    const addresses = [
+      ...new Set(
+        userDids.map(addressOf).filter((a): a is string => a !== null),
+      ),
+    ];
+    if (addresses.length === 0) return new Map();
+    try {
+      return await contributorProfiles(relationalDb, addresses);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[renown-stats] contributor profile lookup failed (${reason}); showing addresses`,
+      );
+      return new Map();
+    }
+  }
+
+  /** Log the reason and answer SERVICE_UNAVAILABLE, never the raw error. */
+  function unavailable(error: unknown): GraphQLError {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(`[renown-stats] read failed (${reason})`);
+    return new GraphQLError("Stats are temporarily unavailable", {
+      extensions: { code: "SERVICE_UNAVAILABLE" },
+    });
+  }
+
+  function contributorOutput(
+    top: { userDid: string; value: number },
+    profiles: Map<string, ContributorProfile>,
+  ): MetricContributorOutput {
+    const address = addressOf(top.userDid);
+    const profile = address ? profiles.get(address) : undefined;
+    return {
+      userDid: top.userDid,
+      value: top.value,
+      address,
+      handle: profile?.handle ?? null,
+      displayName: profile?.displayName ?? null,
+      documentId: profile?.documentId ?? null,
+      hasAvatar: profile?.hasAvatar ?? false,
+      avatar: profile?.avatar ?? null,
+      userImage: profile?.userImage ?? null,
     };
   }
 
@@ -298,18 +657,48 @@ export function createResolvers(
           throw invalidRequest(
             "userDid must be a did:pkh:eip155 or did:key DID",
           );
-        const documentId = await requireIndex().userStatsDocument(userDid);
-        if (!documentId) return [];
-        const doc =
-          await reactorClient.get<RenownUserStatsDocument>(documentId);
-        return doc.state.global.stats.map(
-          ({ appDid, metric, value, updatedAt }) => ({
-            appDid,
-            metric,
-            value,
-            updatedAt,
-          }),
-        );
+        const index = requireIndex();
+        try {
+          const documentId = await index.userStatsDocument(userDid);
+          if (!documentId) return [];
+          const doc =
+            await reactorClient.get<RenownUserStatsDocument>(documentId);
+          const stats = doc.state.global.stats;
+          const appDids = [...new Set(stats.map((stat) => stat.appDid))];
+          const cards = new Map(
+            await Promise.all(
+              appDids.map(
+                async (appDid) =>
+                  [appDid, await appCard(index, appDid)] as const,
+              ),
+            ),
+          );
+          const out: UserStatOutput[] = [];
+          for (const { appDid, metric, value, updatedAt } of stats) {
+            const card = cards.get(appDid) ?? null;
+            // A profile that cannot be read might declare this metric private.
+            if (card === UNREADABLE) continue;
+            const declared = card?.metrics.find((m) => m.key === metric);
+            // A metric its publisher declared private is shown nowhere.
+            if (declared && !declared.public) continue;
+            out.push({
+              appDid,
+              metric,
+              value,
+              updatedAt,
+              appName: card?.name ?? null,
+              appDocumentId: card?.documentId ?? null,
+              appHasLogo: card?.hasLogo ?? false,
+              appLogoRef: card?.logoRef ?? null,
+              appLogo: card?.logo ?? null,
+              label: declared?.label ?? null,
+              unit: declared?.unit ?? null,
+            });
+          }
+          return out;
+        } catch (error) {
+          throw unavailable(error);
+        }
       },
 
       appProfile: async (
@@ -333,7 +722,83 @@ export function createResolvers(
             "publisherDid must be a did:pkh:eip155 DID or an address",
           );
         const entries = await requireIndex().appProfilesByPublisher(address);
-        return Promise.all(entries.map(profileOutput));
+        return profileOutputs(entries);
+      },
+
+      appProfiles: async (
+        _: unknown,
+        args: { limit?: number | null; after?: string | null },
+      ): Promise<{ items: AppProfileOutput[]; next: string | null }> => {
+        const limit = args.limit ?? DEFAULT_PAGE;
+        if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE) {
+          throw invalidRequest(`limit must be 1-${MAX_PAGE}`);
+        }
+        const after = args.after ? decodeCursor(args.after) : undefined;
+        const entries = await requireIndex().appProfilesPage(limit + 1, after);
+        const page = entries.slice(0, limit);
+        const last = page.at(-1);
+        return {
+          items: await profileOutputs(page),
+          next:
+            entries.length > limit && last
+              ? encodeCursor({ createdAt: last.createdAt, appDid: last.appDid })
+              : null,
+        };
+      },
+
+      appStats: async (
+        _: unknown,
+        args: { appDid: string },
+      ): Promise<AppStatsOutput | null> => {
+        const appDid = canonicalAppDid(args.appDid);
+        if (appDid === null)
+          throw invalidRequest("appDid must be a did:key DID");
+        const index = requireIndex();
+        const since = new Date(now().getTime() - ACTIVE_WINDOW_MS);
+        try {
+          const [found, activity] = await Promise.all([
+            appCard(index, appDid),
+            index.appActivity(appDid, since),
+          ]);
+          // An unreadable profile declares nothing we can vouch for as public.
+          const card = found === UNREADABLE ? null : found;
+          if (!found && activity.totalUsers === 0) return null;
+          // Only metrics the publisher declared public. Undeclared values stay
+          // stored (declaring later shows their history) but are never exposed.
+          const declared = (card?.metrics ?? []).filter((m) => m.public);
+          const aggregates = await index.metricAggregates(
+            appDid,
+            declared.map((m) => m.key),
+            TOP_CONTRIBUTORS,
+          );
+          const byMetric = new Map(aggregates.map((a) => [a.metric, a]));
+          const profiles = await contributors(
+            aggregates.flatMap((a) => a.top.map((t) => t.userDid)),
+          );
+          return {
+            appDid,
+            activeUsers30d: activity.activeUsers,
+            totalUsers: activity.totalUsers,
+            updatedAt: activity.updatedAt?.toISOString() ?? null,
+            metrics: declared.map((m) => {
+              const aggregate = byMetric.get(m.key);
+              return {
+                key: m.key,
+                label: m.label,
+                unit: m.unit,
+                description: m.description,
+                aggregation: m.aggregation,
+                value: metricValue(m.aggregation, aggregate),
+                users: aggregate?.users ?? 0,
+                top: (aggregate?.top ?? []).map((t) =>
+                  contributorOutput(t, profiles),
+                ),
+              };
+            }),
+          };
+        } catch (error) {
+          throw unavailable(error);
+        }
       },
     },
 
@@ -366,22 +831,48 @@ export function createResolvers(
         await lock(`user:${userDid}`, async () => {
           const documentId = await userStatsDocument(index, userDid);
           // Stats are current values: an unchanged value appends no operation.
-          const current = await reactorClient.get<RenownUserStatsDocument>(
-            documentId,
-          );
+          const current =
+            await reactorClient.get<RenownUserStatsDocument>(documentId);
           const stored = current.state.global.stats.find(
             (stat) => stat.appDid === appDid && stat.metric === args.metric,
           );
-          if (stored?.value === args.value) return;
-          await execute(documentId, [
-            statsActions.setStat({
-              id: generateId(),
-              appDid,
-              metric: args.metric,
-              value: args.value,
-              updatedAt: now().toISOString(),
-            }),
-          ]);
+          const at = now();
+          if (stored?.value !== args.value) {
+            await execute(documentId, [
+              statsActions.setStat({
+                id: generateId(),
+                appDid,
+                metric: args.metric,
+                value: args.value,
+                updatedAt: at.toISOString(),
+              }),
+            ]);
+          }
+          // The app-level aggregate row, right after the accepted report and
+          // under the same per-user lock. Every report rewrites it: it marks
+          // the user active, and repairs a row a crash left behind.
+          try {
+            await index.recordMetricValues([
+              {
+                appDid,
+                metric: args.metric,
+                userDid,
+                value: args.value,
+                updatedAt: at,
+              },
+            ]);
+          } catch (error) {
+            // The document write above already succeeded; the next report of
+            // this metric repairs the row. Never leak the database error.
+            const reason =
+              error instanceof Error ? error.message : String(error);
+            console.warn(
+              `[renown-stats] metric aggregate write failed (${reason})`,
+            );
+            throw new GraphQLError("Stats are temporarily unavailable", {
+              extensions: { code: "SERVICE_UNAVAILABLE" },
+            });
+          }
         });
         return true;
       },
@@ -396,11 +887,16 @@ export function createResolvers(
           throw invalidRequest("appDid must be a did:key DID");
         const caller = ctx.user?.address?.toLowerCase();
         if (!caller) throw forbidden();
-        // Only listed apps (the Renown/Vetra dashboards) may write profiles: a
-        // third-party dApp the publisher logged into holds a bearer for the
-        // same wallet and must not rewrite their profile.
-        const appKey = ctx.user?.appKey;
-        if (!appKey || !deps.profileApps().has(appKey)) throw forbidden();
+        // Which client may write: the Vetra relay (registration token, plus
+        // the publisher's own bearer), or a bearer signed by a listed app key.
+        // A browser's bearer alone never qualifies: its did:key is random per
+        // browser and any site the wallet signed into can mint one.
+        const relay = relayHeader(ctx);
+        if (relay === "invalid") throw forbidden();
+        if (relay === "absent") {
+          const appKey = ctx.user?.appKey;
+          if (!appKey || !deps.profileApps().has(appKey)) throw forbidden();
+        }
         const fields: ProfileFields = {
           name: args.name,
           tagline: args.tagline,
@@ -408,16 +904,31 @@ export function createResolvers(
           website: args.website,
         };
         assertProfileFields(fields);
+        let patch: RichProfilePatch;
+        let metrics: AppMetric[] | undefined;
+        try {
+          patch = toRichProfilePatch(args);
+          metrics = toMetricsPatch(args.metrics);
+        } catch (error) {
+          if (error instanceof AppProfileInputError)
+            throw fieldError("BAD_USER_INPUT", error.field, error.message);
+          throw error;
+        }
         const index = requireIndex();
         if (!profileRateLimiter.take(caller, now().getTime()))
           throw rateLimited();
 
         await lock(`app:${appDid}`, async () => {
           let entry = await index.appProfile(appDid);
+          // Only the registered identity's owner may claim a profile, and only
+          // its publisher may edit one. A delegation is no proof: anyone can
+          // self-publish one to any did:key.
+          const allowed = entry
+            ? entry.publisherAddress === caller
+            : (await ownerOf(appDid)) === caller;
+          if (!allowed) throw forbidden();
+          await assertImages(patch);
           if (!entry) {
-            // Only the registered identity's owner may claim its profile. A
-            // delegation is no proof: anyone can self-publish one to any did:key.
-            if ((await ownerOf(appDid)) !== caller) throw forbidden();
             const created = (
               await reactorClient.createEmpty(renownAppProfileDocumentType)
             ).header.id;
@@ -431,12 +942,42 @@ export function createResolvers(
               { appDid, documentId: created, publisherAddress: caller },
               now(),
             );
+            if (entry.publisherAddress !== caller) throw forbidden();
           }
-          if (entry.publisherAddress !== caller) throw forbidden();
-          if (Object.values(fields).some((value) => value != null)) {
-            await execute(entry.documentId, [
-              profileActions.setProfile(fields),
-            ]);
+          const actions = await profileWrite(
+            entry.documentId,
+            fields,
+            patch,
+            metrics,
+          );
+          if (actions.length > 0) await execute(entry.documentId, actions);
+          // Every save heals the image index from the resulting document, so a
+          // failed write on an earlier save is repaired by the next one.
+          try {
+            const saved = await reactorClient.get<RenownAppProfileDocument>(
+              entry.documentId,
+            );
+            const state = saved.state.global as Partial<
+              RenownAppProfileDocument["state"]["global"]
+            >;
+            await index.setAppImages(
+              entry.documentId,
+              {
+                logoRef: state.logoRef || null,
+                coverRef: state.coverRef || null,
+              },
+              now(),
+            );
+          } catch (error) {
+            // The document is already saved; a retry of the save repairs the index.
+            const reason =
+              error instanceof Error ? error.message : String(error);
+            console.warn(
+              `[renown-stats] app image index write failed (${reason})`,
+            );
+            throw new GraphQLError("Image index is temporarily unavailable", {
+              extensions: { code: "SERVICE_UNAVAILABLE" },
+            });
           }
         });
         return true;

@@ -7,7 +7,6 @@ import {
   isValidLinkUrl,
   MAX_BIO_LENGTH,
   MAX_LINKS,
-  type RenownUserLink,
 } from "../../../document-models/renown-user/index.js";
 import { handleProblem, normalizeHandle } from "./handle.js";
 
@@ -106,34 +105,47 @@ export function toIdentityPatch(input: ProfileFields): IdentityPatch {
   return patch;
 }
 
+/** The link operations of a model; renown-user and renown-app-profile generate the same four. */
+export interface LinkActionCreators {
+  addLink(input: { id: string; label: string; url: string }): Action;
+  updateLink(input: { id: string; label?: string | null; url?: string | null }): Action;
+  removeLink(input: { id: string }): Action;
+  reorderLinks(input: { linkIds: string[] }): Action;
+}
+
 /**
- * The renown-user actions that turn `current` links into `desired` (removes,
- * then updates, then adds, then one reorder if the order still differs).
+ * The actions that turn `current` links into `desired` (removes, then
+ * updates, then adds, then one reorder if the order still differs), built
+ * with `creators` (renown-user's by default).
  */
-export function linkActions(current: readonly RenownUserLink[], desired: readonly ProfileLink[]): Action[] {
+export function linkActions(
+  current: readonly ProfileLink[],
+  desired: readonly ProfileLink[],
+  creators: LinkActionCreators = userActions,
+): Action[] {
   const wanted = new Map(desired.map((link) => [link.id, link]));
   const out: Action[] = [];
   const kept: string[] = [];
   for (const link of current) {
     const next = wanted.get(link.id);
     if (!next) {
-      out.push(userActions.removeLink({ id: link.id }));
+      out.push(creators.removeLink({ id: link.id }));
       continue;
     }
     kept.push(link.id);
     if (next.label !== link.label || next.url !== link.url) {
-      out.push(userActions.updateLink({ id: link.id, label: next.label, url: next.url }));
+      out.push(creators.updateLink({ id: link.id, label: next.label, url: next.url }));
     }
   }
   const existing = new Set(kept);
   for (const link of desired) {
     if (!existing.has(link.id)) {
-      out.push(userActions.addLink({ id: link.id, label: link.label, url: link.url }));
+      out.push(creators.addLink({ id: link.id, label: link.label, url: link.url }));
       kept.push(link.id);
     }
   }
   const order = desired.map((link) => link.id);
-  if (kept.some((id, i) => id !== order[i])) out.push(userActions.reorderLinks({ linkIds: order }));
+  if (kept.some((id, i) => id !== order[i])) out.push(creators.reorderLinks({ linkIds: order }));
   return out;
 }
 

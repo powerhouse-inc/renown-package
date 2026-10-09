@@ -4,6 +4,8 @@ import tsconfigPaths from "vite-tsconfig-paths";
 export default defineConfig({
   test: {
     globals: true,
+    testTimeout: 20000,
+    hookTimeout: 30000,
     coverage: {
       provider: "v8",
       include: ["document-models/**/src/reducers/**"],

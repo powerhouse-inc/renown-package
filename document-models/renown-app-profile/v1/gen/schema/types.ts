@@ -62,13 +62,87 @@ export type Scalars = {
   Upload: { input: File; output: File };
 };
 
+export type AddLinkInput = {
+  id: Scalars["OID"]["input"];
+  /** 1-40 characters after trimming */
+  label: Scalars["String"]["input"];
+  /** http(s) URL, at most 2048 characters */
+  url: Scalars["URL"]["input"];
+};
+
+export type AddMetricInput = {
+  aggregation: RenownMetricAggregation;
+  /** At most 200 characters; empty means none */
+  description?: InputMaybe<Scalars["String"]["input"]>;
+  id: Scalars["OID"]["input"];
+  /** ^[A-Za-z][A-Za-z0-9_.:-]{0,63}$, unique per app */
+  key: Scalars["String"]["input"];
+  /** 1-40 characters after trimming */
+  label: Scalars["String"]["input"];
+  public: Scalars["Boolean"]["input"];
+  /** At most 16 characters; empty means none */
+  unit?: InputMaybe<Scalars["String"]["input"]>;
+};
+
+export type RemoveLinkInput = {
+  id: Scalars["OID"]["input"];
+};
+
+export type RemoveMetricInput = {
+  id: Scalars["OID"]["input"];
+};
+
+export type RenownAppLink = {
+  id: Scalars["OID"]["output"];
+  label: Scalars["String"]["output"];
+  url: Scalars["URL"]["output"];
+};
+
+export type RenownAppMetric = {
+  aggregation: RenownMetricAggregation;
+  /** At most 200 characters */
+  description: Maybe<Scalars["String"]["output"]>;
+  id: Scalars["OID"]["output"];
+  /** The metric name the app reports: ^[A-Za-z][A-Za-z0-9_.:-]{0,63}$ */
+  key: Scalars["String"]["output"];
+  /** 1-40 characters */
+  label: Scalars["String"]["output"];
+  /** Shown on the app page and on user profiles */
+  public: Scalars["Boolean"]["output"];
+  /** At most 16 characters, e.g. notes */
+  unit: Maybe<Scalars["String"]["output"]>;
+};
+
 export type RenownAppProfileState = {
   appDid: Maybe<Scalars["String"]["output"]>;
+  /** At most 40 characters */
+  category: Maybe<Scalars["String"]["output"]>;
+  /** Uploaded 3:1 cover image */
+  coverRef: Maybe<Scalars["AttachmentRef"]["output"]>;
+  /** Markdown subset, at most 2000 characters; rendered sanitized */
+  description: Maybe<Scalars["String"]["output"]>;
+  /** At most 8 links, in display order */
+  links: Array<RenownAppLink>;
+  /** Legacy logo: an https URL or a raster data URL; logoRef wins when set */
   logo: Maybe<Scalars["String"]["output"]>;
+  /** Uploaded square logo */
+  logoRef: Maybe<Scalars["AttachmentRef"]["output"]>;
+  /** Publisher-defined metrics, at most 16, in display order */
+  metrics: Array<RenownAppMetric>;
   name: Maybe<Scalars["String"]["output"]>;
   publisherDid: Maybe<Scalars["String"]["output"]>;
   tagline: Maybe<Scalars["String"]["output"]>;
   website: Maybe<Scalars["String"]["output"]>;
+};
+
+export type RenownMetricAggregation = "AVG" | "COUNT_USERS" | "MAX" | "SUM";
+
+export type ReorderLinksInput = {
+  linkIds: Array<Scalars["OID"]["input"]>;
+};
+
+export type ReorderMetricsInput = {
+  metricIds: Array<Scalars["OID"]["input"]>;
 };
 
 export type SetAppDidInput = {
@@ -76,7 +150,15 @@ export type SetAppDidInput = {
 };
 
 export type SetProfileInput = {
+  /** At most 40 characters; empty clears */
+  category?: InputMaybe<Scalars["String"]["input"]>;
+  /** attachment://v1:<sha256>; empty clears */
+  coverRef?: InputMaybe<Scalars["String"]["input"]>;
+  /** Markdown subset, at most 2000 characters; empty clears */
+  description?: InputMaybe<Scalars["String"]["input"]>;
   logo?: InputMaybe<Scalars["String"]["input"]>;
+  /** attachment://v1:<sha256>; empty clears */
+  logoRef?: InputMaybe<Scalars["String"]["input"]>;
   name?: InputMaybe<Scalars["String"]["input"]>;
   tagline?: InputMaybe<Scalars["String"]["input"]>;
   website?: InputMaybe<Scalars["String"]["input"]>;
@@ -84,4 +166,20 @@ export type SetProfileInput = {
 
 export type SetPublisherDidInput = {
   publisherDid: Scalars["String"]["input"];
+};
+
+export type UpdateLinkInput = {
+  id: Scalars["OID"]["input"];
+  label?: InputMaybe<Scalars["String"]["input"]>;
+  url?: InputMaybe<Scalars["URL"]["input"]>;
+};
+
+export type UpdateMetricInput = {
+  aggregation?: InputMaybe<RenownMetricAggregation>;
+  description?: InputMaybe<Scalars["String"]["input"]>;
+  id: Scalars["OID"]["input"];
+  key?: InputMaybe<Scalars["String"]["input"]>;
+  label?: InputMaybe<Scalars["String"]["input"]>;
+  public?: InputMaybe<Scalars["Boolean"]["input"]>;
+  unit?: InputMaybe<Scalars["String"]["input"]>;
 };

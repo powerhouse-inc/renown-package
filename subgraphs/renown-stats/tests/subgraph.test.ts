@@ -138,3 +138,17 @@ describe("RenownStatsSubgraph", () => {
     error.mockRestore();
   });
 });
+
+describe("RenownStatsSubgraph metric backfill", () => {
+  it("runs the one-time backfill at setup and records it", async () => {
+    let namespace: Kysely<{ renown_stats_jobs: { name: string } }> | undefined;
+    const { subgraph } = makeSubgraph(async () => {
+      namespace = (await pgliteNamespace()) as Kysely<{ renown_stats_jobs: { name: string } }>;
+      return namespace;
+    });
+    await subgraph.onSetup();
+    await subgraph.backfillSettled();
+    const jobs = await namespace!.selectFrom("renown_stats_jobs").select("name").execute();
+    expect(jobs.map((job) => job.name)).toEqual(["app-metric-values-backfill-v1"]);
+  });
+});

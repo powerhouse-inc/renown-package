@@ -61,7 +61,9 @@ export function createUploadHandler(deps: UploadRouteDeps): RouteHandler {
     const { mimeType, sizeBytes } = body;
     const purpose = body.purpose ?? "avatar";
     const sha256 = body.sha256 ?? body.clientHash;
-    if (!isPurpose(purpose)) return fail(400, "INVALID_UPLOAD", "purpose must be one of: avatar");
+    if (!isPurpose(purpose)) {
+      return fail(400, "INVALID_UPLOAD", `purpose must be one of: ${Object.keys(UPLOAD_LIMITS).join(", ")}`);
+    }
     if (typeof mimeType !== "string" || !isImageMimeType(mimeType)) {
       return fail(415, "UNSUPPORTED_TYPE", "Only image/png, image/jpeg and image/webp are accepted");
     }

@@ -26,3 +26,20 @@ export function statsProfileApps(
       .filter((did) => did !== ""),
   );
 }
+/**
+ * The header the Vetra relay sends the workload registration token in — the
+ * same header renown-workload reads.
+ */
+export const REGISTRAR_HEADER = "x-renown-workload-registration-token";
+
+/**
+ * RENOWN_WORKLOAD_REGISTRATION_TOKEN, trimmed; null when unset. Its holder
+ * (Vetra) registers workload identities and may relay a publisher's
+ * upsertAppProfile together with the publisher's own bearer.
+ */
+export function statsRegistrationToken(
+  env: Record<string, string | undefined>,
+): string | null {
+  const raw = env.RENOWN_WORKLOAD_REGISTRATION_TOKEN?.trim();
+  return raw ? raw : null;
+}

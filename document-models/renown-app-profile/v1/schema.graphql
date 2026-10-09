@@ -24,8 +24,49 @@ type RenownAppProfileState {
   publisherDid: String
   name: String
   tagline: String
+  "Legacy logo: an https URL or a raster data URL; logoRef wins when set"
   logo: String
   website: String
+  "Markdown subset, at most 2000 characters; rendered sanitized"
+  description: String
+  "At most 40 characters"
+  category: String
+  "Uploaded square logo"
+  logoRef: AttachmentRef
+  "Uploaded 3:1 cover image"
+  coverRef: AttachmentRef
+  "At most 8 links, in display order"
+  links: [RenownAppLink!]!
+  "Publisher-defined metrics, at most 16, in display order"
+  metrics: [RenownAppMetric!]!
+}
+
+type RenownAppLink {
+  id: OID!
+  label: String!
+  url: URL!
+}
+
+enum RenownMetricAggregation {
+  SUM
+  MAX
+  AVG
+  COUNT_USERS
+}
+
+type RenownAppMetric {
+  id: OID!
+  "The metric name the app reports: ^[A-Za-z][A-Za-z0-9_.:-]{0,63}$"
+  key: String!
+  "1-40 characters"
+  label: String!
+  "At most 16 characters, e.g. notes"
+  unit: String
+  "At most 200 characters"
+  description: String
+  aggregation: RenownMetricAggregation!
+  "Shown on the app page and on user profiles"
+  public: Boolean!
 }
 
 # profile
@@ -43,4 +84,68 @@ input SetProfileInput {
   tagline: String
   logo: String
   website: String
+  "Markdown subset, at most 2000 characters; empty clears"
+  description: String
+  "At most 40 characters; empty clears"
+  category: String
+  "attachment://v1:<sha256>; empty clears"
+  logoRef: String
+  "attachment://v1:<sha256>; empty clears"
+  coverRef: String
+}
+
+input AddLinkInput {
+  id: OID!
+  "1-40 characters after trimming"
+  label: String!
+  "http(s) URL, at most 2048 characters"
+  url: URL!
+}
+
+input UpdateLinkInput {
+  id: OID!
+  label: String
+  url: URL
+}
+
+input RemoveLinkInput {
+  id: OID!
+}
+
+input ReorderLinksInput {
+  linkIds: [OID!]!
+}
+
+# metrics
+
+input AddMetricInput {
+  id: OID!
+  "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$, unique per app"
+  key: String!
+  "1-40 characters after trimming"
+  label: String!
+  "At most 16 characters; empty means none"
+  unit: String
+  "At most 200 characters; empty means none"
+  description: String
+  aggregation: RenownMetricAggregation!
+  public: Boolean!
+}
+
+input UpdateMetricInput {
+  id: OID!
+  key: String
+  label: String
+  unit: String
+  description: String
+  aggregation: RenownMetricAggregation
+  public: Boolean
+}
+
+input RemoveMetricInput {
+  id: OID!
+}
+
+input ReorderMetricsInput {
+  metricIds: [OID!]!
 }

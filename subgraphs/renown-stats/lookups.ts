@@ -2,6 +2,8 @@ import { RenownCredentialProcessor } from "../../processors/renown-credential/in
 import type { DB as RenownCredentialDB } from "../../processors/renown-credential/schema.js";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
 import type { WorkloadDB } from "../renown-workload/store/types.js";
+import { RenownUserProcessor } from "../../processors/renown-user/index.js";
+import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
 
 /**
  * True when `address` holds an unrevoked, unexpired Renown credential
@@ -59,4 +61,47 @@ export async function workloadOwner(
     .where("did", "=", appDid)
     .executeTakeFirst();
   return row?.owner_address.toLowerCase();
+}
+
+/** What appStats shows of a contributor (Phase 1 read model). */
+export interface ContributorProfile {
+  documentId: string;
+  handle: string | null;
+  displayName: string | null;
+  hasAvatar: boolean;
+  avatar: string | null;
+  userImage: string | null;
+}
+
+/**
+ * The Renown profiles behind lowercase wallet addresses, keyed by address.
+ * With several profile documents for one address the newest wins (as the
+ * profile readers choose). Throws when the read model is unavailable.
+ */
+export async function contributorProfiles(
+  db: ReadModelDb,
+  addresses: readonly string[],
+): Promise<Map<string, ContributorProfile>> {
+  const out = new Map<string, ContributorProfile>();
+  if (addresses.length === 0) return out;
+  const rows = await RenownUserProcessor.query<RenownUserDB>("renown-user", db)
+    .selectFrom("renown_user")
+    .select(["document_id", "eth_address", "handle", "display_name", "avatar_ref", "user_image"])
+    .where((eb) => eb(eb.fn("LOWER", ["renown_user.eth_address"]), "in", [...addresses]))
+    .orderBy("renown_user.created_at", "desc")
+    .orderBy("renown_user.document_id", "desc")
+    .execute();
+  for (const row of rows) {
+    const address = row.eth_address?.toLowerCase();
+    if (!address || out.has(address)) continue;
+    out.set(address, {
+      documentId: row.document_id,
+      handle: row.handle,
+      displayName: row.display_name,
+      hasAvatar: row.avatar_ref !== null,
+      avatar: row.avatar_ref,
+      userImage: row.user_image,
+    });
+  }
+  return out;
 }

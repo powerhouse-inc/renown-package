@@ -20,10 +20,10 @@ export const documentModel: DocumentModelGlobalState = {
         },
         global: {
           schema:
-            "type RenownAppProfileState {\n  appDid: String\n  publisherDid: String\n  name: String\n  tagline: String\n  logo: String\n  website: String\n}",
+            'type RenownAppProfileState {\n  appDid: String\n  publisherDid: String\n  name: String\n  tagline: String\n  "Legacy logo: an https URL or a raster data URL; logoRef wins when set"\n  logo: String\n  website: String\n  "Markdown subset, at most 2000 characters; rendered sanitized"\n  description: String\n  "At most 40 characters"\n  category: String\n  "Uploaded square logo"\n  logoRef: AttachmentRef\n  "Uploaded 3:1 cover image"\n  coverRef: AttachmentRef\n  "At most 8 links, in display order"\n  links: [RenownAppLink!]!\n  "Publisher-defined metrics, at most 16, in display order"\n  metrics: [RenownAppMetric!]!\n}\n\ntype RenownAppLink {\n  id: OID!\n  label: String!\n  url: URL!\n}\n\nenum RenownMetricAggregation {\n  SUM\n  MAX\n  AVG\n  COUNT_USERS\n}\n\ntype RenownAppMetric {\n  id: OID!\n  "The metric name the app reports: ^[A-Za-z][A-Za-z0-9_.:-]{0,63}$"\n  key: String!\n  "1-40 characters"\n  label: String!\n  "At most 16 characters, e.g. notes"\n  unit: String\n  "At most 200 characters"\n  description: String\n  aggregation: RenownMetricAggregation!\n  "Shown on the app page and on user profiles"\n  public: Boolean!\n}',
           examples: [],
           initialValue:
-            '{\n  "appDid": null,\n  "publisherDid": null,\n  "name": null,\n  "tagline": null,\n  "logo": null,\n  "website": null\n}',
+            '{\n  "appDid": null,\n  "publisherDid": null,\n  "name": null,\n  "tagline": null,\n  "logo": null,\n  "website": null,\n  "description": null,\n  "category": null,\n  "logoRef": null,\n  "coverRef": null,\n  "links": [],\n  "metrics": []\n}',
         },
       },
       modules: [
@@ -86,7 +86,7 @@ export const documentModel: DocumentModelGlobalState = {
               description:
                 "Patches the public fields. A null or absent field is unchanged; an empty string clears it.",
               schema:
-                "input SetProfileInput {\n  name: String\n  tagline: String\n  logo: String\n  website: String\n}",
+                'input SetProfileInput {\n  name: String\n  tagline: String\n  logo: String\n  website: String\n  "Markdown subset, at most 2000 characters; empty clears"\n  description: String\n  "At most 40 characters; empty clears"\n  category: String\n  "attachment://v1:<sha256>; empty clears"\n  logoRef: String\n  "attachment://v1:<sha256>; empty clears"\n  coverRef: String\n}',
               template: "",
               reducer: "",
               errors: [
@@ -113,7 +113,202 @@ export const documentModel: DocumentModelGlobalState = {
                     "The logo is neither an https URL nor a base64 image data URL",
                   template: "",
                 },
+                {
+                  id: "description-too-long-error",
+                  name: "DescriptionTooLongError",
+                  code: "DESCRIPTION_TOO_LONG",
+                  description: "The description is longer than 2000 characters",
+                  template: "",
+                },
+                {
+                  id: "category-too-long-error",
+                  name: "CategoryTooLongError",
+                  code: "CATEGORY_TOO_LONG",
+                  description: "The category is longer than 40 characters",
+                  template: "",
+                },
+                {
+                  id: "invalid-image-ref-error",
+                  name: "InvalidImageRefError",
+                  code: "INVALID_IMAGE_REF",
+                  description:
+                    "logoRef or coverRef is not an attachment://v1:<64 lowercase hex> reference",
+                  template: "",
+                },
               ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "add-app-link",
+              name: "ADD_LINK",
+              description: "Appends a profile link",
+              schema:
+                'input AddLinkInput {\n  id: OID!\n  "1-40 characters after trimming"\n  label: String!\n  "http(s) URL, at most 2048 characters"\n  url: URL!\n}',
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "too-many-links-error",
+                  name: "TooManyLinksError",
+                  code: "TOO_MANY_LINKS",
+                  description: "The profile already has 8 links",
+                  template: "",
+                },
+                {
+                  id: "duplicate-link-id-error",
+                  name: "DuplicateLinkIdError",
+                  code: "DUPLICATE_LINK_ID",
+                  description: "A link with this id already exists",
+                  template: "",
+                },
+                {
+                  id: "invalid-link-error",
+                  name: "InvalidLinkError",
+                  code: "INVALID_LINK",
+                  description:
+                    "The label is blank or longer than 40 characters, or the URL is not an http(s) URL of at most 2048 characters",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "update-app-link",
+              name: "UPDATE_LINK",
+              description: "Changes the label and/or URL of a link",
+              schema:
+                "input UpdateLinkInput {\n  id: OID!\n  label: String\n  url: URL\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "link-not-found-error",
+                  name: "LinkNotFoundError",
+                  code: "LINK_NOT_FOUND",
+                  description: "No link with this id exists",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "remove-app-link",
+              name: "REMOVE_LINK",
+              description: "Removes a link",
+              schema: "input RemoveLinkInput {\n  id: OID!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "reorder-app-links",
+              name: "REORDER_LINKS",
+              description:
+                "Moves the listed links to the front in the given order; unlisted links keep their relative order after them",
+              schema: "input ReorderLinksInput {\n  linkIds: [OID!]!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+          ],
+        },
+        {
+          id: "renown-app-profile-metrics",
+          name: "metrics",
+          description:
+            "Publisher-defined metrics: what the app reports and how Renown aggregates and shows it",
+          operations: [
+            {
+              id: "add-app-metric",
+              name: "ADD_METRIC",
+              description: "Declares a metric at the end of the list",
+              schema:
+                'input AddMetricInput {\n  id: OID!\n  "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$, unique per app"\n  key: String!\n  "1-40 characters after trimming"\n  label: String!\n  "At most 16 characters; empty means none"\n  unit: String\n  "At most 200 characters; empty means none"\n  description: String\n  aggregation: RenownMetricAggregation!\n  public: Boolean!\n}',
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "too-many-metrics-error",
+                  name: "TooManyMetricsError",
+                  code: "TOO_MANY_METRICS",
+                  description: "The profile already declares 16 metrics",
+                  template: "",
+                },
+                {
+                  id: "duplicate-metric-id-error",
+                  name: "DuplicateMetricIdError",
+                  code: "DUPLICATE_METRIC_ID",
+                  description: "A metric with this id already exists",
+                  template: "",
+                },
+                {
+                  id: "duplicate-metric-key-error",
+                  name: "DuplicateMetricKeyError",
+                  code: "DUPLICATE_METRIC_KEY",
+                  description: "Another metric already uses this key",
+                  template: "",
+                },
+                {
+                  id: "invalid-metric-error",
+                  name: "InvalidMetricError",
+                  code: "INVALID_METRIC",
+                  description:
+                    "The key does not match the metric rule, or the label, unit or description is out of bounds",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "update-app-metric",
+              name: "UPDATE_METRIC",
+              description:
+                "Changes fields of a metric; absent fields are unchanged, an empty unit or description clears it",
+              schema:
+                "input UpdateMetricInput {\n  id: OID!\n  key: String\n  label: String\n  unit: String\n  description: String\n  aggregation: RenownMetricAggregation\n  public: Boolean\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "metric-not-found-error",
+                  name: "MetricNotFoundError",
+                  code: "METRIC_NOT_FOUND",
+                  description: "No metric with this id exists",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "remove-app-metric",
+              name: "REMOVE_METRIC",
+              description:
+                "Removes a metric definition (reported values are kept)",
+              schema: "input RemoveMetricInput {\n  id: OID!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "reorder-app-metrics",
+              name: "REORDER_METRICS",
+              description:
+                "Moves the listed metrics to the front in the given order; unlisted metrics keep their relative order after them",
+              schema: "input ReorderMetricsInput {\n  metricIds: [OID!]!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
               examples: [],
               scope: "global",
             },
