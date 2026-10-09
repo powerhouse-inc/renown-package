@@ -89,7 +89,7 @@ From the platform diagram (Renown / Vetra / Achra):
    - renown-package: fast-forward `staging` to `main` before the first staging
      release; the release workflow's deploy step learns the staging tenant.
    - renown (frontend): build/push `renown-app:staging` from a `staging` branch.
-   - OIDC/registration secrets: copied into `kv/powerhouse/staging/renown/*`
+   - OIDC/registration secrets: copied into `kv/tenants/renown-staging/oidc`
      (new values where they are secrets of the stack itself, e.g. signing keys).
 3. **Attachments on S3**: `PH_ATTACHMENT_STORAGE=s3`, endpoint
    `https://nbg1.your-objectstorage.com`, region `nbg1`, path-style, buckets
@@ -98,9 +98,13 @@ From the platform diagram (Renown / Vetra / Achra):
    via ExternalSecret (pfnuer pattern), `persistence.enabled: false`,
    `PH_SWITCHBOARD_PUBLIC_URL` set, `PH_ATTACHMENT_URL_SIGNING_SECRET` set
    (≥32 chars, from OpenBao). Buckets are private.
-4. **CORS**: renown switchboard `/attachments/*` accepts browser uploads from
+4. **Gated uploads**: browser uploads go through a gated renown-package upload
+   route (mime allow-list, size cap, per-address rate limit), not the raw
+   attachment API. The raw `/attachments/reservations` route is blocked at the
+   ingress (the smoke script takes `--reserve-path` for the gated route).
+5. **CORS**: renown switchboard `/attachments/*` accepts browser uploads from
    renown.id origins and vetra.io origins (prod + staging).
-5. **Stable media URLs** (renown.id API route, cacheable, embeddable anywhere):
+6. **Stable media URLs** (renown.id API route, cacheable, embeddable anywhere):
    `GET /media/<documentId>/<field>` → reads the document's ref for `field`
    (`avatar`, `logo`, `cover`) from the read model → asks the switchboard for a
    download target with `documentId` → `302` to it with
@@ -110,7 +114,7 @@ From the platform diagram (Renown / Vetra / Achra):
    under `AUTH_ENABLED=true`; if it does not, the route uses a service bearer
    (an admin-signed Renown token held by the renown.id server) — same URL
    contract either way.
-6. **Wire Vetra staging to Renown staging**: vetra staging switchboard
+7. **Wire Vetra staging to Renown staging**: vetra staging switchboard
    `RENOWN_SWITCHBOARD_URL`, `RENOWN_STATS_URL`, registration token; vetra.io
    staging Renown URLs. Staging apps re-register their workload identity once
    (staging test data; acceptable).
@@ -153,8 +157,11 @@ Before dispatching it:
   profile, settings, renown, vetra, powerhouse, www, help, about, login,
   console, oidc`), and uniqueness case-insensitively against the read model
   (unique index `lower(handle)`), returning `HANDLE_TAKEN`;
-- for `avatar`, checks the attachment exists, is complete, mime ∈
-  {png, jpeg, webp}, size ≤ 2 MB — else `INVALID_AVATAR`;
+- for `avatar`, does **not** trust the attachment record: on S3 its mime/size
+  are client-claimed. It HEADs the object via the attachment backend (real
+  `ContentLength` ≤ 2 MB, real `ContentType` ∈ {png, jpeg, webp}) and sniffs
+  the magic bytes (PNG/JPEG/WebP) of the fetched head of the object — else
+  `INVALID_AVATAR`;
 - rate limit as today.
 
 Read model `renown_user`: add `display_name`, `handle` (unique, lowercase),
