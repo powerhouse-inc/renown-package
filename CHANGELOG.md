@@ -1,3 +1,10 @@
+# [1.8.0-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.8.0-staging.1...v1.8.0-staging.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* **identity:** media redirect lifetime, storage faults answer 503, dedupe known uploads, cap link ids, full smoke cleanup ([a624dbd](https://github.com/powerhouse-inc/renown-package/commit/a624dbdd19533bce83e1b1099506af68463f2499))
+
 # [1.8.0-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.7.1-staging.1...v1.8.0-staging.1) (2026-10-09)
 
 
