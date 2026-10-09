@@ -142,6 +142,8 @@ interface UserStatOutput {
   appName: string | null;
   appDocumentId: string | null;
   appHasLogo: boolean;
+  /** The app profile's logo attachment ref (versions the media URL). */
+  appLogoRef: string | null;
   appLogo: string | null;
   /** Set when the app declares this metric public. */
   label: string | null;
@@ -157,6 +159,8 @@ interface MetricContributorOutput {
   displayName: string | null;
   documentId: string | null;
   hasAvatar: boolean;
+  /** The profile's avatar attachment ref (versions the media URL). */
+  avatar: string | null;
   userImage: string | null;
 }
 
@@ -184,9 +188,13 @@ interface AppCard {
   documentId: string;
   name: string | null;
   hasLogo: boolean;
+  logoRef: string | null;
   logo: string | null;
   metrics: AppMetric[];
 }
+
+/** An app profile exists but could not be read: its stats are withheld. */
+const UNREADABLE = Symbol("unreadable");
 
 interface AppProfileOutput {
   appDid: string;
@@ -523,8 +531,8 @@ export function createResolvers(
     };
   }
 
-  /** The app's profile as stats readers need it; null without one (or when it cannot be read). */
-  async function appCard(index: StatsIndex, appDid: string): Promise<AppCard | null> {
+  /** The app's profile as stats readers need it; null without one ; UNREADABLE when it exists but cannot be read. */
+  async function appCard(index: StatsIndex, appDid: string): Promise<AppCard | null | typeof UNREADABLE> {
     const entry = await index.appProfile(appDid);
     if (!entry) return null;
     try {
@@ -534,13 +542,14 @@ export function createResolvers(
         documentId: entry.documentId,
         name: state.name ?? null,
         hasLogo: !!state.logoRef,
+        logoRef: state.logoRef || null,
         logo: state.logo ?? null,
         metrics: (state.metrics ?? []).map(toAppMetric),
       };
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      console.warn(`[renown-stats] app profile ${entry.documentId} unreadable (${reason}); stats shown without it`);
-      return null;
+      console.warn(`[renown-stats] app profile ${entry.documentId} unreadable (${reason}); its stats are withheld`);
+      return UNREADABLE;
     }
   }
 
@@ -557,6 +566,15 @@ export function createResolvers(
     }
   }
 
+  /** Log the reason and answer SERVICE_UNAVAILABLE, never the raw error. */
+  function unavailable(error: unknown): GraphQLError {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(`[renown-stats] read failed (${reason})`);
+    return new GraphQLError("Stats are temporarily unavailable", {
+      extensions: { code: "SERVICE_UNAVAILABLE" },
+    });
+  }
+
   function contributorOutput(
     top: { userDid: string; value: number },
     profiles: Map<string, ContributorProfile>,
@@ -571,6 +589,7 @@ export function createResolvers(
       displayName: profile?.displayName ?? null,
       documentId: profile?.documentId ?? null,
       hasAvatar: profile?.hasAvatar ?? false,
+      avatar: profile?.avatar ?? null,
       userImage: profile?.userImage ?? null,
     };
   }
@@ -587,39 +606,47 @@ export function createResolvers(
             "userDid must be a did:pkh:eip155 or did:key DID",
           );
         const index = requireIndex();
-        const documentId = await index.userStatsDocument(userDid);
-        if (!documentId) return [];
-        const doc =
-          await reactorClient.get<RenownUserStatsDocument>(documentId);
-        const cards = new Map<string, Promise<AppCard | null>>();
-        const cardOf = (appDid: string): Promise<AppCard | null> => {
-          let card = cards.get(appDid);
-          if (!card) {
-            card = appCard(index, appDid);
-            cards.set(appDid, card);
+        try {
+          const documentId = await index.userStatsDocument(userDid);
+          if (!documentId) return [];
+          const doc =
+            await reactorClient.get<RenownUserStatsDocument>(documentId);
+          const stats = doc.state.global.stats;
+          const appDids = [...new Set(stats.map((stat) => stat.appDid))];
+          const cards = new Map(
+            await Promise.all(
+              appDids.map(
+                async (appDid) =>
+                  [appDid, await appCard(index, appDid)] as const,
+              ),
+            ),
+          );
+          const out: UserStatOutput[] = [];
+          for (const { appDid, metric, value, updatedAt } of stats) {
+            const card = cards.get(appDid) ?? null;
+            // A profile that cannot be read might declare this metric private.
+            if (card === UNREADABLE) continue;
+            const declared = card?.metrics.find((m) => m.key === metric);
+            // A metric its publisher declared private is shown nowhere.
+            if (declared && !declared.public) continue;
+            out.push({
+              appDid,
+              metric,
+              value,
+              updatedAt,
+              appName: card?.name ?? null,
+              appDocumentId: card?.documentId ?? null,
+              appHasLogo: card?.hasLogo ?? false,
+              appLogoRef: card?.logoRef ?? null,
+              appLogo: card?.logo ?? null,
+              label: declared?.label ?? null,
+              unit: declared?.unit ?? null,
+            });
           }
-          return card;
-        };
-        const out: UserStatOutput[] = [];
-        for (const { appDid, metric, value, updatedAt } of doc.state.global.stats) {
-          const card = await cardOf(appDid);
-          const declared = card?.metrics.find((m) => m.key === metric);
-          // A metric its publisher declared private is shown nowhere.
-          if (declared && !declared.public) continue;
-          out.push({
-            appDid,
-            metric,
-            value,
-            updatedAt,
-            appName: card?.name ?? null,
-            appDocumentId: card?.documentId ?? null,
-            appHasLogo: card?.hasLogo ?? false,
-            appLogo: card?.logo ?? null,
-            label: declared?.label ?? null,
-            unit: declared?.unit ?? null,
-          });
+          return out;
+        } catch (error) {
+          throw unavailable(error);
         }
-        return out;
       },
 
       appProfile: async (
@@ -676,11 +703,14 @@ export function createResolvers(
           throw invalidRequest("appDid must be a did:key DID");
         const index = requireIndex();
         const since = new Date(now().getTime() - ACTIVE_WINDOW_MS);
-        const [card, activity] = await Promise.all([
+        try {
+        const [found, activity] = await Promise.all([
           appCard(index, appDid),
           index.appActivity(appDid, since),
         ]);
-        if (!card && activity.totalUsers === 0) return null;
+        // An unreadable profile declares nothing we can vouch for as public.
+        const card = found === UNREADABLE ? null : found;
+        if (!found && activity.totalUsers === 0) return null;
         // Only metrics the publisher declared public. Undeclared values stay
         // stored (declaring later shows their history) but are never exposed.
         const declared = (card?.metrics ?? []).filter((m) => m.public);
@@ -712,6 +742,9 @@ export function createResolvers(
             };
           }),
         };
+        } catch (error) {
+          throw unavailable(error);
+        }
       },
     },
 

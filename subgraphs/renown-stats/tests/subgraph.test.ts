@@ -40,7 +40,7 @@ async function pgliteNamespace(): Promise<unknown> {
   return root.withSchema("renown-stats");
 }
 
-describe("RenownStatsSubgraph", { timeout: 20000 }, () => {
+describe("RenownStatsSubgraph", () => {
   afterEach(() => {
     verifier.fail = false;
     vi.restoreAllMocks();

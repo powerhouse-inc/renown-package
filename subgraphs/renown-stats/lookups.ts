@@ -69,6 +69,7 @@ export interface ContributorProfile {
   handle: string | null;
   displayName: string | null;
   hasAvatar: boolean;
+  avatar: string | null;
   userImage: string | null;
 }
 
@@ -98,6 +99,7 @@ export async function contributorProfiles(
       handle: row.handle,
       displayName: row.display_name,
       hasAvatar: row.avatar_ref !== null,
+      avatar: row.avatar_ref,
       userImage: row.user_image,
     });
   }

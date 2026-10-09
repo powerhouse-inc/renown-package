@@ -12,6 +12,8 @@ export const schema: DocumentNode = gql`
     "The app's profile document: its logo is <renown>/media/<appDocumentId>/logo when appHasLogo."
     appDocumentId: String
     appHasLogo: Boolean!
+    "The app logo's attachment ref; media URL: <renown>/media/<appDocumentId>/logo?v=<first 12 hex of the ref's sha256>."
+    appLogoRef: String
     "Legacy logo URL of the app (https or raster data URL)."
     appLogo: String
     "Set when the app declares this metric public; null for undeclared metrics."
@@ -29,6 +31,8 @@ export const schema: DocumentNode = gql`
     "The contributor's Renown profile document (avatar at <renown>/media/<documentId>/avatar when hasAvatar)."
     documentId: String
     hasAvatar: Boolean!
+    "The avatar's attachment ref; media URL: <renown>/media/<documentId>/avatar?v=<first 12 hex of the ref's sha256>."
+    avatar: String
     userImage: String
   }
 

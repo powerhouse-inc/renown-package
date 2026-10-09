@@ -1,3 +1,4 @@
+import type { PHDocument } from "document-model";
 import type { IRelationalDb } from "@powerhousedao/reactor-browser";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACTIVE_WINDOW_MS, metricValue } from "../core/app-stats.js";
@@ -94,11 +95,11 @@ describe("appStats", () => {
     const notes = stats?.metrics[0];
     expect(notes).toMatchObject({ label: "NOTES", unit: "notes", description: null, aggregation: "SUM" });
     expect(notes?.top).toEqual([
-      { userDid: user(1), value: 10, address: addr(1), handle: "ada", displayName: "Ada", documentId: "doc-ada", hasAvatar: true, userImage: null },
-      { userDid: user(4), value: 5, address: addr(4), handle: null, displayName: null, documentId: "doc-a4", hasAvatar: false, userImage: "https://img.example/a4.png" },
-      { userDid: user(5), value: 5, address: addr(5), handle: null, displayName: null, documentId: null, hasAvatar: false, userImage: null },
-      { userDid: BROWSER_KEY, value: 3, address: null, handle: null, displayName: null, documentId: null, hasAvatar: false, userImage: null },
-      { userDid: user(6), value: 1, address: addr(6), handle: null, displayName: null, documentId: null, hasAvatar: false, userImage: null },
+      { userDid: user(1), value: 10, address: addr(1), handle: "ada", displayName: "Ada", documentId: "doc-ada", hasAvatar: true, avatar: `attachment://v1:${"a".repeat(64)}`, userImage: null },
+      { userDid: user(4), value: 5, address: addr(4), handle: null, displayName: null, documentId: "doc-a4", hasAvatar: false, avatar: null, userImage: "https://img.example/a4.png" },
+      { userDid: user(5), value: 5, address: addr(5), handle: null, displayName: null, documentId: null, hasAvatar: false, avatar: null, userImage: null },
+      { userDid: BROWSER_KEY, value: 3, address: null, handle: null, displayName: null, documentId: null, hasAvatar: false, avatar: null, userImage: null },
+      { userDid: user(6), value: 1, address: addr(6), handle: null, displayName: null, documentId: null, hasAvatar: false, avatar: null, userImage: null },
     ]);
   });
 
@@ -178,9 +179,9 @@ describe("userStats enrichment", () => {
     }
     const documentId = ((await r.appProfile(APP)) as { documentId: string }).documentId;
     expect(await r.userStats(user(1))).toEqual([
-      { appDid: APP, metric: "notes", value: 4, updatedAt: anyString, appName: "Vault", appDocumentId: documentId, appHasLogo: false, appLogo: "https://cdn.example/vault.png", label: "Notes", unit: "notes" },
-      { appDid: APP, metric: "raw", value: 2, updatedAt: anyString, appName: "Vault", appDocumentId: documentId, appHasLogo: false, appLogo: "https://cdn.example/vault.png", label: null, unit: null },
-      { appDid: APP_2, metric: "x", value: 1, updatedAt: anyString, appName: null, appDocumentId: null, appHasLogo: false, appLogo: null, label: null, unit: null },
+      { appDid: APP, metric: "notes", value: 4, updatedAt: anyString, appName: "Vault", appDocumentId: documentId, appHasLogo: false, appLogoRef: null, appLogo: "https://cdn.example/vault.png", label: "Notes", unit: "notes" },
+      { appDid: APP, metric: "raw", value: 2, updatedAt: anyString, appName: "Vault", appDocumentId: documentId, appHasLogo: false, appLogoRef: null, appLogo: "https://cdn.example/vault.png", label: null, unit: null },
+      { appDid: APP_2, metric: "x", value: 1, updatedAt: anyString, appName: null, appDocumentId: null, appHasLogo: false, appLogoRef: null, appLogo: null, label: null, unit: null },
     ]);
   });
 });
@@ -226,5 +227,48 @@ describe("appStats controller rules", () => {
     expect(error.code).toBe("SERVICE_UNAVAILABLE");
     expect(error.message).not.toContain("secret_table");
     expect(warn).toHaveBeenCalled();
+  });
+});
+
+describe("fail-closed and unavailable reads", () => {
+  it("withholds an app's rows from userStats when its profile cannot be read", async () => {
+    const r = harnessResolvers(h);
+    await r.upsert({ appDid: APP, name: "Vault", metrics: [metric("secret", "SUM", { public: false })] });
+    await r.report({ appDid: APP, userDid: user(1), metric: "secret", value: 1 });
+    await r.report({ appDid: APP_2, userDid: user(1), metric: "x", value: 1 });
+    const profileId = ((await r.appProfile(APP)) as { documentId: string }).documentId;
+    const get = r.reactor.get.getMockImplementation() as (id: string) => Promise<PHDocument>;
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    r.reactor.get.mockImplementation((id: string) =>
+      id === profileId ? Promise.reject(new Error("storage down")) : get(id),
+    );
+    const rows = (await r.userStats(user(1))) as { appDid: string; metric: string }[];
+    expect(rows.map((x) => x.metric)).toEqual(["x"]);
+  });
+
+  it("exposes the logo attachment ref on userStats", async () => {
+    const r = harnessResolvers(h);
+    const ref = `attachment://v1:${"b".repeat(64)}`;
+    await r.upsert({ appDid: APP, name: "Vault" });
+    const id = ((await r.appProfile(APP)) as { documentId: string }).documentId;
+    const doc = r.reactor.docs.get(id) as unknown as { state: { global: { logoRef: string } } };
+    doc.state.global.logoRef = ref;
+    await r.report({ appDid: APP, userDid: user(1), metric: "m", value: 1 });
+    expect(await r.userStats(user(1))).toMatchObject([{ appHasLogo: true, appLogoRef: ref }]);
+  });
+
+  it("answers SERVICE_UNAVAILABLE, without SQL text, when the index fails on a public read", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const r = harnessResolvers(h);
+    await r.upsert({ appDid: APP, metrics: [metric("m", "SUM")] });
+    await r.report({ appDid: APP, userDid: user(1), metric: "m", value: 1 });
+    vi.spyOn(r.index, "metricAggregates").mockRejectedValue(new Error("select * from app_metric_values failed"));
+    const error = await failure(r.appStats(APP));
+    expect(error).toMatchObject({ code: "SERVICE_UNAVAILABLE", message: "Stats are temporarily unavailable" });
+    vi.spyOn(r.index, "userStatsDocument").mockRejectedValue(new Error("select user_stats_documents"));
+    const e2 = await failure(r.userStats(user(1)));
+    expect(e2.code).toBe("SERVICE_UNAVAILABLE");
+    expect(e2.message).not.toContain("select");
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 });
