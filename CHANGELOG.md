@@ -1,3 +1,19 @@
+# [1.10.0](https://github.com/powerhouse-inc/renown-package/compare/v1.9.0...v1.10.0) (2026-10-09)
+
+
+### Bug Fixes
+
+* **stats:** non-blocking category migration, cache categories, back off failing network stats ([34b7e3e](https://github.com/powerhouse-inc/renown-package/commit/34b7e3e718a65e84e184ab0a38ad0d79a9b9882c))
+* **stats:** trim the category filter argument ([4e6afd7](https://github.com/powerhouse-inc/renown-package/commit/4e6afd72bd72ddd1dcb9007cf41f1ee233e1fce5))
+
+
+### Features
+
+* **stats:** filter app profiles by category and list categories ([901a758](https://github.com/powerhouse-inc/renown-package/commit/901a7587cb97572915bcd519fdcdd387ee4f06ea))
+* **stats:** index app-profile categories and network activity ([b55627f](https://github.com/powerhouse-inc/renown-package/commit/b55627f193715cc6df2a4c6ee3f92b29a7edb1cd))
+* **stats:** keep app-profile categories indexed (save heal + backfill) ([a4f3c92](https://github.com/powerhouse-inc/renown-package/commit/a4f3c92627546415eeafc0c40e600b9325943650))
+* **stats:** renownNetworkStats with a 300 s in-process cache ([dab5bce](https://github.com/powerhouse-inc/renown-package/commit/dab5bce090d0a72ffff2f310c594cf145c96c8aa))
+
 # [1.9.0](https://github.com/powerhouse-inc/renown-package/compare/v1.8.1...v1.9.0) (2026-10-09)
 
 
