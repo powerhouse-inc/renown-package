@@ -1,3 +1,25 @@
+# [1.9.0](https://github.com/powerhouse-inc/renown-package/compare/v1.8.1...v1.9.0) (2026-10-09)
+
+
+### Bug Fixes
+
+* **renown-stats:** fail closed on unreadable app profiles, expose media refs, wrap public read failures ([481be46](https://github.com/powerhouse-inc/renown-package/commit/481be469c44d4cd5a1e8788f0107071a628404c5))
+* **renown-stats:** final-review fixes (image index healing, id caps, resilient lists, backfill, top contributors) ([cbe04fc](https://github.com/powerhouse-inc/renown-package/commit/cbe04fc79441a969269100c578dfe487e95b962a))
+
+
+### Features
+
+* identity hub phases 2+3 (app profiles, app stats) ([d7a27eb](https://github.com/powerhouse-inc/renown-package/commit/d7a27eb68979d78cb44f440209eae3ad161aab50))
+* **media:** logo and cover uploads and public media URLs ([b8edb10](https://github.com/powerhouse-inc/renown-package/commit/b8edb100c4f35dcd2c97e1541d6170db9c9941ac))
+* **renown-app-profile:** description, category, logo and cover images, links ([f07b9d3](https://github.com/powerhouse-inc/renown-package/commit/f07b9d3bd7480a67a4ec3efb602cfbcbcfa6cfb6))
+* **renown-app-profile:** publisher-defined metric definitions ([03f5a9e](https://github.com/powerhouse-inc/renown-package/commit/03f5a9ea55bb14a13eb6aad307b2b17640eb1fdf))
+* **renown-stats:** backfill app metric values from user-stats documents once ([72c3997](https://github.com/powerhouse-inc/renown-package/commit/72c3997c28bb6067e25f9234ec055b719de8c099))
+* **renown-stats:** index app profile images and page through profiles ([beb72e6](https://github.com/powerhouse-inc/renown-package/commit/beb72e6d324e70b11ac9dd272058d3103cb6596f))
+* **renown-stats:** metric definitions on app profiles, aggregate rows on every report ([efd002e](https://github.com/powerhouse-inc/renown-package/commit/efd002e4bee1bb65ea9c3820cf23cbd2384f5bf9))
+* **renown-stats:** per-user metric values with app-level aggregates ([61b0125](https://github.com/powerhouse-inc/renown-package/commit/61b0125c77afdd06dc544cfc2c0d6d129cfde15e))
+* **renown-stats:** public appStats with top contributors; userStats names apps and metrics ([63fe19a](https://github.com/powerhouse-inc/renown-package/commit/63fe19ace256509640397e51263d77cef2a49699))
+* **renown-stats:** rich app profiles through the Vetra relay, appProfiles listing ([8e95b08](https://github.com/powerhouse-inc/renown-package/commit/8e95b089ba4d0fd11a44a1192251c20e411d74f8))
+
 ## [1.8.1](https://github.com/powerhouse-inc/renown-package/compare/v1.8.0...v1.8.1) (2026-10-09)
 
 
