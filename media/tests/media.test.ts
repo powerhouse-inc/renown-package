@@ -6,7 +6,8 @@ import type { MediaBackend, ReserveRequest, StoredObject } from "../backend.js";
 import { createFilesystemMediaBackend } from "../filesystem-backend.js";
 import { sniffImage } from "../image.js";
 import { createMediaHandler, MEDIA_CACHE_CONTROL } from "../media-route.js";
-import { createS3MediaBackend } from "../s3-backend.js";
+import { createS3AttachmentPrimitives } from "@powerhousedao/reactor-attachments";
+import { createS3MediaBackend, presignPinned } from "../s3-backend.js";
 import { createUploadHandler } from "../upload-route.js";
 
 const HASH = "c".repeat(64);
@@ -141,6 +142,14 @@ describe("GET media/:documentId/:field", () => {
   const get = (handler: ReturnType<typeof createMediaHandler>, params: Record<string, string>) =>
     handler(new Request("https://sb/x"), ctx({ params, user: undefined, authEnabled: false }));
 
+  it("ignores a ?v= cache-busting query", async () => {
+    const handler = createMediaHandler({ backend: () => fakeBackend(), fields });
+    const res = await handler(new Request("https://sb/x?v=0123456789ab"), ctx({ params: { documentId: "doc-1", field: "avatar" }, user: undefined, authEnabled: false }));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://s3/get?sig");
+    expect(res.headers.get("cache-control")).toBe(MEDIA_CACHE_CONTROL);
+  });
+
   it("302s to a presigned URL with the public cache policy", async () => {
     const res = await get(createMediaHandler({ backend: () => fakeBackend(), fields }), { documentId: "doc-1", field: "avatar" });
     expect(res.status).toBe(302);
@@ -206,6 +215,7 @@ describe("S3 media backend", () => {
     accessKeyId: "k", secretAccessKey: "s", prefix: "attachments", forcePathStyle: true,
     uploadTtlSeconds: 900, downloadTtlSeconds: 300,
   };
+  const notFound = () => Promise.reject(Object.assign(new Error("NotFound"), { name: "NotFound" }));
   function setup(head: () => Promise<unknown>) {
     const presign = vi.fn(async (_client: object, command: object) => `https://signed/${(command as { constructor: { name: string } }).constructor.name}`);
     const primitives = {
@@ -229,7 +239,7 @@ describe("S3 media backend", () => {
   }
 
   it("presigns a PUT that pins the exact length, type and checksum", async () => {
-    const { backend, presign } = setup(async () => ({}));
+    const { backend, presign } = setup(notFound);
     const result = await backend.reserve({ sha256: HASH, mimeType: "image/webp", sizeBytes: 1234, extension: "webp", fileName: "a.webp" });
     const command = presign.mock.calls[0][1] as { input: Record<string, unknown> };
     expect(command.input).toMatchObject({
@@ -257,11 +267,36 @@ describe("S3 media backend", () => {
     const real = createS3MediaBackend({
       attachments: { reserve: async (_o: unknown, send: (h: unknown) => Promise<unknown>) => send({ ref: REF, reservationId: "r", expiresAtUtc: "t" }) } as never,
       config,
+      primitives: Object.assign(createS3AttachmentPrimitives(config, { presign: presignPinned }), { headObject: notFound }) as never,
     });
     const result = await real.reserve({ sha256: HASH, mimeType: "image/webp", sizeBytes: 1234, extension: "webp", fileName: "a.webp" });
     if (result.kind !== "reserved" || !result.uploadTarget) throw new Error("expected an upload target");
     const signed = new URL(result.uploadTarget.url).searchParams.get("X-Amz-SignedHeaders")?.split(";") ?? [];
     expect(signed).toEqual(expect.arrayContaining(["content-length", "content-type", "x-amz-checksum-sha256"]));
+  });
+
+  it("answers a known object as deduped instead of presigning another PUT", async () => {
+    const { backend, presign, reserve } = setup(async () => ({ ContentLength: 1234, ContentType: "image/png" }));
+    expect(await backend.reserve({ sha256: HASH, mimeType: "image/webp", sizeBytes: 1234, extension: "webp", fileName: "a.webp" })).toEqual({ kind: "deduped", ref: REF });
+    expect(presign).not.toHaveBeenCalled();
+    expect(reserve).not.toHaveBeenCalled();
+  });
+
+  it("rethrows a storage error while looking for a known object", async () => {
+    const { backend } = setup(async () => Promise.reject(new Error("socket hang up")));
+    await expect(backend.reserve({ sha256: HASH, mimeType: "image/webp", sizeBytes: 1, extension: "webp", fileName: "a" })).rejects.toThrow("socket hang up");
+  });
+
+  it("mints download URLs that outlive the 5-minute redirect cache window", async () => {
+    const { backend, primitives } = setup(async () => ({}));
+    await backend.serve(HASH);
+    expect(primitives.createDownloadTarget).toHaveBeenCalledWith(HASH, 900);
+  });
+
+  it("surfaces a failed ranged read as a storage error, not as 'not uploaded'", async () => {
+    const { backend, fetchImpl } = setup(async () => ({ ContentLength: 4, ContentType: "image/png" }));
+    fetchImpl.mockResolvedValueOnce(new Response("boom", { status: 500 }));
+    await expect(backend.inspect(HASH)).rejects.toThrow(/500/);
   });
 
   it("inspects size and type from HEAD and the first bytes from a ranged GET", async () => {

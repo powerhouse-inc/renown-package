@@ -267,7 +267,13 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
     if (!backend) {
       throw new GraphQLError("Avatar uploads are not available", { extensions: { code: "SERVICE_UNAVAILABLE" } });
     }
-    const problem = await avatarProblem(ref, backend);
+    let problem: string | null;
+    try {
+      problem = await avatarProblem(ref, backend);
+    } catch {
+      // Storage could not be read: say so, rather than blaming the image.
+      throw new GraphQLError("Avatar storage is unavailable", { extensions: { code: "SERVICE_UNAVAILABLE" } });
+    }
     if (problem) throw fieldError("INVALID_AVATAR", "avatar", `Invalid avatar: ${problem}`);
   }
 
