@@ -10,6 +10,8 @@ export interface BackfillResult {
   documents: number;
   values: number;
   failed: number;
+  /** Stats skipped for an unparseable updatedAt; they never hold the job open. */
+  skipped?: number;
 }
 
 export interface BackfillDeps {
@@ -38,19 +40,23 @@ export async function backfillAppMetricValues(deps: BackfillDeps): Promise<Backf
   let documents = 0;
   let values = 0;
   let failed = 0;
+  let skipped = 0;
   let after: string | undefined;
   for (;;) {
     const page = await index.userStatsDocumentsPage(pageSize, after);
     for (const entry of page) {
       try {
         const doc = await deps.reactorClient.get<RenownUserStatsDocument>(entry.documentId);
-        const rows: MetricValue[] = doc.state.global.stats.map((stat) => ({
-          appDid: stat.appDid,
-          metric: stat.metric,
-          userDid: entry.userDid,
-          value: stat.value,
-          updatedAt: new Date(stat.updatedAt),
-        }));
+        const rows: MetricValue[] = [];
+        for (const stat of doc.state.global.stats) {
+          const updatedAt = new Date(stat.updatedAt);
+          // One bad timestamp must not fail the document: skip just that stat.
+          if (Number.isNaN(updatedAt.getTime())) {
+            skipped++;
+            continue;
+          }
+          rows.push({ appDid: stat.appDid, metric: stat.metric, userDid: entry.userDid, value: stat.value, updatedAt });
+        }
         await index.recordMetricValues(rows);
         documents++;
         values += rows.length;
@@ -66,10 +72,13 @@ export async function backfillAppMetricValues(deps: BackfillDeps): Promise<Backf
     if (page.length < pageSize || !last) break;
     after = last.userDid;
   }
-  if (failed > 0) return { status: "incomplete", documents, values, failed };
+  if (skipped > 0) {
+    logger.warn(`[renown-stats] metric backfill skipped ${skipped} stats with an invalid updatedAt`);
+  }
+  if (failed > 0) return { status: "incomplete", documents, values, failed, skipped };
   await index.markJobDone(METRIC_BACKFILL_JOB, deps.now());
   if (documents > 0) {
     logger.info(`[renown-stats] backfilled ${values} metric values from ${documents} user-stats documents`);
   }
-  return { status: "done", documents, values, failed };
+  return { status: "done", documents, values, failed, skipped };
 }

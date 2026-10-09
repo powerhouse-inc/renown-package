@@ -65,6 +65,14 @@ describe("KyselyStatsIndex metric values", () => {
     expect((await index.metricAggregates(APP, ["notes"], 0))[0]?.top).toEqual([]);
   });
 
+  it("ranks only users with a positive value", async () => {
+    const index = await makeIndex();
+    await index.recordMetricValues([value("u1", "m", 0), value("u2", "m", -3), value("u3", "m", 2)]);
+    const [m] = await index.metricAggregates(APP, ["m"], 5);
+    expect(m.users).toBe(3);
+    expect(m.top).toEqual([{ userDid: "u3", value: 2 }]);
+  });
+
   it("keeps the newest value per (app, metric, user): newer or equal wins, older is ignored", async () => {
     const index = await makeIndex();
     await index.recordMetricValues([value("u1", "m", 5, T2)]);

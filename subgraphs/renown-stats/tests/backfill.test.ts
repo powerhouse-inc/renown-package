@@ -60,7 +60,7 @@ describe("backfillAppMetricValues", () => {
       "doc-b": statsDoc(BOB, [{ metric: "notes", value: 0, updatedAt: T2 }]),
     });
     const result = await backfillAppMetricValues({ index, reactorClient: reactor.client, now, logger: quiet, pageSize: 1 });
-    expect(result).toEqual({ status: "done", documents: 2, values: 3, failed: 0 });
+    expect(result).toEqual({ status: "done", documents: 2, values: 3, failed: 0, skipped: 0 });
     expect(await index.jobDone(METRIC_BACKFILL_JOB)).toBe(true);
     const [notes] = await index.metricAggregates(APP, ["notes"], 5);
     expect(notes).toMatchObject({ users: 2, sum: 4, positiveUsers: 1 });
@@ -94,7 +94,7 @@ describe("backfillAppMetricValues", () => {
     const docs: Record<string, PHDocument> = { "doc-a": statsDoc(ALICE, [{ metric: "notes", value: 4, updatedAt: T1 }]) };
     const warn = vi.fn();
     const first = await backfillAppMetricValues({ index, reactorClient: reactorWith(docs).client, now, logger: { info: vi.fn(), warn } });
-    expect(first).toEqual({ status: "incomplete", documents: 1, values: 1, failed: 1 });
+    expect(first).toEqual({ status: "incomplete", documents: 1, values: 1, failed: 1, skipped: 0 });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("doc-b"));
     expect(await index.jobDone(METRIC_BACKFILL_JOB)).toBe(false);
 
@@ -103,5 +103,29 @@ describe("backfillAppMetricValues", () => {
     expect(second.status).toBe("done");
     // Re-copying Alice changed nothing: still one row per user.
     expect((await index.metricAggregates(APP, ["notes"], 5))[0]).toMatchObject({ users: 2, sum: 5 });
+  });
+
+  it("skips a stat with an invalid updatedAt, keeps the rest of the document and still completes", async () => {
+    const { index } = await makeIndex();
+    await index.claimUserStatsDocument(ALICE, "doc-a", now());
+    const doc = statsDoc(ALICE, [
+      { metric: "notes", value: 4, updatedAt: T1 },
+      { metric: "bad", value: 1, updatedAt: T1 },
+    ]);
+    // The reducer validates DateTime, so corrupt the stored stat directly.
+    (doc.state as unknown as { global: { stats: { metric: string; updatedAt: string }[] } }).global.stats.find(
+      (stat) => stat.metric === "bad",
+    )!.updatedAt = "not-a-date";
+    const warn = vi.fn();
+    const result = await backfillAppMetricValues({
+      index,
+      reactorClient: reactorWith({ "doc-a": doc }).client,
+      now,
+      logger: { info: vi.fn(), warn },
+    });
+    expect(result).toEqual({ status: "done", documents: 1, values: 1, failed: 0, skipped: 1 });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("skipped 1"));
+    expect(await index.jobDone(METRIC_BACKFILL_JOB)).toBe(true);
+    expect((await index.metricAggregates(APP, ["notes", "bad"], 5)).map((m) => m.metric)).toEqual(["notes"]);
   });
 });

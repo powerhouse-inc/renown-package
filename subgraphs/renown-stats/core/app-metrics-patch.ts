@@ -45,6 +45,7 @@ function optionalText(value: string | null | undefined): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
+const MAX_METRIC_ID_LENGTH = 128;
 const bad = (message: string) => new AppProfileInputError("metrics", message);
 
 /** A stored metric as the API returns it. */
@@ -78,6 +79,7 @@ export function toMetricsPatch(
     const unit = optionalText(raw.unit);
     const description = optionalText(raw.description);
     if (!raw.id || ids.has(raw.id)) throw bad("Every metric needs a unique id");
+    if (raw.id.length > MAX_METRIC_ID_LENGTH) throw bad(`Metric ids must be at most ${MAX_METRIC_ID_LENGTH} characters`);
     if (!isMetricKey(key)) {
       throw bad(`Metric key "${key}" must start with a letter and use only letters, digits and _ . : - (at most 64)`);
     }

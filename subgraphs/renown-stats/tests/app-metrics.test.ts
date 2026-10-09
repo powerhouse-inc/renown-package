@@ -74,6 +74,7 @@ describe("upsertAppProfile metrics", () => {
       [NOTES, { ...STREAK, id: "m1" }],
       [NOTES, { ...STREAK, key: "notes" }],
       [{ ...NOTES, key: "9lives" }],
+      [{ ...NOTES, id: "i".repeat(129) }],
       [{ ...NOTES, label: "  " }],
       [{ ...NOTES, label: "l".repeat(41) }],
       [{ ...NOTES, unit: "u".repeat(17) }],
@@ -123,7 +124,7 @@ describe("reportUserStat aggregates", () => {
     expect(second.updatedAt!.getTime()).toBeGreaterThan(first.updatedAt!.getTime());
     await r.report({ appDid: APP, userDid: USER, metric: "notes", value: 0 });
     expect(await r.index.metricAggregates(APP, ["notes"], 5)).toEqual([
-      { metric: "notes", users: 1, sum: 0, max: 0, avg: 0, positiveUsers: 0, top: [{ userDid: USER, value: 0 }] },
+      { metric: "notes", users: 1, sum: 0, max: 0, avg: 0, positiveUsers: 0, top: [] },
     ]);
   });
 

@@ -191,7 +191,9 @@ export class KyselyStatsIndex implements StatsIndex {
         ),
       ])
       .where("app_did", "=", appDid)
-      .where("metric", "in", [...metrics]);
+      .where("metric", "in", [...metrics])
+      // Only users who actually contributed: a zero or negative value is no rank.
+      .where("value", ">", 0);
     const leaders =
       top > 0
         ? await this.db

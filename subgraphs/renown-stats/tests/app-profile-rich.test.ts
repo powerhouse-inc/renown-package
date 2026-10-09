@@ -257,6 +257,7 @@ describe("upsertAppProfile rich fields", () => {
       "links",
       /at most 8/,
     ],
+    ["a 65-character link id", { links: [{ ...L1, id: "i".repeat(65) }] }, "links", /id/],
     ["duplicate link ids", { links: [L1, { ...L2, id: L1.id }] }, "links", /unique id/],
     ["an empty link label", { links: [{ ...L1, label: "  " }] }, "links", /labels/],
     ["a javascript: link", { links: [{ ...L1, url: "javascript:alert(1)" }] }, "links", /http/],
@@ -299,6 +300,32 @@ describe("upsertAppProfile rich fields", () => {
     );
   });
 
+  it("logs the storage fault cause before answering SERVICE_UNAVAILABLE", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const down = { ...storage({}), inspect: vi.fn(() => Promise.reject(new Error("s3 down"))) } as MediaBackend;
+    expect((await failure(setup({ media: down }).upsert({ appDid: APP, logoRef: LOGO }))).code).toBe(
+      "SERVICE_UNAVAILABLE",
+    );
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("s3 down"));
+    warn.mockRestore();
+  });
+
+  it("heals the image index on the next save when setAppImages failed after the document write", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { upsert, profile, index } = setup();
+    const spy = vi.spyOn(index, "setAppImages").mockRejectedValueOnce(new Error("db blip"));
+    expect((await failure(upsert({ appDid: APP, name: "Vault", logoRef: LOGO }))).code).toBe("SERVICE_UNAVAILABLE");
+    const out = await profile(APP);
+    expect(out).toMatchObject({ logoRef: LOGO });
+    expect(await index.appImageRef(out!.documentId, "logo")).toBeNull();
+    // No image change: the save still repairs the index from the document.
+    expect(await upsert({ appDid: APP, tagline: "again" })).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(await index.appImageRef(out!.documentId, "logo")).toBe(LOGO);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("db blip"));
+    warn.mockRestore();
+  });
+
   it("needs a media backend to set an image, but not to clear one", async () => {
     const { upsert } = setup({ media: null });
     expect((await failure(upsert({ appDid: APP, logoRef: LOGO }))).code).toBe("SERVICE_UNAVAILABLE");
@@ -317,6 +344,16 @@ describe("appProfiles", () => {
     expect(second.items.map((p) => p.appDid)).toEqual([APP]);
     expect(second.next).toBeNull();
     expect((await page({})).items).toHaveLength(3);
+  });
+
+  it("skips a profile whose document cannot be loaded instead of failing the list", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { upsert, page, reactor, profile } = setup();
+    for (const appDid of [APP, APP_2, APP_3]) await upsert({ appDid, name: appDid.slice(-4) });
+    reactor.docs.delete((await profile(APP_2))!.documentId);
+    expect((await page({})).items.map((p) => p.appDid)).toEqual([APP_3, APP]);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it.each([[{ limit: 0 }], [{ limit: 51 }], [{ limit: 1.5 }], [{ after: "not-a-cursor" }]])(
