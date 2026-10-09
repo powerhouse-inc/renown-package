@@ -39,4 +39,29 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .on("app_profile_documents")
     .columns(["created_at", "app_did"])
     .execute();
+
+  // Phase 3: the current value of every (app, metric, user), for app-level
+  // aggregates, and one-time jobs (the backfill of those values).
+  await db.schema
+    .createTable("app_metric_values")
+    .ifNotExists()
+    .addColumn("app_did", "text", (col) => col.notNull())
+    .addColumn("metric", "text", (col) => col.notNull())
+    .addColumn("user_did", "text", (col) => col.notNull())
+    .addColumn("value", "double precision", (col) => col.notNull())
+    .addColumn("updated_at", "timestamptz", (col) => col.notNull())
+    .addPrimaryKeyConstraint("app_metric_values_pk", ["app_did", "metric", "user_did"])
+    .execute();
+  await db.schema
+    .createIndex("app_metric_values_app_updated")
+    .ifNotExists()
+    .on("app_metric_values")
+    .columns(["app_did", "updated_at"])
+    .execute();
+  await db.schema
+    .createTable("renown_stats_jobs")
+    .ifNotExists()
+    .addColumn("name", "text", (col) => col.primaryKey())
+    .addColumn("completed_at", "timestamptz", (col) => col.notNull())
+    .execute();
 }
