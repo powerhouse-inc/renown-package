@@ -64,4 +64,11 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("name", "text", (col) => col.primaryKey())
     .addColumn("completed_at", "timestamptz", (col) => col.notNull())
     .execute();
+
+  // Site polish: each profile's category (trimmed, null when none), copied
+  // from the document on every save, for the category filter and counts.
+  await db.schema
+    .alterTable("app_profile_documents")
+    .addColumn("category", "text", (col) => col.ifNotExists())
+    .execute();
 }

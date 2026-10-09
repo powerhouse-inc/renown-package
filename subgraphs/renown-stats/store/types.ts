@@ -15,6 +15,8 @@ export interface AppProfileDocumentRow {
   /** Lowercase wallet address of the publisher. */
   publisher_address: string;
   created_at: Timestamp;
+  /** The profile's category as last saved (trimmed); null when none. Absent on insert. */
+  category?: string | null;
 }
 
 /** The uploaded images of one app-profile document (refs as stored on the document). */
@@ -71,6 +73,21 @@ export interface MetricAggregate {
   top: { userDid: string; value: number }[];
 }
 
+/** A non-empty category and how many profiles carry it (case-insensitively). */
+export interface AppCategoryCount {
+  /** The smallest spelling (byte order) among the profiles that carry it. */
+  category: string;
+  count: number;
+}
+
+/** Network-wide counts from the stats index. */
+export interface NetworkActivity {
+  /** App profiles. */
+  apps: number;
+  /** Distinct users with any stat reported to any app since the given time. */
+  activeUsers: number;
+}
+
 export interface AppActivity {
   /** Users with any stat for the app. */
   totalUsers: number;
@@ -120,8 +137,17 @@ export interface StatsIndex {
   setAppImages(documentId: string, images: AppImagesPatch, now: Date): Promise<void>;
   /** The stored ref of a profile document's image, or null. */
   appImageRef(documentId: string, field: AppImageField): Promise<string | null>;
-  /** Up to `limit` profiles, newest first, strictly after `after`. */
-  appProfilesPage(limit: number, after?: AppProfileCursor): Promise<AppProfileListEntry[]>;
+  /**
+   * Up to `limit` profiles, newest first, strictly after `after`; with
+   * `category`, only profiles whose category equals it case-insensitively.
+   */
+  appProfilesPage(limit: number, after?: AppProfileCursor, category?: string): Promise<AppProfileListEntry[]>;
+  /** Records a profile's category ("" or blank stores null); a DID without a profile is ignored. */
+  setAppCategory(appDid: string, category: string | null): Promise<void>;
+  /** Non-empty categories with their profile counts: count desc, then name. */
+  appProfileCategories(): Promise<AppCategoryCount[]>;
+  /** App profiles, and distinct users reporting to any app since `since`. */
+  networkActivity(since: Date): Promise<NetworkActivity>;
   /** Upserts current values; per key the newest updatedAt wins (equal overwrites, older is ignored). */
   recordMetricValues(values: readonly MetricValue[]): Promise<void>;
   /** Aggregates of the given metrics of an app that have at least one value. */
