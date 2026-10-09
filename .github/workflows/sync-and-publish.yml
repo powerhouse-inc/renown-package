@@ -378,16 +378,15 @@ jobs:
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
           echo "Image tags: $TAGS"
 
-      - name: Determine ph-cmd tag
+      - name: Determine ph-cmd version
         id: ph-tag
         run: |
-          CHANNEL="${{ needs.prepare.outputs.channel }}"
-          case "$CHANNEL" in
-            dev) PH_TAG="dev" ;;
-            staging) PH_TAG="staging" ;;
-            *) PH_TAG="dev" ;;
-          esac
-          echo "tag=$PH_TAG" >> $GITHUB_OUTPUT
+          # Pin ph-cmd to the Powerhouse version the package is built against,
+          # so images never float on a channel dist-tag.
+          V=$(node -p "require('./package.json').devDependencies?.['@powerhousedao/ph-cli'] ?? require('./package.json').dependencies?.['@powerhousedao/ph-cli']")
+          V="${V#^}"; V="${V#~}"
+          [ -n "$V" ] && [ "$V" != "undefined" ] || { echo "no ph-cli pin"; exit 1; }
+          echo "tag=$V" >> $GITHUB_OUTPUT
 
       - name: Build and push ${{ matrix.target }}
         uses: docker/build-push-action@v5
@@ -421,12 +420,20 @@ jobs:
       DEPLOY_VERSION: v${{ needs.release.outputs.new_version }}
       DEPLOY_NPM_VERSION: ${{ needs.release.outputs.new_version }}
       K8S_REPO: powerhouse-inc/powerhouse-k8s-hosting
-      VALUES_PATH: tenants/renown/powerhouse-values.yaml
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.branch }}
+          sparse-checkout: scripts/ci
+
       - name: Update Helm values in k8s-hosting repo
         env:
           GH_TOKEN: ${{ secrets.K8S_REPO_PAT }}
         run: |
+          VALUES_PATH=$(bash scripts/ci/deploy-target.sh "${{ needs.prepare.outputs.channel }}")
+          if [ -z "$VALUES_PATH" ]; then echo "channel ${{ needs.prepare.outputs.channel }} does not deploy"; exit 0; fi
+
           echo "Updating ${VALUES_PATH} with image tag ${DEPLOY_VERSION}"
 
           # Fetch current file
@@ -442,7 +449,7 @@ jobs:
           # Commit updated file
           ENCODED=$(echo "$UPDATED" | base64 -w 0)
           gh api --method PUT "repos/${K8S_REPO}/contents/${VALUES_PATH}" \
-            -f message="deploy: update renown to ${DEPLOY_VERSION}" \
+            -f message="deploy: update ${VALUES_PATH%%/powerhouse-values.yaml} to ${DEPLOY_VERSION}" \
             -f content="${ENCODED}" \
             -f sha="${SHA}" \
             -f branch="main"
