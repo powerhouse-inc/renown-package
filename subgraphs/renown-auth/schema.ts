@@ -18,6 +18,13 @@ const inputTypeDefs = inputNames.reduce(
 export const schema: DocumentNode = gql`
   ${inputTypeDefs}
 
+  "A profile link as renown_upsertProfile takes it; the id is chosen by the client."
+  input RenownProfileLinkInput {
+    id: String!
+    label: String!
+    url: String!
+  }
+
   """
   Renown writes that authorize themselves. They are public (no host policy
   applies to them) and write through the in-process reactor client, so each
@@ -49,11 +56,19 @@ export const schema: DocumentNode = gql`
     Creates or updates the profile of an address; returns its document id.
     Authorized by a login token for the address, or by its personal_sign of
     "Update Renown profile <address> <sha256(json)> at <timestamp>".
+    Patch semantics: an absent or null field is unchanged; "" clears a text
+    field or the avatar; links replaces the whole list ([] clears it).
+    Errors: BAD_USER_INPUT (extensions.field), HANDLE_TAKEN, INVALID_AVATAR.
     """
     renown_upsertProfile(
       address: String!
       username: String
       userImage: String
+      displayName: String
+      handle: String
+      bio: String
+      links: [RenownProfileLinkInput!]
+      avatar: String
       signature: String
       timestamp: String
     ): String

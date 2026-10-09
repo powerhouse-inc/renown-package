@@ -19,10 +19,10 @@ export const documentModel: DocumentModelGlobalState = {
         },
         global: {
           schema:
-            'type RenownUserState {\n  "Add your global state fields here"\n  username: String\n  ethAddress: EthereumAddress\n  userImage: String\n}',
+            'type RenownUserState {\n  "Add your global state fields here"\n  username: String\n  ethAddress: EthereumAddress\n  userImage: String\n  "Display name, 1-64 characters"\n  displayName: String\n  "Unique handle; uniqueness is enforced by the write path, not the reducer"\n  handle: String\n  "Short bio, at most 280 characters"\n  bio: String\n  "Profile links, at most 8, in display order"\n  links: [RenownUserLink!]!\n  "Uploaded avatar; userImage stays the external (ENS) image URL"\n  avatar: AttachmentRef\n}\n\ntype RenownUserLink {\n  id: OID!\n  label: String!\n  url: URL!\n}',
           examples: [],
           initialValue:
-            '{\n  "username": null,\n  "ethAddress": null,\n  "userImage": null\n}',
+            '{\n  "username": null,\n  "ethAddress": null,\n  "userImage": null,\n  "displayName": null,\n  "handle": null,\n  "bio": null,\n  "links": [],\n  "avatar": null\n}',
         },
       },
       modules: [
@@ -61,6 +61,168 @@ export const documentModel: DocumentModelGlobalState = {
               description: "",
               schema:
                 'input SetUserImageInput {\n  "Add your inputs here"\n  userImage: String!\n}',
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-display-name",
+              name: "SET_DISPLAY_NAME",
+              description: "Sets or clears (null) the display name",
+              schema:
+                'input SetDisplayNameInput {\n  "1-64 characters after trimming; null clears"\n  displayName: String\n}',
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "display-name-length-error",
+                  name: "DisplayNameLengthError",
+                  code: "DISPLAY_NAME_LENGTH",
+                  description:
+                    "The display name is blank, has surrounding whitespace, or is longer than 64 characters",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-handle",
+              name: "SET_HANDLE",
+              description:
+                "Sets or clears (null) the handle; uniqueness is checked by the write path",
+              schema:
+                'input SetHandleInput {\n  "^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$; null clears"\n  handle: String\n}',
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "invalid-handle-error",
+                  name: "InvalidHandleError",
+                  code: "INVALID_HANDLE",
+                  description:
+                    "The handle does not match ^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-bio",
+              name: "SET_BIO",
+              description: "Sets or clears (null or empty) the bio",
+              schema:
+                'input SetBioInput {\n  "At most 280 characters; null or empty clears"\n  bio: String\n}',
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "bio-too-long-error",
+                  name: "BioTooLongError",
+                  code: "BIO_TOO_LONG",
+                  description: "The bio is longer than 280 characters",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-avatar",
+              name: "SET_AVATAR",
+              description: "Sets or clears (null) the uploaded avatar",
+              schema:
+                'input SetAvatarInput {\n  "attachment://v1:<sha256>; null clears"\n  avatar: AttachmentRef\n}',
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "invalid-avatar-ref-error",
+                  name: "InvalidAvatarRefError",
+                  code: "INVALID_AVATAR_REF",
+                  description:
+                    "The avatar is not an attachment://v1:<64 lowercase hex> reference",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "add-link",
+              name: "ADD_LINK",
+              description: "Appends a profile link",
+              schema:
+                'input AddLinkInput {\n  id: OID!\n  "1-40 characters after trimming"\n  label: String!\n  "http(s) URL, at most 2048 characters"\n  url: URL!\n}',
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "too-many-links-error",
+                  name: "TooManyLinksError",
+                  code: "TOO_MANY_LINKS",
+                  description: "The profile already has 8 links",
+                  template: "",
+                },
+                {
+                  id: "duplicate-link-id-error",
+                  name: "DuplicateLinkIdError",
+                  code: "DUPLICATE_LINK_ID",
+                  description: "A link with this id already exists",
+                  template: "",
+                },
+                {
+                  id: "invalid-link-error",
+                  name: "InvalidLinkError",
+                  code: "INVALID_LINK",
+                  description:
+                    "The label is blank or longer than 40 characters, or the URL is not an http(s) URL of at most 2048 characters",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "update-link",
+              name: "UPDATE_LINK",
+              description: "Changes the label and/or URL of a link",
+              schema:
+                "input UpdateLinkInput {\n  id: OID!\n  label: String\n  url: URL\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "link-not-found-error",
+                  name: "LinkNotFoundError",
+                  code: "LINK_NOT_FOUND",
+                  description: "No link with this id exists",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "remove-link",
+              name: "REMOVE_LINK",
+              description: "Removes a link",
+              schema: "input RemoveLinkInput {\n  id: OID!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "reorder-links",
+              name: "REORDER_LINKS",
+              description:
+                "Moves the listed links to the front in the given order; unlisted links keep their relative order after them",
+              schema: "input ReorderLinksInput {\n  linkIds: [OID!]!\n}",
               template: "",
               reducer: "",
               errors: [],

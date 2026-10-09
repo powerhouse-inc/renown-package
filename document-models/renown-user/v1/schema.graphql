@@ -24,6 +24,22 @@ type RenownUserState {
   username: String
   ethAddress: EthereumAddress
   userImage: String
+  "Display name, 1-64 characters"
+  displayName: String
+  "Unique handle; uniqueness is enforced by the write path, not the reducer"
+  handle: String
+  "Short bio, at most 280 characters"
+  bio: String
+  "Profile links, at most 8, in display order"
+  links: [RenownUserLink!]!
+  "Uploaded avatar; userImage stays the external (ENS) image URL"
+  avatar: AttachmentRef
+}
+
+type RenownUserLink {
+  id: OID!
+  label: String!
+  url: URL!
 }
 
 # profile
@@ -41,4 +57,46 @@ input SetEthAddressInput {
 input SetUserImageInput {
   "Add your inputs here"
   userImage: String!
+}
+
+input SetDisplayNameInput {
+  "1-64 characters after trimming; null clears"
+  displayName: String
+}
+
+input SetHandleInput {
+  "^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$; null clears"
+  handle: String
+}
+
+input SetBioInput {
+  "At most 280 characters; null or empty clears"
+  bio: String
+}
+
+input SetAvatarInput {
+  "attachment://v1:<sha256>; null clears"
+  avatar: AttachmentRef
+}
+
+input AddLinkInput {
+  id: OID!
+  "1-40 characters after trimming"
+  label: String!
+  "http(s) URL, at most 2048 characters"
+  url: URL!
+}
+
+input UpdateLinkInput {
+  id: OID!
+  label: String
+  url: URL
+}
+
+input RemoveLinkInput {
+  id: OID!
+}
+
+input ReorderLinksInput {
+  linkIds: [OID!]!
 }

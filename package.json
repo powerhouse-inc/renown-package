@@ -116,6 +116,8 @@
     "vetra": "ph-cli vetra"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "3.1087.0",
+    "@aws-sdk/s3-request-presigner": "3.1087.0",
     "@electric-sql/pglite": "0.3.15",
     "@electric-sql/pglite-tools": "0.2.20",
     "@powerhousedao/builder-tools": "6.2.3",
@@ -127,6 +129,7 @@
     "@powerhousedao/ph-cli": "6.2.3",
     "@powerhousedao/reactor": "6.2.3",
     "@powerhousedao/reactor-api": "6.2.3",
+    "@powerhousedao/reactor-attachments": "6.2.3",
     "@powerhousedao/reactor-browser": "6.2.3",
     "@powerhousedao/shared": "6.2.3",
     "@powerhousedao/switchboard": "6.2.3",

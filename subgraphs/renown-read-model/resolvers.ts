@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 import type { ISubgraph } from "@powerhousedao/reactor-api";
+import { handleProblem, normalizeHandle } from "../renown-auth/core/handle.js";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
 import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
@@ -10,6 +11,7 @@ interface RenownUserInput {
   phid?: string;
   ethAddress?: string;
   username?: string;
+  handle?: string;
 }
 
 interface RenownUsersInput {
@@ -17,6 +19,13 @@ interface RenownUsersInput {
   phids?: string[];
   ethAddresses?: string[];
   usernames?: string[];
+  handles?: string[];
+}
+
+interface HandleAvailability {
+  handle: string;
+  available: boolean;
+  reason: "INVALID" | "RESERVED" | "TAKEN" | null;
 }
 
 interface RenownCredentialsInput {
@@ -32,6 +41,11 @@ interface ReadRenownUser {
   username: string | null;
   ethAddress: string | null;
   userImage: string | null;
+  displayName: string | null;
+  handle: string | null;
+  bio: string | null;
+  links: { id: string; label: string; url: string }[];
+  avatar: string | null;
   createdAt: Date | string | null;
   updatedAt: Date | string | null;
 }
@@ -71,6 +85,11 @@ const mapToUser = (user: {
   username: string | null;
   eth_address: string | null;
   user_image: string | null;
+  display_name: string | null;
+  handle: string | null;
+  bio: string | null;
+  links: { id: string; label: string; url: string }[] | null;
+  avatar_ref: string | null;
   created_at: Date | null;
   updated_at: Date | null;
 }): ReadRenownUser => ({
@@ -78,6 +97,11 @@ const mapToUser = (user: {
   username: user.username,
   ethAddress: user.eth_address,
   userImage: user.user_image,
+  displayName: user.display_name,
+  handle: user.handle,
+  bio: user.bio,
+  links: user.links ?? [],
+  avatar: user.avatar_ref,
   createdAt: user.created_at,
   updatedAt: user.updated_at,
 });
@@ -161,7 +185,7 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
         parent: unknown,
         args: { input: RenownUserInput },
       ): Promise<ReadRenownUser | null> => {
-        const { phid, ethAddress, username } = args.input;
+        const { phid, ethAddress, username, handle } = args.input;
 
          
         let query = RenownUserProcessor.query<RenownUserDB>(
@@ -169,7 +193,7 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           db,
         ).selectFrom("renown_user");
 
-        // Priority: phid > ethAddress > username
+        // Priority: phid > ethAddress > handle > username
         if (phid) {
           query = query.where("renown_user.document_id", "=", phid);
         } else if (ethAddress) {
@@ -179,11 +203,16 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           query = query.where((eb) =>
             eb(eb.fn("LOWER", ["renown_user.eth_address"]), "=", addr),
           );
+        } else if (handle) {
+          const wanted = normalizeHandle(handle);
+          query = query.where((eb) =>
+            eb(eb.fn("LOWER", ["renown_user.handle"]), "=", wanted),
+          );
         } else if (username) {
           query = query.where("renown_user.username", "=", username);
         } else {
           throw new Error(
-            "At least one of phid, ethAddress, or username must be provided",
+            "At least one of phid, ethAddress, handle, or username must be provided",
           );
         }
 
@@ -202,7 +231,7 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
         parent: unknown,
         args: { input: RenownUsersInput },
       ): Promise<ReadRenownUser[]> => {
-        const { driveId, phids, ethAddresses, usernames } = args.input;
+        const { driveId, phids, ethAddresses, usernames, handles } = args.input;
 
          
         let query = RenownUserProcessor.query<RenownUserDB>(
@@ -213,10 +242,11 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
         const hasPhids = phids && phids.length > 0;
         const hasEthAddresses = ethAddresses && ethAddresses.length > 0;
         const hasUsernames = usernames && usernames.length > 0;
+        const hasHandles = handles && handles.length > 0;
 
-        if (!hasPhids && !hasEthAddresses && !hasUsernames) {
+        if (!hasPhids && !hasEthAddresses && !hasUsernames && !hasHandles) {
           throw new Error(
-            "At least one of phids, ethAddresses, or usernames must be provided",
+            "At least one of phids, ethAddresses, usernames, or handles must be provided",
           );
         }
 
@@ -242,6 +272,16 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
             conditions.push(eb("renown_user.username", "in", usernames));
           }
 
+          if (hasHandles) {
+            conditions.push(
+              eb(
+                eb.fn("LOWER", ["renown_user.handle"]),
+                "in",
+                handles.map(normalizeHandle),
+              ),
+            );
+          }
+
           return eb.or(conditions);
         });
 
@@ -252,6 +292,27 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           .execute();
 
         return results.map(mapToUser);
+      },
+
+      renownHandleAvailability: async (
+        parent: unknown,
+        args: { handle: string; address?: string | null },
+      ): Promise<HandleAvailability> => {
+        const handle = normalizeHandle(args.handle);
+        const problem = handleProblem(handle);
+        if (problem) return { handle, available: false, reason: problem };
+        const owner = await RenownUserProcessor.query<RenownUserDB>("renown-user", db)
+          .selectFrom("renown_user")
+          .select("eth_address")
+          .where((eb) => eb(eb.fn("LOWER", ["renown_user.handle"]), "=", handle))
+          .executeTakeFirst();
+        const mine =
+          owner !== undefined &&
+          !!args.address &&
+          owner.eth_address?.toLowerCase() === args.address.toLowerCase();
+        return owner === undefined || mine
+          ? { handle, available: true, reason: null }
+          : { handle, available: false, reason: "TAKEN" };
       },
 
       renownCredentials: async (
