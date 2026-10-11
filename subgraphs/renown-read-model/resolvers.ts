@@ -5,6 +5,7 @@ import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
 import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
 import type { DB as RenownCredentialDB } from "../../processors/renown-credential/schema.js";
+import { parseUserSearch, searchListedUsers, type UserSearchArgs } from "./search.js";
 
 interface RenownUserInput {
   driveId?: string;
@@ -47,8 +48,14 @@ interface ReadRenownUser {
   bio: string | null;
   links: { id: string; label: string; url: string }[];
   avatar: string | null;
+  listed: boolean;
   createdAt: Date | string | null;
   updatedAt: Date | string | null;
+}
+
+interface RenownUserSearchPage {
+  items: ReadRenownUser[];
+  next: string | null;
 }
 
 interface ReadRenownCredential {
@@ -91,6 +98,7 @@ const mapToUser = (user: {
   bio: string | null;
   links: { id: string; label: string; url: string }[] | null;
   avatar_ref: string | null;
+  listed: boolean;
   created_at: Date | null;
   updated_at: Date | null;
 }): ReadRenownUser => ({
@@ -103,6 +111,7 @@ const mapToUser = (user: {
   bio: user.bio,
   links: user.links ?? [],
   avatar: user.avatar_ref,
+  listed: user.listed,
   createdAt: user.created_at,
   updatedAt: user.updated_at,
 });
@@ -314,6 +323,18 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
         return owner === undefined || mine
           ? { handle, available: true, reason: null }
           : { handle, available: false, reason: "TAKEN" };
+      },
+
+      renownUserSearch: async (
+        parent: unknown,
+        args: UserSearchArgs,
+      ): Promise<RenownUserSearchPage> => {
+        const search = parseUserSearch(args);
+        const { rows, next } = await searchListedUsers(
+          RenownUserProcessor.query<RenownUserDB>("renown-user", db),
+          search,
+        );
+        return { items: rows.map(mapToUser), next };
       },
 
       renownCredentials: async (

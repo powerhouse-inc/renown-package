@@ -17,8 +17,16 @@ export const schema: DocumentNode = gql`
     links: [ReadRenownUserLink!]!
     "attachment://v1:<sha256> of the uploaded avatar; serve it via the package media route"
     avatar: String
+    "Opted in to people search (renownUserSearch)"
+    listed: Boolean!
     createdAt: DateTime
     updatedAt: DateTime
+  }
+
+  "A page of renownUserSearch; pass next as after for the following page (null at the end)."
+  type RenownUserSearchPage {
+    items: [ReadRenownUser!]!
+    next: String
   }
 
   type ReadRenownUserLink {
@@ -107,5 +115,13 @@ export const schema: DocumentNode = gql`
     holds counts as available to that address.
     """
     renownHandleAvailability(handle: String!, address: String): RenownHandleAvailability!
+    """
+    People search: listed profiles whose handle or display name starts with
+    query (trimmed, 2-40 characters, case-insensitive; % and _ are literal),
+    ordered by handle (profiles without one last), then document id.
+    limit 1-50 (default 20). Errors: BAD_USER_INPUT (extensions.field is
+    query, limit or after).
+    """
+    renownUserSearch(query: String!, limit: Int, after: String): RenownUserSearchPage!
   }
 `;
