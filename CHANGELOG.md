@@ -1,3 +1,21 @@
+# [1.11.0](https://github.com/powerhouse-inc/renown-package/compare/v1.10.0...v1.11.0) (2026-10-11)
+
+
+### Bug Fixes
+
+* **read-model:** final-review hardening for credential filters and people search ([e73a1a8](https://github.com/powerhouse-inc/renown-package/commit/e73a1a879897bf0253a8894b955b4d6c471ecb02))
+* **read-model:** reject NUL and oversize search cursor/query input ([af5010a](https://github.com/powerhouse-inc/renown-package/commit/af5010a413471ab5fd0a4728c50a7a454914d190))
+* **smoke:** people-search timeout, empty-prefix note, docs ([2abd50b](https://github.com/powerhouse-inc/renown-package/commit/2abd50b3ef6c977854ac9aa2bb11c3ce105f411b))
+
+
+### Features
+
+* **read-model:** renownCredentials(credentialId) exact lookup ([9ff4b0c](https://github.com/powerhouse-inc/renown-package/commit/9ff4b0cd66625dffaddbd555e66bbf783ab0e5f7))
+* **read-model:** renownUserSearch and ReadRenownUser.listed ([6815ee6](https://github.com/powerhouse-inc/renown-package/commit/6815ee6f5c365f50473987593aa29bdb9b2c4edd))
+* **renown-auth:** renown_upsertProfile(listed) signed as the eighth payload key ([0a17525](https://github.com/powerhouse-inc/renown-package/commit/0a17525044d05f2e9e54c0e4813c973fed1743a6))
+* **renown-user read model:** listed column, SET_LISTED and search indexes ([e309f89](https://github.com/powerhouse-inc/renown-package/commit/e309f89157d8dbd74bcbbbc2498123a80080141f))
+* **renown-user:** listed field and SET_LISTED ([f3d8e87](https://github.com/powerhouse-inc/renown-package/commit/f3d8e87dce381548a9e41a9beb93c0bed9f7b26a))
+
 # [1.10.0](https://github.com/powerhouse-inc/renown-package/compare/v1.9.0...v1.10.0) (2026-10-09)
 
 
