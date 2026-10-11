@@ -12,6 +12,7 @@ import type {
   SetDisplayNameInput,
   SetEthAddressInput,
   SetHandleInput,
+  SetListedInput,
   SetUserImageInput,
   SetUsernameInput,
   UpdateLinkInput,
@@ -55,6 +56,10 @@ export type ReorderLinksAction = Action & {
   type: "REORDER_LINKS";
   input: ReorderLinksInput;
 };
+export type SetListedAction = Action & {
+  type: "SET_LISTED";
+  input: SetListedInput;
+};
 
 export type RenownUserProfileAction =
   | SetUsernameAction
@@ -67,4 +72,5 @@ export type RenownUserProfileAction =
   | AddLinkAction
   | UpdateLinkAction
   | RemoveLinkAction
-  | ReorderLinksAction;
+  | ReorderLinksAction
+  | SetListedAction;

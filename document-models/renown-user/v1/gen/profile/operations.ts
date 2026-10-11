@@ -13,6 +13,7 @@ import type {
   SetDisplayNameAction,
   SetEthAddressAction,
   SetHandleAction,
+  SetListedAction,
   SetUserImageAction,
   SetUsernameAction,
   UpdateLinkAction,
@@ -72,6 +73,11 @@ export interface RenownUserProfileOperations {
   reorderLinksOperation: (
     state: RenownUserGlobalState,
     action: ReorderLinksAction,
+    dispatch?: SignalDispatch,
+  ) => void;
+  setListedOperation: (
+    state: RenownUserGlobalState,
+    action: SetListedAction,
     dispatch?: SignalDispatch,
   ) => void;
 }

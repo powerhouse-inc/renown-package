@@ -12,6 +12,7 @@ import type {
   SetDisplayNameInput,
   SetEthAddressInput,
   SetHandleInput,
+  SetListedInput,
   SetUserImageInput,
   SetUsernameInput,
   UpdateLinkInput,
@@ -77,6 +78,7 @@ export function RenownUserStateSchema(): z.ZodObject<
       .nullish(),
     handle: z.string().nullish(),
     links: z.array(z.lazy(() => RenownUserLinkSchema())),
+    listed: z.boolean().nullish(),
     userImage: z.string().nullish(),
     username: z.string().nullish(),
   });
@@ -133,6 +135,14 @@ export function SetHandleInputSchema(): z.ZodObject<
 > {
   return z.object({
     handle: z.string().nullish(),
+  });
+}
+
+export function SetListedInputSchema(): z.ZodObject<
+  Properties<SetListedInput>
+> {
+  return z.object({
+    listed: z.boolean(),
   });
 }
 

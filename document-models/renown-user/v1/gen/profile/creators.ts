@@ -12,6 +12,7 @@ import {
   SetDisplayNameInputSchema,
   SetEthAddressInputSchema,
   SetHandleInputSchema,
+  SetListedInputSchema,
   SetUserImageInputSchema,
   SetUsernameInputSchema,
   UpdateLinkInputSchema,
@@ -25,6 +26,7 @@ import type {
   SetDisplayNameInput,
   SetEthAddressInput,
   SetHandleInput,
+  SetListedInput,
   SetUserImageInput,
   SetUsernameInput,
   UpdateLinkInput,
@@ -38,6 +40,7 @@ import type {
   SetDisplayNameAction,
   SetEthAddressAction,
   SetHandleAction,
+  SetListedAction,
   SetUserImageAction,
   SetUsernameAction,
   UpdateLinkAction,
@@ -139,5 +142,14 @@ export const reorderLinks = (input: ReorderLinksInput) =>
     { ...input },
     undefined,
     ReorderLinksInputSchema,
+    "global",
+  );
+
+export const setListed = (input: SetListedInput) =>
+  createAction<SetListedAction>(
+    "SET_LISTED",
+    { ...input },
+    undefined,
+    SetListedInputSchema,
     "global",
   );
