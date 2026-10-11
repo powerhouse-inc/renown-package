@@ -127,6 +127,6 @@ the end without repeats; that `%%` and `__` match literally; and that a
 1-character query, `limit: 51` and a foreign cursor answer `BAD_USER_INPUT`
 with the offending `extensions.field`. The server also answers `BAD_USER_INPUT`
 (`field` `query` or `after`) for a query containing a NUL byte or longer than
-40 characters, and for an empty or oversize cursor; the script does not send
+40 code points after trimming, and for an empty or oversize cursor; the script does not send
 those. Against a switchboard without these reads it fails on the first query
 (`credentialId` is not defined). Exits 1 on any failure.

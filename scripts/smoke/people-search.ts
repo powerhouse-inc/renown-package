@@ -19,6 +19,7 @@
 const STAGING_SWITCHBOARD = "https://switchboard.renown-staging.vetra.io";
 const UNKNOWN_CREDENTIAL = "urn:uuid:00000000-0000-4000-8000-000000000000";
 const PREFIXES = ["an", "ma", "jo", "da", "sm"];
+const REQUEST_TIMEOUT_MS = 15_000;
 
 class SmokeFailure extends Error {}
 
@@ -82,11 +83,21 @@ async function post<T>(
   document: string,
   variables: unknown,
 ): Promise<GraphqlResult<T>> {
-  const res = await fetch(`${switchboard}/graphql`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ query: document, variables }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${switchboard}/graphql`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query: document, variables }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError")
+      throw new SmokeFailure(
+        `request timed out after ${REQUEST_TIMEOUT_MS / 1000}s: ${switchboard}`,
+      );
+    throw error;
+  }
   const text = await res.text();
   try {
     return JSON.parse(text) as GraphqlResult<T>;
@@ -179,6 +190,8 @@ function startsWith(person: Person, q: string): boolean {
   );
 }
 
+// Assumes ASCII handles: the server orders by LOWER(handle) COLLATE "C"
+// (bytewise), which matches JS string comparison only for ASCII.
 function inOrder(a: Person, b: Person): boolean {
   if (a.handle === null)
     return b.handle === null && a.documentId < b.documentId;
@@ -233,6 +246,10 @@ async function checkSearch(switchboard: string): Promise<void> {
   for (const q of PREFIXES) {
     const people = await searchAll(switchboard, q.toUpperCase());
     step(`renownUserSearch(${q.toUpperCase()})`, `${people.length} listed`);
+    if (people.length === 0)
+      step(
+        `note: no listed profiles match ${q.toUpperCase()}; positive checks not exercised`,
+      );
   }
   for (const q of ["%%", "__"]) {
     const people = await searchAll(switchboard, q);
