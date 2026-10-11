@@ -90,6 +90,8 @@ export const schema: DocumentNode = gql`
 
   input RenownCredentialsInput {
     driveId: String
+    "Exact VC id (e.g. urn:uuid:...); works alone or with the other filters. An empty string matches nothing."
+    credentialId: String
     ethAddress: String
     did: String
     issuer: String

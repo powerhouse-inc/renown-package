@@ -30,6 +30,7 @@ interface HandleAvailability {
 
 interface RenownCredentialsInput {
   driveId?: string;
+  credentialId?: string | null;
   ethAddress?: string;
   did?: string;
   issuer?: string;
@@ -321,17 +322,24 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
       ): Promise<ReadRenownCredential[]> => {
         const {
           driveId,
+          credentialId,
           ethAddress,
           did,
           issuer,
           includeRevoked = true,
         } = args.input;
 
-         
+
         let query = RenownCredentialProcessor.query<RenownCredentialDB>(
           "renown-credential",
           db,
         ).selectFrom("renown_credential");
+
+        // Exact credential id (idx_renown_credential_credential_id). Checked
+        // against null, not truthiness: "" must match nothing, never everything.
+        if (credentialId != null) {
+          query = query.where("renown_credential.credential_id", "=", credentialId);
+        }
 
         // Filter by ethAddress in issuer or proof fields
         if (ethAddress) {
