@@ -7,6 +7,9 @@ export const SEARCH_MIN_QUERY = 2;
 export const SEARCH_MAX_QUERY = 40;
 export const SEARCH_DEFAULT_LIMIT = 20;
 export const SEARCH_MAX_LIMIT = 50;
+/** Longest handle the model allows (HANDLE_RE: 2-30 characters). */
+const CURSOR_MAX_HANDLE = 30;
+const CURSOR_MAX_DOCUMENT_ID = 128;
 
 export interface UserSearchArgs {
   query: string;
@@ -46,6 +49,13 @@ export function decodeSearchCursor(raw: string): UserSearchCursor {
     if ((typeof parsed.h !== "string" && parsed.h !== null) || typeof parsed.d !== "string") {
       throw new Error("malformed cursor");
     }
+    if (
+      (parsed.h !== null && (parsed.h.length > CURSOR_MAX_HANDLE || parsed.h.includes("\u0000"))) ||
+      parsed.d.length > CURSOR_MAX_DOCUMENT_ID ||
+      parsed.d.includes("\u0000")
+    ) {
+      throw new Error("malformed cursor");
+    }
     return { handle: parsed.h, documentId: parsed.d };
   } catch {
     throw badInput("after", "after is not a cursor from renownUserSearch");
@@ -60,7 +70,7 @@ export function decodeSearchCursor(raw: string): UserSearchCursor {
 export function parseUserSearch(args: UserSearchArgs): ParsedUserSearch {
   const query = args.query.trim();
   const length = Array.from(query).length;
-  if (length < SEARCH_MIN_QUERY || length > SEARCH_MAX_QUERY) {
+  if (query.includes("\u0000") || length < SEARCH_MIN_QUERY || length > SEARCH_MAX_QUERY) {
     throw badInput("query", `query must be ${SEARCH_MIN_QUERY}-${SEARCH_MAX_QUERY} characters`);
   }
   const limit = args.limit ?? SEARCH_DEFAULT_LIMIT;
@@ -70,7 +80,7 @@ export function parseUserSearch(args: UserSearchArgs): ParsedUserSearch {
   return {
     pattern: likePrefix(query),
     limit,
-    after: args.after ? decodeSearchCursor(args.after) : undefined,
+    after: args.after != null ? decodeSearchCursor(args.after) : undefined,
   };
 }
 
