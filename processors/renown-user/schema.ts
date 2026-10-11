@@ -24,6 +24,8 @@ export interface RenownUser {
   eth_address: string | null;
   handle: string | null;
   links: Generated<Json<RenownUserLinkRow[]>>;
+  /** Opted in to people search (renownUserSearch); false until SET_LISTED true. */
+  listed: Generated<boolean>;
   updated_at: Generated<Timestamp | null>;
   user_image: string | null;
   username: string | null;

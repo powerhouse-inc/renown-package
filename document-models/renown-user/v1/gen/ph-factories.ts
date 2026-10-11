@@ -23,6 +23,7 @@ export function defaultGlobalState(): RenownUserGlobalState {
     bio: null,
     links: [],
     avatar: null,
+    listed: false,
   };
 }
 

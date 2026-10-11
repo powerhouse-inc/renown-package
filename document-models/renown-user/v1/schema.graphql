@@ -34,6 +34,8 @@ type RenownUserState {
   links: [RenownUserLink!]!
   "Uploaded avatar; userImage stays the external (ENS) image URL"
   avatar: AttachmentRef
+  "Opted in to people search; documents created before the field existed have no value, read as false"
+  listed: Boolean
 }
 
 type RenownUserLink {
@@ -99,4 +101,9 @@ input RemoveLinkInput {
 
 input ReorderLinksInput {
   linkIds: [OID!]!
+}
+
+input SetListedInput {
+  "true lists the profile in people search, false removes it"
+  listed: Boolean!
 }

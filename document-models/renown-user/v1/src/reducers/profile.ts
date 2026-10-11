@@ -130,4 +130,8 @@ export const renownUserProfileOperations: RenownUserProfileOperations = {
     }
     state.links = [...front, ...links.filter((link) => !front.includes(link))];
   },
+  setListedOperation(state, action) {
+    // Profiles created before `listed` existed carry no key; assigning adds it.
+    state.listed = action.input.listed;
+  },
 };

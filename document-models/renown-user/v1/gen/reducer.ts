@@ -15,6 +15,7 @@ import {
   SetDisplayNameInputSchema,
   SetEthAddressInputSchema,
   SetHandleInputSchema,
+  SetListedInputSchema,
   SetUserImageInputSchema,
   SetUsernameInputSchema,
   UpdateLinkInputSchema,
@@ -164,6 +165,18 @@ const stateReducer: StateReducer<RenownUserPHState> = (
       memoizedSchema(ReorderLinksInputSchema).parse(action.input);
 
       renownUserProfileOperations.reorderLinksOperation(
+        (state as any)[action.scope],
+        action as any,
+        dispatch,
+      );
+
+      break;
+    }
+
+    case "SET_LISTED": {
+      memoizedSchema(SetListedInputSchema).parse(action.input);
+
+      renownUserProfileOperations.setListedOperation(
         (state as any)[action.scope],
         action as any,
         dispatch,

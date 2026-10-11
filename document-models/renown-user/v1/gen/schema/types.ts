@@ -92,6 +92,8 @@ export type RenownUserState = {
   handle: Maybe<Scalars["String"]["output"]>;
   /** Profile links, at most 8, in display order */
   links: Array<RenownUserLink>;
+  /** Opted in to people search; documents created before the field existed have no value, read as false */
+  listed: Maybe<Scalars["Boolean"]["output"]>;
   userImage: Maybe<Scalars["String"]["output"]>;
   /** Add your global state fields here */
   username: Maybe<Scalars["String"]["output"]>;
@@ -124,6 +126,11 @@ export type SetEthAddressInput = {
 export type SetHandleInput = {
   /** ^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$; null clears */
   handle?: InputMaybe<Scalars["String"]["input"]>;
+};
+
+export type SetListedInput = {
+  /** true lists the profile in people search, false removes it */
+  listed: Scalars["Boolean"]["input"];
 };
 
 export type SetUserImageInput = {

@@ -16,9 +16,9 @@
           "initialValue": ""
         },
         "global": {
-          "schema": "type RenownUserState {\n  \"Add your global state fields here\"\n  username: String\n  ethAddress: EthereumAddress\n  userImage: String\n  \"Display name, 1-64 characters\"\n  displayName: String\n  \"Unique handle; uniqueness is enforced by the write path, not the reducer\"\n  handle: String\n  \"Short bio, at most 280 characters\"\n  bio: String\n  \"Profile links, at most 8, in display order\"\n  links: [RenownUserLink!]!\n  \"Uploaded avatar; userImage stays the external (ENS) image URL\"\n  avatar: AttachmentRef\n}\n\ntype RenownUserLink {\n  id: OID!\n  label: String!\n  url: URL!\n}",
+          "schema": "type RenownUserState {\n  \"Add your global state fields here\"\n  username: String\n  ethAddress: EthereumAddress\n  userImage: String\n  \"Display name, 1-64 characters\"\n  displayName: String\n  \"Unique handle; uniqueness is enforced by the write path, not the reducer\"\n  handle: String\n  \"Short bio, at most 280 characters\"\n  bio: String\n  \"Profile links, at most 8, in display order\"\n  links: [RenownUserLink!]!\n  \"Uploaded avatar; userImage stays the external (ENS) image URL\"\n  avatar: AttachmentRef\n  \"Opted in to people search; documents created before the field existed have no value, read as false\"\n  listed: Boolean\n}\n\ntype RenownUserLink {\n  id: OID!\n  label: String!\n  url: URL!\n}",
           "examples": [],
-          "initialValue": "{\n  \"username\": null,\n  \"ethAddress\": null,\n  \"userImage\": null,\n  \"displayName\": null,\n  \"handle\": null,\n  \"bio\": null,\n  \"links\": [],\n  \"avatar\": null\n}"
+          "initialValue": "{\n  \"username\": null,\n  \"ethAddress\": null,\n  \"userImage\": null,\n  \"displayName\": null,\n  \"handle\": null,\n  \"bio\": null,\n  \"links\": [],\n  \"avatar\": null,\n  \"listed\": false\n}"
         }
       },
       "modules": [
@@ -204,6 +204,17 @@
               "name": "REORDER_LINKS",
               "description": "Moves the listed links to the front in the given order; unlisted links keep their relative order after them",
               "schema": "input ReorderLinksInput {\n  linkIds: [OID!]!\n}",
+              "template": "",
+              "reducer": "",
+              "errors": [],
+              "examples": [],
+              "scope": "global"
+            },
+            {
+              "id": "set-listed",
+              "name": "SET_LISTED",
+              "description": "Opts the profile in to (true) or out of (false) people search",
+              "schema": "input SetListedInput {\n  \"true lists the profile in people search, false removes it\"\n  listed: Boolean!\n}",
               "template": "",
               "reducer": "",
               "errors": [],

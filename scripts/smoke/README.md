@@ -105,3 +105,28 @@ each keep their own), that categories are ordered count desc then name, that a
 blank category equals no filter, and that the first category, asked in swapped
 case, pages to the end with only matching profiles and at most its count.
 Exits 1 on any failure.
+
+## people-search.ts
+
+Read-only check of the reads renown.id `/verify` and `/people` need
+(`renownCredentials(credentialId)`, `renownUserSearch`) on a switchboard:
+
+```sh
+node scripts/smoke/people-search.ts                                                  # Renown staging
+node scripts/smoke/people-search.ts --switchboard https://switchboard.renown.vetra.io # production
+node scripts/smoke/people-search.ts --credential-id urn:uuid:<id>                    # also look one up
+```
+
+Anonymous queries only, so no `--allow-prod` and nothing to clean up. It
+checks that a credential lookup by an unknown id and by `""` answers `[]`
+(never the whole table) and, with `--credential-id`, that exactly that
+credential comes back; that `renownUserSearch` for a few prefixes (sent in
+upper case) returns only listed profiles whose handle or display name starts
+with the query, ordered by handle with handle-less profiles last, and pages to
+the end without repeats; that `%%` and `__` match literally; and that a
+1-character query, `limit: 51` and a foreign cursor answer `BAD_USER_INPUT`
+with the offending `extensions.field`. The server also answers `BAD_USER_INPUT`
+(`field` `query` or `after`) for a query containing a NUL byte or longer than
+40 code points after trimming, and for an empty or oversize cursor; the script does not send
+those. Against a switchboard without these reads it fails on the first query
+(`credentialId` is not defined). Exits 1 on any failure.

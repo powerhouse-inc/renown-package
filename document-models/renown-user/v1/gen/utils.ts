@@ -33,6 +33,7 @@ export const initialGlobalState: RenownUserGlobalState = {
   bio: null,
   links: [],
   avatar: null,
+  listed: false,
 };
 export const initialLocalState: RenownUserLocalState = {};
 

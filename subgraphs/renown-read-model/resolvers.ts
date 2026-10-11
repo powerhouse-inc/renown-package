@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
+import { GraphQLError } from "graphql";
 import type { ISubgraph } from "@powerhousedao/reactor-api";
 import { handleProblem, normalizeHandle } from "../renown-auth/core/handle.js";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
 import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
 import type { DB as RenownCredentialDB } from "../../processors/renown-credential/schema.js";
+import { parseUserSearch, searchListedUsers, type UserSearchArgs } from "./search.js";
 
 interface RenownUserInput {
   driveId?: string;
@@ -30,6 +32,7 @@ interface HandleAvailability {
 
 interface RenownCredentialsInput {
   driveId?: string;
+  credentialId?: string | null;
   ethAddress?: string;
   did?: string;
   issuer?: string;
@@ -46,8 +49,14 @@ interface ReadRenownUser {
   bio: string | null;
   links: { id: string; label: string; url: string }[];
   avatar: string | null;
+  listed: boolean;
   createdAt: Date | string | null;
   updatedAt: Date | string | null;
+}
+
+interface RenownUserSearchPage {
+  items: ReadRenownUser[];
+  next: string | null;
 }
 
 interface ReadRenownCredential {
@@ -90,6 +99,7 @@ const mapToUser = (user: {
   bio: string | null;
   links: { id: string; label: string; url: string }[] | null;
   avatar_ref: string | null;
+  listed: boolean;
   created_at: Date | null;
   updated_at: Date | null;
 }): ReadRenownUser => ({
@@ -102,6 +112,7 @@ const mapToUser = (user: {
   bio: user.bio,
   links: user.links ?? [],
   avatar: user.avatar_ref,
+  listed: user.listed,
   createdAt: user.created_at,
   updatedAt: user.updated_at,
 });
@@ -315,23 +326,54 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           : { handle, available: false, reason: "TAKEN" };
       },
 
+      renownUserSearch: async (
+        parent: unknown,
+        args: UserSearchArgs,
+      ): Promise<RenownUserSearchPage> => {
+        const search = parseUserSearch(args);
+        try {
+          const { rows, next } = await searchListedUsers(
+            RenownUserProcessor.query<RenownUserDB>("renown-user", db),
+            search,
+          );
+          return { items: rows.map(mapToUser), next };
+        } catch (error) {
+          console.error("renownUserSearch failed", error);
+          throw new GraphQLError("People search is temporarily unavailable", {
+            extensions: { code: "SERVICE_UNAVAILABLE" },
+          });
+        }
+      },
+
       renownCredentials: async (
         parent: unknown,
         args: { input: RenownCredentialsInput },
       ): Promise<ReadRenownCredential[]> => {
         const {
           driveId,
+          credentialId,
           ethAddress,
           did,
           issuer,
           includeRevoked = true,
         } = args.input;
 
-         
+        // Postgres rejects NUL in text (SQLSTATE 22021); no stored value
+        // contains one, so such a filter matches nothing.
+        if ([credentialId, ethAddress, did, issuer].some((v) => v?.includes("\u0000"))) {
+          return [];
+        }
+
         let query = RenownCredentialProcessor.query<RenownCredentialDB>(
           "renown-credential",
           db,
         ).selectFrom("renown_credential");
+
+        // Exact credential id (idx_renown_credential_credential_id). Checked
+        // against null, not truthiness: "" must match nothing, never everything.
+        if (credentialId != null) {
+          query = query.where("renown_credential.credential_id", "=", credentialId);
+        }
 
         // Filter by ethAddress in issuer or proof fields
         if (ethAddress) {
