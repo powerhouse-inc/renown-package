@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
+import { GraphQLError } from "graphql";
 import type { ISubgraph } from "@powerhousedao/reactor-api";
 import { handleProblem, normalizeHandle } from "../renown-auth/core/handle.js";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
@@ -330,11 +331,18 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
         args: UserSearchArgs,
       ): Promise<RenownUserSearchPage> => {
         const search = parseUserSearch(args);
-        const { rows, next } = await searchListedUsers(
-          RenownUserProcessor.query<RenownUserDB>("renown-user", db),
-          search,
-        );
-        return { items: rows.map(mapToUser), next };
+        try {
+          const { rows, next } = await searchListedUsers(
+            RenownUserProcessor.query<RenownUserDB>("renown-user", db),
+            search,
+          );
+          return { items: rows.map(mapToUser), next };
+        } catch (error) {
+          console.error("renownUserSearch failed", error);
+          throw new GraphQLError("People search is temporarily unavailable", {
+            extensions: { code: "SERVICE_UNAVAILABLE" },
+          });
+        }
       },
 
       renownCredentials: async (
@@ -350,6 +358,11 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           includeRevoked = true,
         } = args.input;
 
+        // Postgres rejects NUL in text (SQLSTATE 22021); no stored value
+        // contains one, so such a filter matches nothing.
+        if ([credentialId, ethAddress, did, issuer].some((v) => v?.includes("\u0000"))) {
+          return [];
+        }
 
         let query = RenownCredentialProcessor.query<RenownCredentialDB>(
           "renown-credential",

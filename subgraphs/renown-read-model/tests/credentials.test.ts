@@ -102,3 +102,9 @@ describe("renownCredentials(credentialId)", () => {
     expect(ids(await query.renownCredentials(null, { input: { ethAddress: ALICE } }))).toEqual(["doc-1", "doc-3"]);
   });
 });
+
+describe("renownCredentials NUL filters", () => {
+  it.each(["credentialId", "did", "issuer", "ethAddress"])("returns [] for a NUL in %s", async (field) => {
+    expect(await query.renownCredentials(null, { input: { [field]: "a\u0000b" } })).toEqual([]);
+  });
+});

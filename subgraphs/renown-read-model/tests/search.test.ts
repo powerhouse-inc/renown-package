@@ -136,7 +136,7 @@ describe("renownUserSearch", () => {
     ["a cursor handle with a NUL", { query: "al", after: Buffer.from(JSON.stringify({ h: "a\u0000", d: "x" })).toString("base64url") }, "after"],
     ["a cursor document id with a NUL", { query: "al", after: Buffer.from(JSON.stringify({ h: null, d: "x\u0000" })).toString("base64url") }, "after"],
     ["a cursor handle over 30 characters", { query: "al", after: Buffer.from(JSON.stringify({ h: "a".repeat(31), d: "x" })).toString("base64url") }, "after"],
-    ["a cursor document id over 128 characters", { query: "al", after: Buffer.from(JSON.stringify({ h: null, d: "x".repeat(129) })).toString("base64url") }, "after"],
+    ["a cursor document id over 255 characters", { query: "al", after: Buffer.from(JSON.stringify({ h: null, d: "x".repeat(256) })).toString("base64url") }, "after"],
     ["limit 0", { query: "al", limit: 0 }, "limit"],
     ["limit 51", { query: "al", limit: 51 }, "limit"],
     ["a fractional limit", { query: "al", limit: 2.5 }, "limit"],
@@ -144,6 +144,30 @@ describe("renownUserSearch", () => {
     ["a cursor of the wrong shape", { query: "al", after: Buffer.from('{"d":1}').toString("base64url") }, "after"],
   ])("refuses %s with BAD_USER_INPUT", async (_, args, field) => {
     await expect(search(args)).rejects.toMatchObject({ extensions: { code: "BAD_USER_INPUT", field } });
+  });
+
+  it("accepts a cursor document id of exactly 255 characters", async () => {
+    const after = Buffer.from(JSON.stringify({ h: null, d: "x".repeat(255) })).toString("base64url");
+    expect((await search({ query: "al", after })).items).toEqual([]);
+  });
+
+  it("maps an unexpected database failure to SERVICE_UNAVAILABLE without leaking its text", async () => {
+    const failing = {
+      relationalDb: {
+        queryNamespace: () => {
+          const boom = () => {
+            throw new Error("connection terminated: password=hunter2");
+          };
+          return new Proxy({}, { get: boom });
+        },
+      },
+    } as unknown as ISubgraph;
+    const q = (getResolvers(failing) as { Query: Record<string, Resolver> }).Query;
+    const error = await q.renownUserSearch(null, { query: "al" }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ extensions: { code: "SERVICE_UNAVAILABLE" } });
+    expect((error as Error).message).not.toMatch(/hunter2|connection/);
+    // Validation errors are unchanged.
+    await expect(q.renownUserSearch(null, { query: "a" })).rejects.toMatchObject({ extensions: { code: "BAD_USER_INPUT" } });
   });
 
   it("accepts a 40-character query and counts characters, not UTF-16 units", async () => {

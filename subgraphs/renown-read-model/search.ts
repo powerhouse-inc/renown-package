@@ -9,7 +9,7 @@ export const SEARCH_DEFAULT_LIMIT = 20;
 export const SEARCH_MAX_LIMIT = 50;
 /** Longest handle the model allows (HANDLE_RE: 2-30 characters). */
 const CURSOR_MAX_HANDLE = 30;
-const CURSOR_MAX_DOCUMENT_ID = 128;
+const CURSOR_MAX_DOCUMENT_ID = 255;
 
 export interface UserSearchArgs {
   query: string;

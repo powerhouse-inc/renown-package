@@ -394,8 +394,11 @@ describe("renown_upsertProfile listed", () => {
     expect((await row(id)).listed).toBe(false);
   });
 
-  it("rejects listed under a signature that did not cover it", async () => {
-    const { upsert } = setup();
+  it("rejects listed under a signature that did not cover it, writing nothing", async () => {
+    const { reactor, upsert, signed } = setup();
+    const id = await signed(ALICE, { bio: "Hi" });
+    const before = [...reactor.applied(id)];
+    const executed = reactor.execute.mock.calls.length;
     const timestamp = new Date().toISOString();
     // An older client signs without listed; the request adds it.
     const old = await ALICE.signMessage({ message: await profileMessage(ALICE.address, { bio: "Hi" }, timestamp) });
@@ -407,6 +410,10 @@ describe("renown_upsertProfile listed", () => {
     await expect(
       upsert(null, { address: ALICE.address, listed: true, signature: off, timestamp }, {}),
     ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
+    expect(reactor.applied(id)).toEqual(before);
+    expect(reactor.applied(id)).not.toContain("SET_LISTED");
+    expect(reactor.execute.mock.calls).toHaveLength(executed);
+    expect((await row(id)).listed).toBe(false);
   });
 
   it("still accepts a legacy username-only signature", async () => {
