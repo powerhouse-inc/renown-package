@@ -24,6 +24,8 @@ export interface IdentityPatch {
   bio?: string | null;
   links?: ProfileLink[];
   avatar?: string | null;
+  /** People-search opt-in; never null (null input means unchanged). */
+  listed?: boolean;
 }
 
 /** Thrown for an input that fails validation; `field` names the offending input. */
@@ -102,6 +104,8 @@ export function toIdentityPatch(input: ProfileFields): IdentityPatch {
     patch.avatar = input.avatar || null;
   }
 
+  if (input.listed != null) patch.listed = input.listed;
+
   return patch;
 }
 
@@ -160,5 +164,6 @@ export function identityActions(patch: IdentityPatch): Action[] {
       userActions.setAvatar({ avatar: patch.avatar as `attachment://v${number}:${string}` | null }),
     );
   }
+  if (patch.listed !== undefined) out.push(userActions.setListed({ listed: patch.listed }));
   return out;
 }

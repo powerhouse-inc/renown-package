@@ -57,7 +57,9 @@ export const schema: DocumentNode = gql`
     Authorized by a login token for the address, or by its personal_sign of
     "Update Renown profile <address> <sha256(json)> at <timestamp>".
     Patch semantics: an absent or null field is unchanged; "" clears a text
-    field or the avatar; links replaces the whole list ([] clears it).
+    field or the avatar; links replaces the whole list ([] clears it);
+    listed true/false opts the profile in to or out of renownUserSearch.
+    The signed JSON carries listed as an eighth key only when it is sent.
     Errors: BAD_USER_INPUT (extensions.field), HANDLE_TAKEN, INVALID_AVATAR.
     """
     renown_upsertProfile(
@@ -69,6 +71,7 @@ export const schema: DocumentNode = gql`
       bio: String
       links: [RenownProfileLinkInput!]
       avatar: String
+      listed: Boolean
       signature: String
       timestamp: String
     ): String

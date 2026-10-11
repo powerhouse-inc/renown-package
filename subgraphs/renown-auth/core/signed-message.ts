@@ -35,6 +35,8 @@ export interface ProfileFields {
   bio?: string | null;
   links?: readonly ProfileLink[] | null;
   avatar?: string | null;
+  /** People-search opt-in. */
+  listed?: boolean | null;
 }
 
 /**
@@ -46,7 +48,8 @@ export interface ProfileFields {
  */
 export function profilePayload(profile: ProfileFields): string {
   const legacy = { username: profile.username ?? null, userImage: profile.userImage ?? null };
-  const identity = [profile.displayName, profile.handle, profile.bio, profile.links, profile.avatar];
+  const listed = profile.listed ?? null;
+  const identity = [profile.displayName, profile.handle, profile.bio, profile.links, profile.avatar, listed];
   if (identity.every((value) => value === undefined || value === null)) {
     return JSON.stringify(legacy);
   }
@@ -57,6 +60,7 @@ export function profilePayload(profile: ProfileFields): string {
     bio: profile.bio ?? null,
     links: profile.links ? profile.links.map(({ id, label, url }) => ({ id, label, url })) : null,
     avatar: profile.avatar ?? null,
+    ...(listed === null ? {} : { listed }),
   });
 }
 

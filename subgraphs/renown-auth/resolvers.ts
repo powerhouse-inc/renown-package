@@ -98,6 +98,7 @@ interface UpsertProfileArgs {
   bio?: string | null;
   links?: { id: string; label: string; url: string }[] | null;
   avatar?: string | null;
+  listed?: boolean | null;
   signature?: string | null;
   timestamp?: string | null;
 }
@@ -412,6 +413,7 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
                 bio: args.bio,
                 links: args.links,
                 avatar: args.avatar,
+                listed: args.listed,
               },
               timestamp ?? "",
             ),

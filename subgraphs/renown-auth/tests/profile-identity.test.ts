@@ -326,3 +326,93 @@ describe("renown_upsertProfile identity fields", () => {
     ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
   });
 });
+
+describe("profile payload with listed", () => {
+  const address = "0xABC0000000000000000000000000000000000001";
+  const at = "2026-10-11T12:00:00.000Z";
+  const full = {
+    displayName: "Frank",
+    handle: "frank",
+    bio: "Hi",
+    links: [{ id: "l1", label: "Site", url: "https://frank.example" }],
+    avatar: `attachment://v1:${"a".repeat(64)}`,
+  };
+
+  it("leaves every payload without listed byte-identical (null and absent alike)", async () => {
+    expect(profilePayload({ username: "frank", listed: null })).toBe('{"username":"frank","userImage":null}');
+    expect(await profileMessage(address, { ...full, listed: null }, at)).toBe(
+      `Update Renown profile 0xabc0000000000000000000000000000000000001 4580e73ddd79972b5dd50d52aae493f1caed7a4025ec04ad402fd54c4a86ff55 at ${at}`,
+    );
+  });
+
+  it("appends listed as the eighth key, and uses the seven-key form when it is the only field", () => {
+    expect(profilePayload({ listed: true })).toBe(
+      '{"username":null,"userImage":null,"displayName":null,"handle":null,"bio":null,"links":null,"avatar":null,"listed":true}',
+    );
+    expect(profilePayload({ username: "frank", listed: false })).toBe(
+      '{"username":"frank","userImage":null,"displayName":null,"handle":null,"bio":null,"links":null,"avatar":null,"listed":false}',
+    );
+  });
+
+  it("matches the listed vectors renown.id pins", async () => {
+    expect(await profileMessage(address, { listed: true }, at)).toBe(
+      `Update Renown profile 0xabc0000000000000000000000000000000000001 0a46ac991ff7e91d94d7d2ddff022fcbca86fcf7905fa09f77e46a3a3f5b93e0 at ${at}`,
+    );
+    expect(await profileMessage(address, { listed: false }, at)).toBe(
+      `Update Renown profile 0xabc0000000000000000000000000000000000001 16dcce85d96df385580015dad07cf92524375040055ad19d9224022995a6e687 at ${at}`,
+    );
+    expect(await profileMessage(address, { ...full, listed: true }, at)).toBe(
+      `Update Renown profile 0xabc0000000000000000000000000000000000001 ada9fa9d37a3d9f1b21e466272c02b4b136fec97e2fa57a11ed85dc814fa5296 at ${at}`,
+    );
+    expect(await profileMessage(address, { username: "frank", listed: false }, at)).toBe(
+      `Update Renown profile 0xabc0000000000000000000000000000000000001 cf1c6b7c982d816646bbebc956e6d0c32da3b478bc01f90e1957cc3d981a24cc at ${at}`,
+    );
+  });
+});
+
+describe("renown_upsertProfile listed", () => {
+  it("opts in and out with SET_LISTED; absent and null leave it alone", async () => {
+    const { reactor, signed } = setup();
+    const id = await signed(ALICE, { handle: "alice", listed: true });
+    expect(reactor.applied(id)).toEqual(["SET_ETH_ADDRESS", "SET_HANDLE", "SET_LISTED"]);
+    expect((await row(id)).listed).toBe(true);
+    expect((await reactor.get(id))?.state.global.listed).toBe(true);
+
+    await signed(ALICE, { bio: "Hi" });
+    await signed(ALICE, { bio: "Hi again", listed: null });
+    expect((await row(id)).listed).toBe(true);
+    expect(reactor.applied(id).filter((type) => type === "SET_LISTED")).toHaveLength(1);
+
+    await signed(ALICE, { listed: false });
+    expect(reactor.applied(id).at(-1)).toBe("SET_LISTED");
+    expect((await row(id)).listed).toBe(false);
+  });
+
+  it("creates an unlisted profile unless listed is sent", async () => {
+    const { signed } = setup();
+    const id = await signed(BOB, { displayName: "Bob" });
+    expect((await row(id)).listed).toBe(false);
+  });
+
+  it("rejects listed under a signature that did not cover it", async () => {
+    const { upsert } = setup();
+    const timestamp = new Date().toISOString();
+    // An older client signs without listed; the request adds it.
+    const old = await ALICE.signMessage({ message: await profileMessage(ALICE.address, { bio: "Hi" }, timestamp) });
+    await expect(
+      upsert(null, { address: ALICE.address, bio: "Hi", listed: true, signature: old, timestamp }, {}),
+    ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
+    // A signature for listed: false cannot be replayed as listed: true.
+    const off = await ALICE.signMessage({ message: await profileMessage(ALICE.address, { listed: false }, timestamp) });
+    await expect(
+      upsert(null, { address: ALICE.address, listed: true, signature: off, timestamp }, {}),
+    ).rejects.toMatchObject({ extensions: { code: "FORBIDDEN" } });
+  });
+
+  it("still accepts a legacy username-only signature", async () => {
+    const { reactor, signed } = setup();
+    const id = await signed(ALICE, { username: "alice.eth" });
+    expect(reactor.applied(id)).toEqual(["SET_ETH_ADDRESS", "SET_USERNAME"]);
+    expect((await row(id)).listed).toBe(false);
+  });
+});
