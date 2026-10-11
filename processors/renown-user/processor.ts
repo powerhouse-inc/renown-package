@@ -17,6 +17,7 @@ interface UpdateData {
   bio?: string | null;
   links?: string;
   avatar_ref?: string | null;
+  listed?: boolean;
   updated_at: Date;
 }
 
@@ -126,6 +127,9 @@ export class RenownUserProcessor extends RelationalDbProcessor<DB> {
         break;
       case "SET_AVATAR":
         updateData.avatar_ref = text(input, "avatar");
+        break;
+      case "SET_LISTED":
+        updateData.listed = input.listed === true;
         break;
       case "SET_HANDLE":
         await this.setHandle(documentId, text(input, "handle"));

@@ -59,9 +59,37 @@ export async function up(db: IRelationalDb<any>): Promise<void> {
     .expression(sql`LOWER(handle)`)
     .ifNotExists()
     .execute();
+
+  // People search (opt-in). Additive and idempotent like the identity
+  // columns; existing rows read as not listed.
+  await db.schema
+    .alterTable("renown_user")
+    .addColumn("listed", "boolean", (col) => col.ifNotExists().notNull().defaultTo(false))
+    .execute();
+
+  // renownUserSearch prefix-matches LOWER(handle) / LOWER(display_name) with
+  // LIKE 'q%' among listed profiles only. text_pattern_ops lets LIKE use the
+  // index whatever the database collation; the partial WHERE keeps the
+  // indexes as small as the opted-in set.
+  await db.schema
+    .createIndex("idx_renown_user_listed_handle")
+    .on("renown_user")
+    .expression(sql`LOWER(handle) text_pattern_ops`)
+    .where(sql.ref("listed"), "=", true)
+    .ifNotExists()
+    .execute();
+  await db.schema
+    .createIndex("idx_renown_user_listed_display_name")
+    .on("renown_user")
+    .expression(sql`LOWER(display_name) text_pattern_ops`)
+    .where(sql.ref("listed"), "=", true)
+    .ifNotExists()
+    .execute();
 }
 
 export async function down(db: IRelationalDb<any>): Promise<void> {
+  await db.schema.dropIndex("idx_renown_user_listed_display_name").ifExists().execute();
+  await db.schema.dropIndex("idx_renown_user_listed_handle").ifExists().execute();
   await db.schema.dropIndex("idx_renown_user_handle_lower").ifExists().execute();
   // Drop renown_user indexes
   await db.schema
