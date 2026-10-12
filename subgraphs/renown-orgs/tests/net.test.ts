@@ -81,6 +81,18 @@ describe("guardedRequest", () => {
     await expect(guardedRequest(big, "https://acme.example/", { method: "GET" })).rejects.toThrow(/larger than 65536/);
   });
 
+  it("restricts ports when asked, and keeps the status of an oversized response when asked to truncate", async () => {
+    const net = fakeNet({ "acme.example": ["93.184.216.34"] }, 204, "x".repeat(5_000));
+    const ports = [443, 8443];
+    for (const url of ["https://acme.example:8080/", "https://acme.example:22/"]) {
+      await expect(guardedRequest(net, url, { method: "POST", ports })).rejects.toThrow(/Port \d+ is not allowed/);
+    }
+    expect(net.requests).toEqual([]);
+    expect(await guardedRequest(net, "https://acme.example:8443/", { method: "POST", ports, maxBytes: 4096, truncate: true })).toEqual({ status: 204, body: new Uint8Array() });
+    expect((await guardedRequest(net, "https://acme.example:9000/", { method: "GET", maxBytes: 8192 })).status).toBe(204);
+    await expect(guardedRequest(net, "https://acme.example/", { method: "GET", maxBytes: 4096 })).rejects.toThrow(/larger than 4096/);
+  });
+
   it("does not follow redirects: a 3xx comes back as is", async () => {
     const net = fakeNet({ "acme.example": ["93.184.216.34"] }, 302);
     expect((await guardedRequest(net, "https://acme.example/", { method: "GET" })).status).toBe(302);

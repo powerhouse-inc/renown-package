@@ -277,6 +277,74 @@ export interface NotificationRecord {
   readAt: Date | null;
 }
 
+export type DeliveryStatus = "PENDING" | "DELIVERED" | "FAILED";
+
+export interface OrgWebhooksTable {
+  id: string;
+  org_id: string;
+  url: string;
+  events: JsonColumn;
+  /** AES-256-GCM sealed secret (renown-workload's seal, the webhook id as additional data). */
+  secret_sealed: string;
+  enabled: boolean;
+  consecutive_failures: Defaulted<number>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface OrgWebhookDeliveriesTable {
+  id: string;
+  webhook_id: string;
+  org_id: string;
+  event_id: string;
+  event_type: string;
+  /** The exact JSON body that is signed and sent. */
+  body: string;
+  status: DeliveryStatus;
+  attempts: Defaulted<number>;
+  response_status: number | null;
+  last_error: string | null;
+  created_at: Timestamp;
+  next_attempt_at: Timestamp | null;
+  delivered_at: Timestamp | null;
+}
+
+export interface WebhookRecord {
+  id: string;
+  orgId: string;
+  url: string;
+  events: string[];
+  secretSealed: string;
+  enabled: boolean;
+  consecutiveFailures: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type WebhookPatch = Partial<Pick<WebhookRecord, "url" | "events" | "secretSealed" | "enabled" | "consecutiveFailures">>;
+
+export interface DeliveryRecord {
+  id: string;
+  webhookId: string;
+  orgId: string;
+  eventId: string;
+  eventType: string;
+  body: string;
+  status: DeliveryStatus;
+  /** Attempts started (a claim counts one). */
+  attempts: number;
+  responseStatus: number | null;
+  lastError: string | null;
+  createdAt: Date;
+  /** When a PENDING delivery is next due (or its claim lapses); null when not scheduled. */
+  nextAttemptAt: Date | null;
+  deliveredAt: Date | null;
+}
+
+export type DeliveryPatch = Partial<
+  Pick<DeliveryRecord, "status" | "attempts" | "responseStatus" | "lastError" | "nextAttemptAt" | "deliveredAt">
+>;
+
 export interface OrgReleaseAttestationsTable {
   id: string;
   app_did: string;
@@ -312,6 +380,8 @@ export interface OrgsDB {
   org_release_attestations: OrgReleaseAttestationsTable;
   org_notifications: OrgNotificationsTable;
   org_delegation_alerts: OrgDelegationAlertsTable;
+  org_webhooks: OrgWebhooksTable;
+  org_webhook_deliveries: OrgWebhookDeliveriesTable;
 }
 
 export type OrgsKysely = Kysely<OrgsDB>;
@@ -632,4 +702,30 @@ export interface OrgStore {
   claimDelegationAlert(credentialId: string, orgId: string, now: Date): Promise<boolean>;
   /** Forgets delegation alerts taken before `before`; returns how many. */
   pruneDelegationAlerts(before: Date): Promise<number>;
+  insertWebhook(webhook: WebhookRecord): Promise<void>;
+  webhook(id: string): Promise<WebhookRecord | undefined>;
+  /** createdAt order. */
+  webhooks(orgId: string): Promise<WebhookRecord[]>;
+  updateWebhook(id: string, patch: WebhookPatch, now: Date): Promise<WebhookRecord | undefined>;
+  /** Adds one consecutive failure atomically; the updated endpoint. */
+  incrementWebhookFailures(id: string, now: Date): Promise<WebhookRecord | undefined>;
+  /** Disables the endpoint; true only for the call that turned an enabled one off. */
+  disableWebhook(id: string, now: Date): Promise<boolean>;
+  /** Deletes the endpoint and its deliveries. */
+  deleteWebhook(id: string): Promise<boolean>;
+  insertDeliveries(rows: readonly DeliveryRecord[]): Promise<void>;
+  /** Newest first. */
+  deliveries(webhookId: string, limit: number): Promise<DeliveryRecord[]>;
+  /** PENDING deliveries due at `now`, oldest due first. */
+  dueDeliveries(now: Date, limit: number): Promise<DeliveryRecord[]>;
+  /**
+   * Claims a PENDING delivery whose next_attempt_at is still `expected`
+   * (compare-and-set): counts the attempt and moves next_attempt_at to
+   * `leaseUntil`, so no other run takes it meanwhile. Undefined when another
+   * run claimed or settled it first.
+   */
+  claimDelivery(id: string, expected: Date | null, leaseUntil: Date): Promise<DeliveryRecord | undefined>;
+  updateDelivery(id: string, patch: DeliveryPatch): Promise<DeliveryRecord | undefined>;
+  /** Deletes the settled (non-PENDING) deliveries of an endpoint beyond its newest `keep`. */
+  pruneDeliveries(webhookId: string, keep: number): Promise<void>;
 }

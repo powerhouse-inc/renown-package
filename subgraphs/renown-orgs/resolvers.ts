@@ -8,11 +8,12 @@ import { organizationResolvers } from "./areas/organizations.js";
 import { proposalResolvers } from "./areas/proposals.js";
 import { teamResolvers } from "./areas/teams.js";
 import { transferResolvers } from "./areas/transfers.js";
+import { webhookResolvers } from "./areas/webhooks.js";
 import { workloadResolvers } from "./areas/workloads.js";
 import { createRuntime, type Area, type OrgRuntime, type OrgsResolverDeps, type Resolver } from "./runtime.js";
 
 /** The resolver areas of renown-orgs; each later task appends its own. */
-const AREAS: readonly Area[] = [organizationResolvers, memberResolvers, teamResolvers, proposalResolvers, domainResolvers, workloadResolvers, credentialResolvers, transferResolvers, attestationResolvers, insightResolvers, notificationResolvers];
+const AREAS: readonly Area[] = [organizationResolvers, memberResolvers, teamResolvers, proposalResolvers, domainResolvers, workloadResolvers, credentialResolvers, transferResolvers, attestationResolvers, insightResolvers, notificationResolvers, webhookResolvers];
 
 /** All renown-orgs resolvers over one runtime (shared with the sweeper: one lock map, one set of limiters). */
 export function resolversFor(rt: OrgRuntime): Record<string, unknown> {

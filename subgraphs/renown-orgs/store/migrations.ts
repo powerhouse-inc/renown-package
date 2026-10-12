@@ -308,4 +308,38 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("created_at", "timestamptz", (col) => col.notNull())
     .execute();
   await db.schema.createIndex("org_delegation_alerts_created").ifNotExists().on("org_delegation_alerts").column("created_at").execute();
+  // A3: webhooks.
+  await db.schema
+    .createTable("org_webhooks")
+    .ifNotExists()
+    .addColumn("id", "text", (col) => col.primaryKey())
+    .addColumn("org_id", "text", (col) => col.notNull())
+    .addColumn("url", "text", (col) => col.notNull())
+    .addColumn("events", "jsonb", (col) => col.notNull().defaultTo(sql`'[]'::jsonb`))
+    .addColumn("secret_sealed", "text", (col) => col.notNull())
+    .addColumn("enabled", "boolean", (col) => col.notNull().defaultTo(true))
+    .addColumn("consecutive_failures", "integer", (col) => col.notNull().defaultTo(0))
+    .addColumn("created_at", "timestamptz", (col) => col.notNull())
+    .addColumn("updated_at", "timestamptz", (col) => col.notNull())
+    .execute();
+  await db.schema.createIndex("org_webhooks_org").ifNotExists().on("org_webhooks").column("org_id").execute();
+  await db.schema
+    .createTable("org_webhook_deliveries")
+    .ifNotExists()
+    .addColumn("id", "text", (col) => col.primaryKey())
+    .addColumn("webhook_id", "text", (col) => col.notNull())
+    .addColumn("org_id", "text", (col) => col.notNull())
+    .addColumn("event_id", "text", (col) => col.notNull())
+    .addColumn("event_type", "text", (col) => col.notNull())
+    .addColumn("body", "text", (col) => col.notNull())
+    .addColumn("status", "text", (col) => col.notNull())
+    .addColumn("attempts", "integer", (col) => col.notNull().defaultTo(0))
+    .addColumn("response_status", "integer")
+    .addColumn("last_error", "text")
+    .addColumn("created_at", "timestamptz", (col) => col.notNull())
+    .addColumn("next_attempt_at", "timestamptz")
+    .addColumn("delivered_at", "timestamptz")
+    .execute();
+  await db.schema.createIndex("org_webhook_deliveries_hook").ifNotExists().on("org_webhook_deliveries").columns(["webhook_id", "created_at", "id"]).execute();
+  await db.schema.createIndex("org_webhook_deliveries_due").ifNotExists().on("org_webhook_deliveries").columns(["status", "next_attempt_at"]).execute();
 }

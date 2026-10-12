@@ -532,5 +532,48 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect(await store.pruneDelegationAlerts(at(1))).toBe(1);
       expect(await store.claimDelegationAlert("c1", "o1", at(3))).toBe(true);
     });
+    it("keeps webhooks and their deliveries, newest deliveries first, due ones, pruned to a count", async () => {
+      const { store } = await open();
+      await store.insertWebhook({ id: "w1", orgId: "o1", url: "https://h.example/hook", events: ["member.invited"], secretSealed: "v1.x.y", enabled: true, consecutiveFailures: 0, createdAt: T0, updatedAt: T0 });
+      const delivery = (id: string, createdAt: Date, nextAttemptAt: Date | null, status: "PENDING" | "DELIVERED" = "PENDING") => ({
+        id, webhookId: "w1", orgId: "o1", eventId: `e-${id}`, eventType: "member.invited", body: "{}", status, attempts: 0,
+        responseStatus: null, lastError: null, createdAt, nextAttemptAt, deliveredAt: null,
+      });
+      await store.insertDeliveries([delivery("d1", T0, T0), delivery("d2", at(1), at(5)), delivery("d3", at(2), null, "DELIVERED")]);
+      expect((await store.dueDeliveries(at(1), 10)).map((d) => d.id)).toEqual(["d1"]);
+      expect(await store.updateDelivery("d1", { status: "FAILED", attempts: 6, lastError: "boom", nextAttemptAt: null })).toMatchObject({ status: "FAILED", attempts: 6 });
+      expect((await store.deliveries("w1", 10)).map((d) => d.id)).toEqual(["d3", "d2", "d1"]);
+      expect(await store.updateWebhook("w1", { consecutiveFailures: 3, enabled: false }, at(1))).toMatchObject({ consecutiveFailures: 3, enabled: false });
+      await store.pruneDeliveries("w1", 2);
+      expect((await store.deliveries("w1", 10)).map((d) => d.id)).toEqual(["d3", "d2"]);
+      expect((await store.webhooks("o1")).map((w) => w.id)).toEqual(["w1"]);
+      expect(await store.deleteWebhook("w1")).toBe(true);
+      expect(await store.deliveries("w1", 10)).toEqual([]);
+    });
+    it("claims a pending delivery once, counts failures atomically, disables an enabled endpoint once, never prunes pending deliveries", async () => {
+      const { store } = await open();
+      await store.insertWebhook({ id: "w1", orgId: "o1", url: "https://h.example/hook", events: ["member.invited"], secretSealed: "v1.x.y", enabled: true, consecutiveFailures: 0, createdAt: T0, updatedAt: T0 });
+      const delivery = (id: string, createdAt: Date, nextAttemptAt: Date | null) => ({
+        id, webhookId: "w1", orgId: "o1", eventId: `e-${id}`, eventType: "member.invited", body: "{}", status: "PENDING" as const, attempts: 0,
+        responseStatus: null, lastError: null, createdAt, nextAttemptAt, deliveredAt: null,
+      });
+      await store.insertDeliveries([delivery("d1", T0, T0), delivery("d2", at(1), null), delivery("d3", at(2), null)]);
+      const [first, second] = await Promise.all([store.claimDelivery("d1", T0, at(5)), store.claimDelivery("d1", T0, at(5))]);
+      expect([first, second].filter(Boolean)).toHaveLength(1);
+      expect(first ?? second).toMatchObject({ id: "d1", attempts: 1, nextAttemptAt: at(5), status: "PENDING" });
+      expect(await store.claimDelivery("d1", T0, at(6))).toBeUndefined();
+      expect(await store.claimDelivery("d2", null, at(5))).toMatchObject({ attempts: 1, nextAttemptAt: at(5) });
+      expect((await store.incrementWebhookFailures("w1", at(1)))?.consecutiveFailures).toBe(1);
+      expect((await store.incrementWebhookFailures("w1", at(1)))?.consecutiveFailures).toBe(2);
+      expect(await store.incrementWebhookFailures("nope", at(1))).toBeUndefined();
+      expect(await store.disableWebhook("w1", at(2))).toBe(true);
+      expect(await store.disableWebhook("w1", at(2))).toBe(false);
+      expect(await store.webhook("w1")).toMatchObject({ enabled: false, consecutiveFailures: 2, updatedAt: at(2) });
+      await store.updateDelivery("d3", { status: "DELIVERED" });
+      await store.pruneDeliveries("w1", 1);
+      expect((await store.deliveries("w1", 10)).map((d) => d.id)).toEqual(["d3", "d2", "d1"]);
+      await store.pruneDeliveries("w1", 0);
+      expect((await store.deliveries("w1", 10)).map((d) => d.id)).toEqual(["d2", "d1"]);
+    });
   });
 }

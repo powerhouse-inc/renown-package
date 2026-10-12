@@ -4,6 +4,7 @@ import type { MediaBackend } from "../../media/backend.js";
 import { mediaBackend } from "../../media/slot.js";
 import { orgMessage, sha256Hex } from "../../sdk/orgs.js";
 import { createRateLimiter } from "../renown-auth/core/rate-limit.js";
+import { loadConfig as loadWorkloadConfig } from "../renown-workload/core/config.js";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
 import { createKeyedLock } from "../renown-stats/core/keyed-lock.js";
 import { createActivityRecorder, type ActivitySink, type OrgActivity } from "./core/activity.js";
@@ -41,6 +42,8 @@ export interface OrgsResolverDeps {
   readLimiter?: RateLimiter;
   /** DNS and HTTPS for domain proofs and webhooks; node's by default. */
   net?: NetDeps;
+  /** The AES-256-GCM key sealing webhook secrets; RENOWN_WORKLOAD_KEY_ENCRYPTION_KEY by default (null: webhooks unavailable). */
+  webhookKey?: () => Uint8Array | null;
   /** Extra activity sinks (A3: notifications, webhooks). */
   sinks?: readonly ActivitySink[];
   /** Initial membership-ended hooks (tests; A2 registers its own on the runtime). */
@@ -66,6 +69,8 @@ export interface OrgRuntime {
   media(): MediaBackend | null;
   /** DNS and HTTPS; every fetch goes through guardedRequest. */
   net(): NetDeps;
+  /** The key sealing webhook secrets, or null when none is configured. */
+  webhookKey(): Uint8Array | null;
   newId(): string;
   /** `bytes` random bytes, base64url. */
   token(bytes?: number): string;
@@ -129,6 +134,7 @@ export function createRuntime(deps: OrgsResolverDeps): OrgRuntime {
   const sinks: ActivitySink[] = [...(deps.sinks ?? [])];
   const record = createActivityRecorder({ store, newId, sinks });
   let policy: OrgPolicy | undefined;
+  let workloadKey: Uint8Array | null | undefined;
 
   return {
     deps,
@@ -137,6 +143,7 @@ export function createRuntime(deps: OrgsResolverDeps): OrgRuntime {
     config: () => deps.config(),
     media: () => (deps.media ?? mediaBackend)(),
     net: () => deps.net ?? nodeNetDeps,
+    webhookKey: () => (deps.webhookKey ? deps.webhookKey() : (workloadKey ??= loadWorkloadConfig(process.env).config.encryptionKey)),
     newId,
     token: (bytes = 32) => Buffer.from(randomBytes(bytes)).toString("base64url"),
     lock,

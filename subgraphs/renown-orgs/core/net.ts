@@ -247,6 +247,10 @@ export async function guardedRequest(
     /** Epoch ms by which the whole attempt must be done; defaults to now + timeoutMs. */
     deadline?: number;
     maxBytes?: number;
+    /** Ports the URL may name (443 when it names none); any port when omitted. */
+    ports?: readonly number[];
+    /** A response larger than maxBytes keeps its status and loses its body, instead of being refused. */
+    truncate?: boolean;
   },
 ): Promise<{ status: number; body: Uint8Array }> {
   const deadline = init.deadline ?? Date.now() + (init.timeoutMs ?? FETCH_TIMEOUT_MS);
@@ -258,6 +262,8 @@ export async function guardedRequest(
   }
   if (url.protocol !== "https:") throw new NetGuardError("Only https URLs are fetched");
   if (url.username || url.password) throw new NetGuardError("URLs with credentials are not fetched");
+  const port = url.port ? Number(url.port) : 443;
+  if (init.ports && !init.ports.includes(port)) throw new NetGuardError(`Port ${port} is not allowed`);
   const host = url.hostname.replace(/^\[|\]$/g, "");
   const literal = isIP(host);
   let addresses: ResolvedAddress[];
@@ -301,7 +307,10 @@ export async function guardedRequest(
       if (isConnectError(error) && index < addresses.length - 1) continue;
       throw error;
     }
-    if (response.truncated) throw new NetGuardError(`The response is larger than ${maxBytes} bytes`);
+    if (response.truncated) {
+      if (init.truncate) return { status: response.status, body: new Uint8Array() };
+      throw new NetGuardError(`The response is larger than ${maxBytes} bytes`);
+    }
     return { status: response.status, body: response.body };
   }
   throw lastError;

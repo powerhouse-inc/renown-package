@@ -1,11 +1,14 @@
 import { actions as orgActions } from "../../document-models/renown-organization/index.js";
 import { domainRestoreOf } from "./areas/domains.js";
 import { NOTIFICATION_RETENTION_DAYS, registerNotificationSink } from "./areas/notifications.js";
+import { registerWebhookSink } from "./areas/webhooks.js";
 import { writeDocument } from "./areas/members.js";
 import { expireProposal, rearmProposal, runProposal } from "./areas/proposals.js";
 import { expireTransfer } from "./areas/transfers.js";
+import { mapLimited } from "./core/concurrency.js";
 import { proveDomain } from "./core/domain-proof.js";
 import type { SweepJob } from "./core/sweeper.js";
+import { attemptDelivery } from "./core/webhook-delivery.js";
 import type { OrgRuntime } from "./runtime.js";
 import { credentialsCreatedBetween } from "./store/foreign.js";
 
@@ -266,9 +269,35 @@ export function delegationsJob(rt: OrgRuntime, options: { pageSize?: number } = 
   };
 }
 
+/** Deliveries attempted at the same time by one run (each may wait up to 10 s on its receiver). */
+export const DELIVERY_CONCURRENCY = 8;
+
+/**
+ * Every minute: attempts every due webhook delivery, DELIVERY_CONCURRENCY at
+ * a time. Each delivery is claimed before it is sent (attemptDelivery), so
+ * two runs never send it twice, and isolated: one that throws is logged and
+ * retried once its claim lapses. Pings are never retried.
+ */
+export function webhookDeliveryJob(rt: OrgRuntime): SweepJob {
+  return {
+    name: "webhooks",
+    everyMs: MINUTE_MS,
+    async run(now) {
+      await mapLimited(await rt.store().dueDeliveries(now, BATCH), DELIVERY_CONCURRENCY, async (delivery) => {
+        try {
+          await attemptDelivery(rt, delivery, { retry: delivery.eventType !== "ping" });
+        } catch (error) {
+          console.error(`[renown-orgs] webhook delivery ${delivery.id} failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      });
+    },
+  };
+}
+
 /** Every sweep job of renown-orgs; later tasks append theirs. */
 export function sweepJobs(rt: OrgRuntime): SweepJob[] {
   // The jobs record notifications: the sink must exist even if no resolvers were built on this runtime.
   registerNotificationSink(rt);
-  return [proposalsJob(rt), signaturesJob(rt), domainsJob(rt), transfersJob(rt), notificationsPruneJob(rt), delegationsJob(rt)];
+  registerWebhookSink(rt);
+  return [proposalsJob(rt), signaturesJob(rt), domainsJob(rt), transfersJob(rt), notificationsPruneJob(rt), delegationsJob(rt), webhookDeliveryJob(rt)];
 }

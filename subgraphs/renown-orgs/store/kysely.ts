@@ -16,7 +16,13 @@ import type {
   SuspensionRecord,
   MemberSuspensionRecord,
   NotificationRecord,
+  DeliveryPatch,
+  DeliveryRecord,
   OrganizationsTable,
+  OrgWebhookDeliveriesTable,
+  OrgWebhooksTable,
+  WebhookPatch,
+  WebhookRecord,
   OrgInviteLinksTable,
   OrgLink,
   OrgDomainsTable,
@@ -209,6 +215,38 @@ async function replaceTeamMembers(db: OrgsKysely, teamId: string, memberIds: rea
     .insertInto("org_team_members")
     .values(unique.map((memberId) => ({ team_id: teamId, member_id: memberId })))
     .execute();
+}
+
+function toWebhook(row: Selectable<OrgWebhooksTable>): WebhookRecord {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    url: row.url,
+    events: stringList(row.events),
+    secretSealed: row.secret_sealed,
+    enabled: row.enabled,
+    consecutiveFailures: row.consecutive_failures,
+    createdAt: toDate(row.created_at),
+    updatedAt: toDate(row.updated_at),
+  };
+}
+
+function toDelivery(row: Selectable<OrgWebhookDeliveriesTable>): DeliveryRecord {
+  return {
+    id: row.id,
+    webhookId: row.webhook_id,
+    orgId: row.org_id,
+    eventId: row.event_id,
+    eventType: row.event_type,
+    body: row.body,
+    status: row.status,
+    attempts: row.attempts,
+    responseStatus: row.response_status,
+    lastError: row.last_error,
+    createdAt: toDate(row.created_at),
+    nextAttemptAt: toDateOrNull(row.next_attempt_at),
+    deliveredAt: toDateOrNull(row.delivered_at),
+  };
 }
 
 /** Kysely-backed `OrgStore`. The `db` passed in is already namespace-scoped. */
@@ -1245,5 +1283,170 @@ export class KyselyOrgStore implements OrgStore {
   async pruneDelegationAlerts(before: Date): Promise<number> {
     const result = await this.db.deleteFrom("org_delegation_alerts").where("created_at", "<", before).executeTakeFirst();
     return Number(result.numDeletedRows);
+  }
+
+  async insertWebhook(w: WebhookRecord): Promise<void> {
+    await this.db
+      .insertInto("org_webhooks")
+      .values({
+        id: w.id,
+        org_id: w.orgId,
+        url: w.url,
+        events: JSON.stringify(w.events),
+        secret_sealed: w.secretSealed,
+        enabled: w.enabled,
+        consecutive_failures: w.consecutiveFailures,
+        created_at: w.createdAt,
+        updated_at: w.updatedAt,
+      })
+      .execute();
+  }
+
+  async webhook(id: string): Promise<WebhookRecord | undefined> {
+    const row = await this.db.selectFrom("org_webhooks").selectAll().where("id", "=", id).executeTakeFirst();
+    return row && toWebhook(row);
+  }
+
+  async webhooks(orgId: string): Promise<WebhookRecord[]> {
+    const rows = await this.db.selectFrom("org_webhooks").selectAll().where("org_id", "=", orgId).orderBy("created_at").orderBy("id").execute();
+    return rows.map(toWebhook);
+  }
+
+  async updateWebhook(id: string, patch: WebhookPatch, now: Date): Promise<WebhookRecord | undefined> {
+    const row = await this.db
+      .updateTable("org_webhooks")
+      .set({
+        ...(patch.url !== undefined && { url: patch.url }),
+        ...(patch.events !== undefined && { events: JSON.stringify(patch.events) }),
+        ...(patch.secretSealed !== undefined && { secret_sealed: patch.secretSealed }),
+        ...(patch.enabled !== undefined && { enabled: patch.enabled }),
+        ...(patch.consecutiveFailures !== undefined && { consecutive_failures: patch.consecutiveFailures }),
+        updated_at: now,
+      })
+      .where("id", "=", id)
+      .returningAll()
+      .executeTakeFirst();
+    return row && toWebhook(row);
+  }
+
+  async incrementWebhookFailures(id: string, now: Date): Promise<WebhookRecord | undefined> {
+    const row = await this.db
+      .updateTable("org_webhooks")
+      .set((eb) => ({ consecutive_failures: eb("consecutive_failures", "+", 1), updated_at: now }))
+      .where("id", "=", id)
+      .returningAll()
+      .executeTakeFirst();
+    return row && toWebhook(row);
+  }
+
+  async disableWebhook(id: string, now: Date): Promise<boolean> {
+    const row = await this.db
+      .updateTable("org_webhooks")
+      .set({ enabled: false, updated_at: now })
+      .where("id", "=", id)
+      .where("enabled", "=", true)
+      .returning("id")
+      .executeTakeFirst();
+    return row !== undefined;
+  }
+
+  async deleteWebhook(id: string): Promise<boolean> {
+    await this.db.deleteFrom("org_webhook_deliveries").where("webhook_id", "=", id).execute();
+    const result = await this.db.deleteFrom("org_webhooks").where("id", "=", id).executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
+  }
+
+  async insertDeliveries(rows: readonly DeliveryRecord[]): Promise<void> {
+    if (rows.length === 0) return;
+    await this.db
+      .insertInto("org_webhook_deliveries")
+      .values(
+        rows.map((d) => ({
+          id: d.id,
+          webhook_id: d.webhookId,
+          org_id: d.orgId,
+          event_id: d.eventId,
+          event_type: d.eventType,
+          body: d.body,
+          status: d.status,
+          attempts: d.attempts,
+          response_status: d.responseStatus,
+          last_error: d.lastError,
+          created_at: d.createdAt,
+          next_attempt_at: d.nextAttemptAt,
+          delivered_at: d.deliveredAt,
+        })),
+      )
+      .execute();
+  }
+
+  async deliveries(webhookId: string, limit: number): Promise<DeliveryRecord[]> {
+    const rows = await this.db
+      .selectFrom("org_webhook_deliveries")
+      .selectAll()
+      .where("webhook_id", "=", webhookId)
+      .orderBy("created_at", "desc")
+      .orderBy("id", "desc")
+      .limit(limit)
+      .execute();
+    return rows.map(toDelivery);
+  }
+
+  async dueDeliveries(now: Date, limit: number): Promise<DeliveryRecord[]> {
+    const rows = await this.db
+      .selectFrom("org_webhook_deliveries")
+      .selectAll()
+      .where("status", "=", "PENDING")
+      .where("next_attempt_at", "<=", now)
+      .orderBy("next_attempt_at")
+      .orderBy("id")
+      .limit(limit)
+      .execute();
+    return rows.map(toDelivery);
+  }
+
+  async claimDelivery(id: string, expected: Date | null, leaseUntil: Date): Promise<DeliveryRecord | undefined> {
+    const row = await this.db
+      .updateTable("org_webhook_deliveries")
+      .set((eb) => ({ attempts: eb("attempts", "+", 1), next_attempt_at: leaseUntil }))
+      .where("id", "=", id)
+      .where("status", "=", "PENDING")
+      .where((eb) => (expected === null ? eb("next_attempt_at", "is", null) : eb("next_attempt_at", "=", expected)))
+      .returningAll()
+      .executeTakeFirst();
+    return row && toDelivery(row);
+  }
+
+  async updateDelivery(id: string, patch: DeliveryPatch): Promise<DeliveryRecord | undefined> {
+    const row = await this.db
+      .updateTable("org_webhook_deliveries")
+      .set({
+        ...(patch.status !== undefined && { status: patch.status }),
+        ...(patch.attempts !== undefined && { attempts: patch.attempts }),
+        ...(patch.responseStatus !== undefined && { response_status: patch.responseStatus }),
+        ...(patch.lastError !== undefined && { last_error: patch.lastError }),
+        ...(patch.nextAttemptAt !== undefined && { next_attempt_at: patch.nextAttemptAt }),
+        ...(patch.deliveredAt !== undefined && { delivered_at: patch.deliveredAt }),
+      })
+      .where("id", "=", id)
+      .returningAll()
+      .executeTakeFirst();
+    return row && toDelivery(row);
+  }
+
+  async pruneDeliveries(webhookId: string, keep: number): Promise<void> {
+    const keepIds = this.db
+      .selectFrom("org_webhook_deliveries")
+      .select("id")
+      .where("webhook_id", "=", webhookId)
+      .orderBy("created_at", "desc")
+      .orderBy("id", "desc")
+      .limit(keep);
+    await this.db
+      .deleteFrom("org_webhook_deliveries")
+      .where("webhook_id", "=", webhookId)
+      .where("status", "<>", "PENDING")
+      .where("id", "not in", keepIds)
+      .execute();
   }
 }

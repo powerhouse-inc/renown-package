@@ -179,12 +179,16 @@ describe("notifications", () => {
     vi.restoreAllMocks();
   });
 
-  it("registers the notification sink once, from the sweep jobs or the resolvers, whichever comes first", () => {
+  it("registers the notification and webhook sinks once each, from the sweep jobs or the resolvers, whichever comes first", () => {
     const t = harnessResolvers(h);
     const rt = createRuntime({ ...t.rt.deps, sinks: [] });
     sweepJobs(rt);
     sweepJobs(rt);
     resolversFor(rt);
-    expect(rt.sinks).toHaveLength(1);
+    expect(rt.sinks).toHaveLength(2);
+    const other = createRuntime({ ...t.rt.deps, sinks: [] });
+    resolversFor(other);
+    sweepJobs(other);
+    expect(other.sinks).toHaveLength(2);
   });
 });
