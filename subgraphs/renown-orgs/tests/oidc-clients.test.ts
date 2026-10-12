@@ -100,6 +100,31 @@ describe("org-owned OIDC clients", () => {
     expect((await t.store.auditPage(id, 5)).map((row) => row.action)).not.toContain("registerOrgOidcClient");
   });
 
+  it("caps an organisation at 20 clients, disabled ones included", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    const first = await register(t, id, ALICE, "App 0");
+    await t.mutate("updateOrgOidcClient", { orgId: id, clientId: first.clientId, status: "DISABLED" }, ALICE);
+    for (let i = 1; i < 20; i++) await register(t, id, ALICE, `App ${i}`);
+    expect((await failure(register(t, id, ALICE, "One too many"))).code).toBe("LIMIT_REACHED");
+    expect(await h.root.withSchema(OIDC_NS).selectFrom("oidc_clients").select("client_id").execute()).toHaveLength(20);
+  });
+
+  it("still returns the secret when the audit write fails after the client is owned", async () => {
+    const t = harnessResolvers(h);
+    const oidc = new KyselyOidcStore(h.root.withSchema(OIDC_NS));
+    const { id } = await createOrg(t, ALICE, "acme");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(t.rt, "record").mockRejectedValueOnce(new Error("audit down"));
+    const created = await register(t, id);
+    expect(created.clientSecret).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect((await oidc.getClient(created.clientId))?.status).toBe("ACTIVE");
+    expect((await t.store.orgOidcClients(id)).map((link) => link.clientId)).toEqual([created.clientId]);
+    expect(errors.mock.calls.flat().join(" ")).not.toContain(created.clientSecret);
+    expect(errors).toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
   it("stops the clients of archived or taken-down organisations from authenticating", async () => {
     const t = harnessResolvers(h);
     const oidc = new KyselyOidcStore(h.root.withSchema(OIDC_NS));
@@ -114,8 +139,8 @@ describe("org-owned OIDC clients", () => {
     expect((await directory.getClient(clientId))?.status).toBe("DISABLED");
     expect((await failure(register(t, id))).code).toBe("FORBIDDEN");
     expect((await failure(t.mutate("updateOrgOidcClient", { orgId: id, clientId, status: "ACTIVE" }, ALICE))).code).toBe("FORBIDDEN");
-    // Admins still see what they had.
-    expect(await t.query<unknown[]>("orgOidcClients", { orgId: id }, ALICE)).toHaveLength(1);
+    // Admins still see what they had, with the status that actually applies.
+    expect(await t.query("orgOidcClients", { orgId: id }, ALICE)).toEqual([expect.objectContaining({ clientId, status: "DISABLED" })]);
 
     await t.store.updateOrganization(other.id, { takenDown: true }, t.clock.now);
     expect((await directory.getClient(second.clientId))?.status).toBe("DISABLED");
@@ -150,6 +175,15 @@ describe("org-owned OIDC clients", () => {
     }
     const client = await oidc.getClient(clientId);
     expect(client).toMatchObject({ allowAnySubject: false, allowedSubjects: [], allowedOrgs: restriction });
+
+    // Nor can it make the client public.
+    const rotatePublic = await generic.Mutation.rotateOidcClientSecret(null, { clientId, confidential: false }, ctx).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect((rotatePublic as GraphQLError).extensions.code).toBe("BAD_USER_INPUT");
+    expect((await oidc.getClient(clientId))?.clientSecretHash).not.toBeNull();
+    await expect(generic.Mutation.rotateOidcClientSecret(null, { clientId }, ctx)).resolves.toHaveProperty("clientSecret");
 
     // Everything else still goes through, and the restriction stays.
     await expect(update(clientId, { name: "Renamed", allowedOrgs: restriction })).resolves.toMatchObject({ name: "Renamed", allowedOrgs: restriction });

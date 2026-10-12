@@ -125,12 +125,12 @@ export const OIDC_SDL = `
   }
 
   extend type Query {
-    "Admins: the organisation's own OIDC clients (never their secrets)."
+    "Admins: the organisation's own OIDC clients (never their secrets); DISABLED while the organisation is archived or taken down."
     orgOidcClients(orgId: String!, auth: OrgAuthInput): [OrgOidcClient!]!
   }
 
   extend type Mutation {
-    "Admins: a confidential client only the organisation's active members may sign in to."
+    "Admins: a confidential client only the organisation's active members may sign in to. At most 20 per organisation, disabled ones included (LIMIT_REACHED)."
     registerOrgOidcClient(orgId: String!, name: String!, redirectUris: [String!]!, auth: OrgAuthInput): OrgOidcClientCredentials!
     "Admins: renames, changes redirect URIs (removals before additions) or disables/enables the client."
     updateOrgOidcClient(

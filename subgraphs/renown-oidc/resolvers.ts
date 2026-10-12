@@ -154,7 +154,11 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
         ctx: ResolverContext,
       ): Promise<ClientCredentials> => {
         const registry = authorizedRegistry(ctx);
-        return asGraphQL(() => rotateClientSecret(registry, args.clientId, args.confidential ?? true));
+        const confidential = args.confidential ?? true;
+        if (!confidential && (await deps.orgClients?.ownerOf(args.clientId))) {
+          throw new GraphQLError("This client is owned by an organisation: it must stay confidential", { extensions: { code: "BAD_USER_INPUT" } });
+        }
+        return asGraphQL(() => rotateClientSecret(registry, args.clientId, confidential));
       },
     },
   };

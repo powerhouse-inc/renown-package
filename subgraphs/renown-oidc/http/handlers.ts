@@ -412,6 +412,8 @@ export function createOidcHandlers(deps: OidcDeps) {
 
       const token = await store.getAccessToken(await sha256Hex(match[1]));
       if (!token || token.revoked || isExpired(token.expiresAt, deps.now())) return invalidToken();
+      // A token outlives neither its client nor the organisation owning it (the directory reads those as DISABLED).
+      if (!isActive(await clients.getClient(token.clientId))) return invalidToken();
 
       const profile = await profiles.getProfile(token.address);
       const orgs = token.scope.split(/\s+/).includes("orgs") ? await orgsOf(token.address) : [];

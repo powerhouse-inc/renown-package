@@ -34,10 +34,14 @@ export interface ClientRegistryDeps {
   log(message: string): void;
 }
 
+/** The input field a BAD_USER_INPUT error is about. */
+export type ClientRegistryField = "name" | "redirectUris" | "allowedSubjects" | "allowedOrgs";
+
 export class ClientRegistryError extends Error {
   constructor(
     message: string,
     public code: "BAD_USER_INPUT" | "NOT_FOUND",
+    public field: ClientRegistryField | null = null,
   ) {
     super(message);
     this.name = "ClientRegistryError";
@@ -51,9 +55,9 @@ function validAllowedOrgs(entries: readonly OidcAllowedOrg[]): OidcAllowedOrg[] 
   for (const entry of entries) {
     const orgId = entry.orgId.trim();
     const minRole = entry.minRole.trim().toUpperCase();
-    if (orgId === "") throw new ClientRegistryError("allowedOrgs: orgId must not be empty", "BAD_USER_INPUT");
+    if (orgId === "") throw new ClientRegistryError("allowedOrgs: orgId must not be empty", "BAD_USER_INPUT", "allowedOrgs");
     if (!ORG_ROLES.has(minRole)) {
-      throw new ClientRegistryError(`allowedOrgs: minRole must be one of ${[...ORG_ROLES].join(", ")}`, "BAD_USER_INPUT");
+      throw new ClientRegistryError(`allowedOrgs: minRole must be one of ${[...ORG_ROLES].join(", ")}`, "BAD_USER_INPUT", "allowedOrgs");
     }
     seen.set(orgId, { orgId, minRole: minRole as OidcAllowedOrg["minRole"] });
   }
@@ -87,14 +91,14 @@ export interface ClientCredentials {
 
 function validName(name: string): string {
   const trimmed = name.trim();
-  if (trimmed.length === 0) throw new ClientRegistryError("Client name must not be empty", "BAD_USER_INPUT");
+  if (trimmed.length === 0) throw new ClientRegistryError("Client name must not be empty", "BAD_USER_INPUT", "name");
   return trimmed;
 }
 
 function validRedirectUris(uris: string[]): string[] {
   for (const uri of uris) {
     if (!isValidRedirectUri(uri)) {
-      throw new ClientRegistryError(`Invalid redirect URI: ${uri}`, "BAD_USER_INPUT");
+      throw new ClientRegistryError(`Invalid redirect URI: ${uri}`, "BAD_USER_INPUT", "redirectUris");
     }
   }
   return [...new Set(uris)];
@@ -105,7 +109,7 @@ function validSubjects(subjects: string[]): string[] {
     try {
       return normalizeSubject(subject);
     } catch {
-      throw new ClientRegistryError(`Invalid subject: ${subject}`, "BAD_USER_INPUT");
+      throw new ClientRegistryError(`Invalid subject: ${subject}`, "BAD_USER_INPUT", "allowedSubjects");
     }
   });
   return [...new Set(normalized)];

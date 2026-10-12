@@ -8,7 +8,7 @@ import {
 } from "../../renown-oidc/register.js";
 import type { OrgArgs, OrgContext } from "../core/auth.js";
 import { requireOrg, requireRole } from "../core/authz.js";
-import { badInput, notFound } from "../core/errors.js";
+import { badInput, limitReached, notFound } from "../core/errors.js";
 import { iso } from "../output.js";
 import type { Area, OrgRuntime } from "../runtime.js";
 import type { OrgOidcClientLink } from "../store/types.js";
@@ -26,6 +26,9 @@ import type { OrgOidcClientLink } from "../store/types.js";
  */
 
 type ClientStatus = "ACTIVE" | "DISABLED";
+
+/** Per organisation, disabled clients included. */
+export const MAX_ORG_OIDC_CLIENTS = 20;
 
 async function registry(rt: OrgRuntime): Promise<ClientRegistryDeps> {
   const oidc = await rt.oidc();
@@ -46,20 +49,23 @@ async function viaRegistry<T>(run: () => Promise<T>): Promise<T> {
   } catch (error) {
     if (error instanceof ClientRegistryError) {
       if (error.code === "NOT_FOUND") throw notFound("OIDC client");
-      throw badInput(error.message.startsWith("Invalid redirect URI") ? "redirectUris" : "name", error.message);
+      throw badInput(error.field ?? "input", error.message);
     }
     throw error;
   }
 }
 
-/** Never includes the secret (or its hash). */
-function clientOutput(client: OidcClient, link: OrgOidcClientLink) {
+/**
+ * Never includes the secret (or its hash). `live` false (archived or taken
+ * down) reports DISABLED: such clients cannot authenticate whatever is stored.
+ */
+function clientOutput(client: OidcClient, link: OrgOidcClientLink, live: boolean) {
   return {
     clientId: client.id,
     orgId: link.orgId,
     name: client.name,
     redirectUris: [...client.redirectUris],
-    status: client.status,
+    status: live ? client.status : "DISABLED",
     createdAt: iso(link.createdAt),
   };
 }
@@ -83,15 +89,16 @@ export const oidcClientResolvers: Area = (rt) => ({
     orgOidcClients: async (_: unknown, args: OrgArgs & { orgId: string }, ctx: OrgContext) => {
       const caller = await rt.caller(ctx, "orgOidcClients", args);
       const store = rt.store();
-      await requireOrg(store, args.orgId, { writable: false });
+      const org = await requireOrg(store, args.orgId, { writable: false });
       await requireRole(store, args.orgId, caller, "ADMIN");
+      const live = !org.archived && !org.takenDown;
       const links = await store.orgOidcClients(args.orgId);
       if (links.length === 0) return [];
       const oidc = (await rt.oidc()).store;
       const out = [];
       for (const link of links) {
         const client = await oidc.getClient(link.clientId);
-        if (client) out.push(clientOutput(client, link));
+        if (client) out.push(clientOutput(client, link, live));
       }
       return out;
     },
@@ -104,6 +111,9 @@ export const oidcClientResolvers: Area = (rt) => ({
         const now = rt.now();
         await requireOrg(store, args.orgId);
         await requireRole(store, args.orgId, caller, "ADMIN");
+        if ((await store.orgOidcClients(args.orgId)).length >= MAX_ORG_OIDC_CLIENTS) {
+          throw limitReached(`At most ${MAX_ORG_OIDC_CLIENTS} OIDC clients per organisation`);
+        }
         const deps = await registry(rt);
         const credentials = await viaRegistry(() =>
           registerClient(deps, {
@@ -124,14 +134,19 @@ export const oidcClientResolvers: Area = (rt) => ({
           });
           throw error;
         }
-        const client = await deps.store.getClient(credentials.clientId);
-        await rt.record({
-          orgId: args.orgId,
-          actor: caller,
-          action: "registerOrgOidcClient",
-          at: now,
-          details: { clientId: credentials.clientId, name: client?.name ?? args.name.trim(), redirectUris: client?.redirectUris ?? args.redirectUris },
-        });
+        // The client exists and is owned: from here on the secret must reach the caller (it is shown only once).
+        try {
+          const client = await deps.store.getClient(credentials.clientId);
+          await rt.record({
+            orgId: args.orgId,
+            actor: caller,
+            action: "registerOrgOidcClient",
+            at: now,
+            details: { clientId: credentials.clientId, name: client?.name ?? args.name.trim(), redirectUris: client?.redirectUris ?? args.redirectUris },
+          });
+        } catch (error) {
+          console.error(`[renown-orgs] registerOrgOidcClient: audit of ${credentials.clientId} failed: ${reason(error)}`);
+        }
         return { clientId: credentials.clientId, clientSecret: credentials.clientSecret ?? "" };
       });
     },
@@ -173,7 +188,8 @@ export const oidcClientResolvers: Area = (rt) => ({
             ...(args.status != null && { status: args.status }),
           },
         });
-        return clientOutput(client, link);
+        // ownClient required a writable (so live) organisation.
+        return clientOutput(client, link, true);
       });
     },
     rotateOrgOidcClientSecret: async (_: unknown, args: OrgArgs & { orgId: string; clientId: string }, ctx: OrgContext) => {
