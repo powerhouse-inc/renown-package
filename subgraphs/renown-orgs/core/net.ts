@@ -199,18 +199,57 @@ export const nodeNetDeps: NetDeps = {
   request: pinnedHttpsRequest,
 };
 
+/** Connection-level failures after which the next vetted address is tried. */
+const CONNECT_ERRORS = new Set(["ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH", "EADDRNOTAVAIL", "ETIMEDOUT"]);
+
+function isConnectError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && CONNECT_ERRORS.has(code);
+}
+
+/**
+ * `promise`, or a NetGuardError once `deadline` (epoch ms) passes. One
+ * deadline spans every step of an attempt (DNS, connect, response), so the
+ * steps share the 5 s instead of getting 5 s each.
+ */
+export function beforeDeadline<T>(promise: Promise<T>, deadline: number, what: string): Promise<T> {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) {
+    // The step may still settle; its outcome no longer matters.
+    promise.catch(() => undefined);
+    return Promise.reject(new NetGuardError(`${what} timed out`));
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new NetGuardError(`${what} timed out`)), remaining);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 /**
  * Fetches `rawUrl` under the organisation fetch rules (spec §3.6): HTTPS
  * only, no credentials in the URL, every resolved address public (checked
- * after DNS resolution; the connection is pinned to the checked address, so
- * there is no second lookup to rebind), 5 s, 64 KiB, no redirects (a 3xx
- * comes back as is). Throws NetGuardError when a rule refuses it.
+ * after DNS resolution; the connection is pinned to a checked address, so
+ * there is no second lookup to rebind), one 5 s deadline for DNS, connect and
+ * response together (`deadline` shares it with earlier steps, such as a TXT
+ * lookup), 64 KiB, no redirects (a 3xx comes back as is). The vetted
+ * addresses are tried in order until one connects. Throws NetGuardError when
+ * a rule refuses it or the deadline passes.
  */
 export async function guardedRequest(
   deps: NetDeps,
   rawUrl: string,
-  init: { method: "GET" | "POST"; headers?: Record<string, string>; body?: string; timeoutMs?: number; maxBytes?: number },
+  init: {
+    method: "GET" | "POST";
+    headers?: Record<string, string>;
+    body?: string;
+    timeoutMs?: number;
+    /** Epoch ms by which the whole attempt must be done; defaults to now + timeoutMs. */
+    deadline?: number;
+    maxBytes?: number;
+  },
 ): Promise<{ status: number; body: Uint8Array }> {
+  const deadline = init.deadline ?? Date.now() + (init.timeoutMs ?? FETCH_TIMEOUT_MS);
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -226,8 +265,9 @@ export async function guardedRequest(
     addresses = [{ address: host, family: literal === 6 ? 6 : 4 }];
   } else {
     try {
-      addresses = await deps.lookup(host);
-    } catch {
+      addresses = await beforeDeadline(deps.lookup(host), deadline, `lookup ${host}`);
+    } catch (error) {
+      if (error instanceof NetGuardError) throw error;
       throw new NetGuardError(`${host} does not resolve`);
     }
   }
@@ -236,16 +276,33 @@ export async function guardedRequest(
     throw new NetGuardError(`${host} resolves to a non-public address`);
   }
   const maxBytes = init.maxBytes ?? FETCH_MAX_BYTES;
-  const response = await deps.request({
-    url,
-    address: addresses[0].address,
-    family: addresses[0].family,
-    method: init.method,
-    headers: init.headers ?? {},
-    body: init.body,
-    timeoutMs: init.timeoutMs ?? FETCH_TIMEOUT_MS,
-    maxBytes,
-  });
-  if (response.truncated) throw new NetGuardError(`The response is larger than ${maxBytes} bytes`);
-  return { status: response.status, body: response.body };
+  let lastError: unknown;
+  for (const [index, target] of addresses.entries()) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new NetGuardError(`${host} timed out`);
+    let response: PinnedResponse;
+    try {
+      response = await beforeDeadline(
+        deps.request({
+          url,
+          address: target.address,
+          family: target.family,
+          method: init.method,
+          headers: init.headers ?? {},
+          body: init.body,
+          timeoutMs: remaining,
+          maxBytes,
+        }),
+        deadline,
+        host,
+      );
+    } catch (error) {
+      lastError = error;
+      if (isConnectError(error) && index < addresses.length - 1) continue;
+      throw error;
+    }
+    if (response.truncated) throw new NetGuardError(`The response is larger than ${maxBytes} bytes`);
+    return { status: response.status, body: response.body };
+  }
+  throw lastError;
 }

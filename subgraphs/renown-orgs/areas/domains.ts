@@ -1,8 +1,17 @@
 import { actions as orgActions, isOrgDomain } from "../../../document-models/renown-organization/index.js";
 import type { OrgArgs, OrgContext } from "../core/auth.js";
 import { requireOrg, requireRole } from "../core/authz.js";
-import { domainTxtName, domainTxtValue, proveDomain, proveRecovery, recoveryTxtValue, wellKnownJson, wellKnownUrl } from "../core/domain-proof.js";
-import { badInput, limitReached, notFound, orgError, unavailable } from "../core/errors.js";
+import {
+  domainTxtName,
+  domainTxtValue,
+  proveDomain,
+  proveRecovery,
+  RECOVERY_MIN_VERIFIED_DAYS,
+  recoveryTxtValue,
+  wellKnownJson,
+  wellKnownUrl,
+} from "../core/domain-proof.js";
+import { badInput, forbidden, limitReached, notFound, orgError, unavailable } from "../core/errors.js";
 import { iso, isoOrNull } from "../output.js";
 import type { Area, OrgRuntime } from "../runtime.js";
 import type { DomainRecord, OrgRecord } from "../store/types.js";
@@ -10,7 +19,7 @@ import { addressArg, writeDocument } from "./members.js";
 import { createProposal, proposalOutput } from "./proposals.js";
 
 export const MAX_DOMAINS = 10;
-export const RECOVERY_MIN_VERIFIED_DAYS = 14;
+export { RECOVERY_MIN_VERIFIED_DAYS };
 const DAY_MS = 86_400_000;
 
 /** A lowercase DNS name without the trailing dot, or BAD_USER_INPUT on field "domain". */
@@ -64,6 +73,12 @@ async function recoveryDomain(rt: OrgRuntime, org: OrgRecord, name: string, now:
     throw badInput("domain", `The domain must have been verified for ${RECOVERY_MIN_VERIFIED_DAYS} days`);
   }
   return domain;
+}
+
+/** BAD_USER_INPUT on field "newOwner" when the address already is an active owner. */
+async function assertNotOwner(rt: OrgRuntime, orgId: string, address: string): Promise<void> {
+  const member = await rt.store().openMember(orgId, address);
+  if (member?.status === "ACTIVE" && member.role === "OWNER") throw badInput("newOwner", "This address already is an owner");
 }
 
 async function assertNoPendingRecovery(rt: OrgRuntime, orgId: string): Promise<void> {
@@ -135,9 +150,13 @@ export const domainResolvers: Area = (rt) => ({
         let updated: DomainRecord | undefined;
         try {
           updated = await store.updateDomain(domain.id, { status: "VERIFIED", verifiedAt, lastCheckedAt: now, failures: 0 });
-        } catch {
-          // The org_domains_verified_once index: another organization verified it first.
-          throw domainTaken();
+        } catch (error) {
+          // The org_domains_verified_once index refuses it when another organization verified it first;
+          // anything else is a store failure, not a taken domain.
+          const holder = await store.verifiedDomainOwner(domain.domain).catch(() => undefined);
+          if (holder && holder !== args.orgId) throw domainTaken();
+          console.error(`[renown-orgs] checkOrgDomain: domain ${domain.id} could not be updated: ${error instanceof Error ? error.message : String(error)}`);
+          throw unavailable();
         }
         if (!updated) throw unavailable();
         if (transition) {
@@ -155,6 +174,12 @@ export const domainResolvers: Area = (rt) => ({
       return rt.lock(`org:${args.orgId}`, async () => {
         const store = rt.store();
         const domain = await adminDomain(rt, args.orgId, caller, args.domainId);
+        // A verified domain can recover the organization: only owners give it up; admins remove pending and lapsed ones.
+        if (domain.status === "VERIFIED") {
+          await requireRole(store, args.orgId, caller, "OWNER").catch(() => {
+            throw forbidden("Only owners remove a verified domain");
+          });
+        }
         await store.deleteDomain(domain.id);
         await writeDocument(rt, "removeOrgDomain", args.orgId, [orgActions.removeDomain({ id: domain.id })], () => store.insertDomain(domain));
         await rt.record({ orgId: args.orgId, actor: caller, action: "removeOrgDomain", at: rt.now(), details: { domainId: domain.id, domain: domain.domain } });
@@ -167,6 +192,7 @@ export const domainResolvers: Area = (rt) => ({
       const newOwner = addressArg("newOwner", args.newOwner);
       const org = await requireOrg(rt.store(), args.orgId);
       await recoveryDomain(rt, org, name, rt.now());
+      await assertNotOwner(rt, org.id, newOwner);
       await assertNoPendingRecovery(rt, org.id);
       // The proof (DNS, HTTPS) runs outside the lock; everything is re-checked under it.
       if (!(await proveRecovery(rt.net(), name, org.id, newOwner))) {
@@ -176,6 +202,7 @@ export const domainResolvers: Area = (rt) => ({
         const now = rt.now();
         const current = await requireOrg(rt.store(), org.id);
         await recoveryDomain(rt, current, name, now);
+        await assertNotOwner(rt, current.id, newOwner);
         await assertNoPendingRecovery(rt, current.id);
         // Threshold 0, executable after recoverySeconds; owners are told (PROPOSAL_CREATED, RECOVERY_STARTED) and any of them may cancel.
         return proposalOutput(await createProposal(rt, current, "RECOVER", { domain: name, address: newOwner }, caller, [], now));

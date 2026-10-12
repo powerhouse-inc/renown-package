@@ -591,8 +591,8 @@ export class KyselyOrgStore implements OrgStore {
     return rows.map(toDomain);
   }
 
-  async updateDomain(id: string, patch: DomainPatch): Promise<DomainRecord | undefined> {
-    const row = await this.db
+  async updateDomain(id: string, patch: DomainPatch, expected?: { lastCheckedAt: Date | null }): Promise<DomainRecord | undefined> {
+    let query = this.db
       .updateTable("org_domains")
       .set({
         ...(patch.status !== undefined && { status: patch.status }),
@@ -600,9 +600,12 @@ export class KyselyOrgStore implements OrgStore {
         ...(patch.lastCheckedAt !== undefined && { last_checked_at: patch.lastCheckedAt }),
         ...(patch.failures !== undefined && { failures: patch.failures }),
       })
-      .where("id", "=", id)
-      .returningAll()
-      .executeTakeFirst();
+      .where("id", "=", id);
+    if (expected) {
+      const checkedAt = expected.lastCheckedAt;
+      query = checkedAt === null ? query.where("last_checked_at", "is", null) : query.where("last_checked_at", "=", checkedAt);
+    }
+    const row = await query.returningAll().executeTakeFirst();
     return row && toDomain(row);
   }
 

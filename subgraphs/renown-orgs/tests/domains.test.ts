@@ -4,9 +4,10 @@ import type { ProposalOutput } from "../areas/proposals.js";
 import type { RecordedActivity } from "../core/activity.js";
 import type { NetDeps } from "../core/net.js";
 import { createSweeper } from "../core/sweeper.js";
-import { sweepJobs } from "../jobs.js";
+import { domainsJob, sweepJobs } from "../jobs.js";
+import { ORGS_NAMESPACE } from "../store/types.js";
 import type { OrganizationOutput } from "../output.js";
-import { ALICE, BOB, CAROL, DAVE, addOwner, createOrg, failure, harnessResolvers, join, lower, openHarness, resetHarness, type Harness } from "./harness.js";
+import { ALICE, BOB, CAROL, DAVE, addOwner, createOrg, failure, harnessResolvers, join, lower, openHarness, resetHarness, T0, type Harness } from "./harness.js";
 
 vi.mock("../../renown-auth/core/smart-wallet.js", () => ({
   verifyMessageOnChain: () => Promise.resolve(false),
@@ -270,5 +271,142 @@ describe("recovery hardening", () => {
       code: "BAD_USER_INPUT",
       field: "kind",
     });
+  });
+});
+
+describe("review fixes", () => {
+  it("says DOMAIN_TAKEN only when another organization verified the domain meanwhile, else SERVICE_UNAVAILABLE", async () => {
+    const w = world();
+    const t = harnessResolvers(h, { net: w.net });
+    const a = await createOrg(t, ALICE, "acme");
+    const b = await createOrg(t, BOB, "copycat");
+    const mine = await t.mutate<Domain>("addOrgDomain", { orgId: a.id, domain: "acme.example" }, ALICE);
+    const theirs = await t.mutate<Domain>("addOrgDomain", { orgId: b.id, domain: "acme.example" }, BOB);
+    w.txt.set("_renown.acme.example", [mine.txtValue]);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(t.store, "updateDomain").mockRejectedValueOnce(new Error("db down"));
+    expect((await failure(t.mutate("checkOrgDomain", { orgId: a.id, domainId: mine.id }, ALICE))).code).toBe("SERVICE_UNAVAILABLE");
+    errors.mockRestore();
+    // The other organization verifies while this check is out on the network.
+    const net = w.net;
+    const resolveTxt = (name: string) => net.resolveTxt(name);
+    t.rt.deps.net = {
+      ...net,
+      resolveTxt: async (name) => {
+        await t.store.updateDomain(theirs.id, { status: "VERIFIED", verifiedAt: t.clock.now, lastCheckedAt: t.clock.now });
+        return resolveTxt(name);
+      },
+    };
+    expect((await failure(t.mutate("checkOrgDomain", { orgId: a.id, domainId: mine.id }, ALICE))).code).toBe("DOMAIN_TAKEN");
+    expect(await t.store.domain(mine.id)).toMatchObject({ status: "PENDING" });
+  });
+
+  it("lets only owners remove a verified domain; admins remove pending ones", async () => {
+    const w = world();
+    const t = harnessResolvers(h, { net: w.net });
+    const { id } = await createOrg(t, ALICE, "acme");
+    await join(t, id, BOB, "ADMIN");
+    const verified = await t.mutate<Domain>("addOrgDomain", { orgId: id, domain: "acme.example" }, BOB);
+    w.txt.set("_renown.acme.example", [verified.txtValue]);
+    await t.mutate("checkOrgDomain", { orgId: id, domainId: verified.id }, BOB);
+    expect((await failure(t.mutate("removeOrgDomain", { orgId: id, domainId: verified.id }, BOB))).code).toBe("FORBIDDEN");
+    const pending = await t.mutate<Domain>("addOrgDomain", { orgId: id, domain: "other.example" }, BOB);
+    expect(await t.mutate("removeOrgDomain", { orgId: id, domainId: pending.id }, BOB)).toBe(true);
+    expect(await t.mutate("removeOrgDomain", { orgId: id, domainId: verified.id }, ALICE)).toBe(true);
+  });
+
+  it("refuses a recovery naming someone who already is an active owner", async () => {
+    const w = world();
+    const t = harnessResolvers(h, { net: w.net });
+    const { id } = await createOrg(t, ALICE, "acme");
+    const d = await t.mutate<Domain>("addOrgDomain", { orgId: id, domain: "acme.example" }, ALICE);
+    w.txt.set("_renown.acme.example", [d.txtValue, `renown-org-recover=${id};owner=${ALICE.address}`]);
+    await t.mutate("checkOrgDomain", { orgId: id, domainId: d.id }, ALICE);
+    t.tick(14 * DAY);
+    expect(await failure(t.mutate("startOrgRecovery", { orgId: id, domain: "acme.example", newOwner: ALICE.address }, DAVE))).toMatchObject({
+      code: "BAD_USER_INPUT",
+      field: "newOwner",
+    });
+  });
+
+  it("fails a recovery whose domain lapsed and was verified again during the delay, or whose address is malformed", async () => {
+    const w = world();
+    const t = harnessResolvers(h, { net: w.net });
+    const { id } = await createOrg(t, ALICE, "acme");
+    const d = await t.mutate<Domain>("addOrgDomain", { orgId: id, domain: "acme.example" }, ALICE);
+    w.txt.set("_renown.acme.example", [d.txtValue, `renown-org-recover=${id};owner=${CAROL.address}`]);
+    await t.mutate("checkOrgDomain", { orgId: id, domainId: d.id }, ALICE);
+    t.tick(14 * DAY);
+    const start = () => t.mutate<ProposalOutput>("startOrgRecovery", { orgId: id, domain: "acme.example", newOwner: CAROL.address }, DAVE);
+    const p = await start();
+    t.tick(HOUR);
+    await t.store.updateDomain(d.id, { status: "LAPSED", failures: 3 });
+    await t.mutate("checkOrgDomain", { orgId: id, domainId: d.id }, ALICE);
+    t.tick(HOUR);
+    expect(await t.mutate<ProposalOutput>("executeOrgProposal", { orgId: id, proposalId: p.id }, DAVE)).toMatchObject({
+      status: "FAILED",
+      reason: "The recovery domain has not been verified for 14 days",
+    });
+    t.tick(14 * DAY);
+    const tampered = await start();
+    await h.root
+      .withSchema(ORGS_NAMESPACE)
+      .updateTable("org_proposals")
+      .set({ payload: JSON.stringify({ domain: "acme.example", address: "" }) })
+      .where("id", "=", tampered.id)
+      .execute();
+    t.tick(2 * HOUR);
+    expect(await t.mutate<ProposalOutput>("executeOrgProposal", { orgId: id, proposalId: tampered.id }, DAVE)).toMatchObject({
+      status: "FAILED",
+      reason: "The recovery address is not valid",
+    });
+    expect((await t.store.members(id, ["ACTIVE"])).map((m) => m.address)).toEqual([lower(ALICE)]);
+  });
+
+  it("counts one failure when two replicas re-check the same domain at once", async () => {
+    const w = world();
+    const t = harnessResolvers(h, { net: w.net });
+    const { id } = await createOrg(t, ALICE, "acme");
+    const d = await t.mutate<Domain>("addOrgDomain", { orgId: id, domain: "acme.example" }, ALICE);
+    w.txt.set("_renown.acme.example", [d.txtValue]);
+    await t.mutate("checkOrgDomain", { orgId: id, domainId: d.id }, ALICE);
+    w.txt.clear();
+    // Both replicas reach the network before either applies its result.
+    let waiting = 0;
+    let release: () => void = () => undefined;
+    const barrier = new Promise<void>((resolve) => (release = resolve));
+    const net: NetDeps = {
+      ...w.net,
+      resolveTxt: async (name) => {
+        if (++waiting === 2) release();
+        await barrier;
+        return w.net.resolveTxt(name);
+      },
+    };
+    const replica = () => harnessResolvers(h, { net, now: () => new Date(T0.getTime() + DAY) }).rt;
+    const now = new Date(T0.getTime() + DAY);
+    await Promise.all([domainsJob(replica()).run(now), domainsJob(replica()).run(now)]);
+    expect(await t.store.domain(d.id)).toMatchObject({ status: "VERIFIED", failures: 1, lastCheckedAt: now });
+  });
+  it("applies a re-check only if nobody checked the domain since it was read (compare-and-set)", async () => {
+    const w = world();
+    const t = harnessResolvers(h, { net: w.net });
+    const { id } = await createOrg(t, ALICE, "acme");
+    const d = await t.mutate<Domain>("addOrgDomain", { orgId: id, domain: "acme.example" }, ALICE);
+    w.txt.set("_renown.acme.example", [d.txtValue]);
+    await t.mutate("checkOrgDomain", { orgId: id, domainId: d.id }, ALICE);
+    await t.store.updateDomain(d.id, { failures: 1 });
+    const stale = await t.store.domain(d.id);
+    w.txt.clear();
+    t.tick(DAY);
+    // Another replica proves the domain while this one is out on the network; this one then reads a stale row.
+    w.net.resolveTxt = async () => {
+      await t.store.updateDomain(d.id, { lastCheckedAt: t.clock.now, failures: 0 });
+      throw Object.assign(new Error("ENODATA"), { code: "ENODATA" });
+    };
+    const read = vi.spyOn(t.store, "domain").mockResolvedValue(stale);
+    await domainsJob(t.rt).run(t.clock.now);
+    read.mockRestore();
+    expect(await t.store.domain(d.id)).toMatchObject({ status: "VERIFIED", failures: 0 });
   });
 });

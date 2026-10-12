@@ -396,6 +396,10 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect((await store.domainsToRecheck(new Date(T0.getTime() - 1), 10)).map((d) => d.id)).toEqual([]);
       expect((await store.domainsToRecheck(T0, 10)).map((d) => d.id)).toEqual(["d1"]);
       expect(await store.updateDomain("missing", { failures: 1 })).toBeUndefined();
+      expect(await store.updateDomain("d1", { failures: 1 }, { lastCheckedAt: null })).toBeUndefined();
+      expect(await store.updateDomain("d1", { failures: 1 }, { lastCheckedAt: new Date(T0.getTime() + 1) })).toBeUndefined();
+      expect(await store.updateDomain("d1", { failures: 1 }, { lastCheckedAt: T0 })).toMatchObject({ failures: 1 });
+      expect(await store.updateDomain("d2", { failures: 2 }, { lastCheckedAt: null })).toMatchObject({ failures: 2 });
       expect(await store.deleteDomain("d2")).toBe(true);
       expect(await store.deleteDomain("d2")).toBe(false);
       expect(await store.domain("d2")).toBeUndefined();

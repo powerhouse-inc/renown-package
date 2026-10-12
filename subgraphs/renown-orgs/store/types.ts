@@ -373,8 +373,12 @@ export interface OrgStore {
   domain(id: string): Promise<DomainRecord | undefined>;
   /** createdAt order. */
   domains(orgId: string): Promise<DomainRecord[]>;
-  /** Throws when a second organization would get the same VERIFIED domain (the org_domains_verified_once index). */
-  updateDomain(id: string, patch: DomainPatch): Promise<DomainRecord | undefined>;
+  /**
+   * Throws when a second organization would get the same VERIFIED domain (the
+   * org_domains_verified_once index). With `expected`, applies only while
+   * last_checked_at still equals it (compare-and-set); undefined otherwise.
+   */
+  updateDomain(id: string, patch: DomainPatch, expected?: { lastCheckedAt: Date | null }): Promise<DomainRecord | undefined>;
   deleteDomain(id: string): Promise<boolean>;
   /** The organization the domain is VERIFIED for (case-insensitive), if any. */
   verifiedDomainOwner(domain: string): Promise<string | undefined>;

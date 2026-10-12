@@ -1,4 +1,5 @@
 import { actions as orgActions } from "../../../document-models/renown-organization/index.js";
+import { RECOVERY_MIN_VERIFIED_DAYS } from "../core/domain-proof.js";
 import { badInput, orgError, unavailable } from "../core/errors.js";
 import { handleError, normalizeHandle, orgHandleProblem } from "../core/handles.js";
 import { ownersNotice, type ProposalHandler } from "../core/proposals.js";
@@ -223,7 +224,8 @@ const deleteOrg: ProposalHandler = {
 
 /**
  * RECOVER (started by startOrgRecovery only): makes the address the domain
- * named an ACTIVE owner, if the domain is still VERIFIED for the org. An
+ * named an ACTIVE owner, if the domain is still VERIFIED for the org and has
+ * been for RECOVERY_MIN_VERIFIED_DAYS. An
  * active member is promoted; anyone else joins as an owner (an open invite
  * is revoked first). Member caps do not apply: recovery must not be blockable.
  */
@@ -234,9 +236,18 @@ const recover: ProposalHandler = {
   },
   async execute({ rt, org, proposal, actor, now }) {
     const store = rt.store();
-    const address = proposal.payload.address ?? "";
-    const verified = (await store.domains(org.id)).some((d) => d.domain === proposal.payload.domain && d.status === "VERIFIED");
-    if (!verified) return "The recovery domain is no longer verified";
+    let address: string;
+    try {
+      address = payloadAddress(proposal.payload.address);
+    } catch {
+      return "The recovery address is not valid";
+    }
+    const domain = (await store.domains(org.id)).find((d) => d.domain === proposal.payload.domain && d.status === "VERIFIED");
+    if (!domain?.verifiedAt) return "The recovery domain is no longer verified";
+    // A domain that lapsed and was verified again since the recovery started restarts the clock.
+    if (now.getTime() - domain.verifiedAt.getTime() < RECOVERY_MIN_VERIFIED_DAYS * DAY_MS) {
+      return `The recovery domain has not been verified for ${RECOVERY_MIN_VERIFIED_DAYS} days`;
+    }
     const at = iso(now);
     const existing = await store.openMember(org.id, address);
     if (existing?.status === "ACTIVE") {

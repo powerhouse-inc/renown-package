@@ -108,16 +108,18 @@ export function domainsJob(rt: OrgRuntime): SweepJob {
             const domain = await rt.store().domain(due.id);
             // Removed, no longer VERIFIED, or checked since it was listed (a concurrent run, a manual check): nothing to apply.
             if (!domain || domain.status !== "VERIFIED" || domain.lastCheckedAt?.getTime() !== due.lastCheckedAt?.getTime()) return;
+            // Compare-and-set on last_checked_at: another replica that checked it meanwhile wins, nothing is counted twice.
+            const read = { lastCheckedAt: domain.lastCheckedAt };
             if (proved) {
-              await store.updateDomain(domain.id, { lastCheckedAt: now, failures: 0 });
+              await store.updateDomain(domain.id, { lastCheckedAt: now, failures: 0 }, read);
               return;
             }
             const failures = domain.failures + 1;
             if (failures < LAPSE_AFTER_FAILURES) {
-              await store.updateDomain(domain.id, { lastCheckedAt: now, failures });
+              await store.updateDomain(domain.id, { lastCheckedAt: now, failures }, read);
               return;
             }
-            await store.updateDomain(domain.id, { status: "LAPSED", lastCheckedAt: now, failures });
+            if (!(await store.updateDomain(domain.id, { status: "LAPSED", lastCheckedAt: now, failures }, read))) return;
             await writeDocument(rt, "system.domainLapsed", domain.orgId, [orgActions.setDomainStatus({ id: domain.id, status: "LAPSED" })], () =>
               store.updateDomain(domain.id, domainRestoreOf(domain)),
             );

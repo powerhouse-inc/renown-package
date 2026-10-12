@@ -1,5 +1,6 @@
 import { createServer, type Server, type Socket } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
+import { proveDomain } from "../core/domain-proof.js";
 import { guardedRequest, isPublicAddress, NetGuardError, nodeNetDeps, type NetDeps, type PinnedRequest } from "../core/net.js";
 
 function fakeNet(addresses: Record<string, string[]>, status = 200, body = "{}"): NetDeps & { requests: PinnedRequest[] } {
@@ -56,7 +57,9 @@ describe("guardedRequest", () => {
   it("connects only to the vetted public address, with the original host name", async () => {
     const net = fakeNet({ "acme.example": ["93.184.216.34"] });
     expect(await guardedRequest(net, "https://acme.example/.well-known/renown.json", { method: "GET" })).toMatchObject({ status: 200 });
-    expect(net.requests[0]).toMatchObject({ address: "93.184.216.34", family: 4, timeoutMs: 5000, maxBytes: 65536 });
+    expect(net.requests[0]).toMatchObject({ address: "93.184.216.34", family: 4, maxBytes: 65536 });
+    expect(net.requests[0].timeoutMs).toBeGreaterThan(4_000);
+    expect(net.requests[0].timeoutMs).toBeLessThanOrEqual(5_000);
     expect(net.requests[0].url.host).toBe("acme.example");
   });
 
@@ -82,6 +85,55 @@ describe("guardedRequest", () => {
     const net = fakeNet({ "acme.example": ["93.184.216.34"] }, 302);
     expect((await guardedRequest(net, "https://acme.example/", { method: "GET" })).status).toBe(302);
     expect(net.requests).toHaveLength(1);
+  });
+});
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+describe("one deadline and address fallback", () => {
+  /** Every step takes `stepMs`; the body proves acme for org o1 with token tk. */
+  function slowNet(stepMs: number): NetDeps {
+    return {
+      lookup: async () => {
+        await sleep(stepMs);
+        return [{ address: "93.184.216.34", family: 4 }];
+      },
+      resolveTxt: async () => {
+        await sleep(stepMs);
+        return [];
+      },
+      request: async () => {
+        await sleep(stepMs);
+        return { status: 200, body: new TextEncoder().encode(JSON.stringify({ organizations: [{ id: "o1", token: "tk" }] })), truncated: false };
+      },
+    };
+  }
+
+  it("bounds DNS and the request together by one deadline", async () => {
+    await expect(guardedRequest(slowNet(120), "https://acme.example/", { method: "GET", timeoutMs: 200 })).rejects.toThrow(NetGuardError);
+    expect((await guardedRequest(slowNet(20), "https://acme.example/", { method: "GET", timeoutMs: 500 })).status).toBe(200);
+  });
+
+  it("bounds a whole proof (TXT, then DNS and HTTPS for renown.json) by one deadline", async () => {
+    expect(await proveDomain(slowNet(100), "acme.example", "o1", "tk", 250)).toBe(false);
+    expect(await proveDomain(slowNet(20), "acme.example", "o1", "tk", 1_000)).toBe(true);
+  });
+
+  it("tries each vetted address in order until one connects", async () => {
+    const tried: string[] = [];
+    const net: NetDeps = {
+      lookup: () => Promise.resolve([{ address: "2606:4700::1111", family: 6 }, { address: "93.184.216.34", family: 4 }]),
+      resolveTxt: () => Promise.resolve([]),
+      request: (request) => {
+        tried.push(request.address);
+        if (request.family === 6) return Promise.reject(Object.assign(new Error("connect ENETUNREACH"), { code: "ENETUNREACH" }));
+        return Promise.resolve({ status: 200, body: new Uint8Array(), truncated: false });
+      },
+    };
+    expect((await guardedRequest(net, "https://acme.example/", { method: "GET" })).status).toBe(200);
+    expect(tried).toEqual(["2606:4700::1111", "93.184.216.34"]);
+    const down: NetDeps = { ...net, request: () => Promise.reject(Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" })) };
+    await expect(guardedRequest(down, "https://acme.example/", { method: "GET" })).rejects.toThrow(/ECONNREFUSED/);
   });
 });
 
