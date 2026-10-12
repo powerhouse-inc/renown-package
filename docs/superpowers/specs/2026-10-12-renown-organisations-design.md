@@ -272,3 +272,14 @@ The site and vetra.io copy-pin the message vectors in tests (as with the profile
   - C: vitest for `canOperate`/sync/resolvers, the vetra.io unit + licensing journeys.
 - **Rollout:** staging first per repo (renown-package staging channel → renown deploy/staging → vetra staging), smoke on staging, then main/prod.
 - **Configuration:** new env vars default to safe values (`RENOWN_PLATFORM_ADMINS` defaults to `ADMINS`; `RENOWN_ORG_DID_HOST` per tenant).
+
+## 10. Clarifications made during implementation (binding)
+
+- **Owners in the DID document.** `did.json` lists every active owner as a controller and verification method, regardless of `membersPublic` or a member's `hidden` flag. Owners are the organisation's keys, so they are always public.
+- **Credential status privacy.** `orgCredentialStatus` is public. Its reason reveals whether the credential's own signer is still a member or publisher of the owning org. It describes only the signer of a credential the caller already holds, never arbitrary addresses.
+- **Release attestation timing.** `issuedAt` must be no more than 5 minutes ahead of the server clock and no more than 30 days old. It is stored and returned exactly as signed.
+- **Role at signing.** `signerRole` is the role at acceptance time. `signerStillMember` turns false once the signer leaves, even if they rejoin later.
+- **Member-level suspensions.** If a departing member's credentials can't be read, the member is suspended as a whole (`org_member_suspensions`). This covers every delegation they issued for the org's apps up to the suspension time, compared in UTC. An admin lifts it by unsuspending one of the covered credentials.
+- **Proposal approvals.** Only approvals from currently active owners count. The effective threshold is max(stored threshold, min(2, current active owners)).
+- **Signed-write replay.** A signed write is accepted once. The key is sha256(lowercased address + "\n" + message).
+- **Verified domains.** Only owners may remove a verified domain.
