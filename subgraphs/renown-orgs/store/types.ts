@@ -1,0 +1,295 @@
+import type { ColumnType, Kysely } from "kysely";
+
+/** The relational namespace of the renown-orgs store. Other subgraphs read it through store/lookups.ts. */
+export const ORGS_NAMESPACE = "renown-orgs";
+
+/** A `timestamptz` column: the driver returns a `Date`, but accepts either on write. */
+export type Timestamp = Date | string;
+/** A `jsonb` column: written as a JSON string, read back parsed (see jsonValue). */
+export type JsonColumn = ColumnType<unknown, string, string>;
+type Defaulted<T> = ColumnType<T, T | undefined, T>;
+
+export type OrgRole = "OWNER" | "ADMIN" | "PUBLISHER" | "MEMBER";
+export type StoredMemberStatus = "INVITED" | "ACTIVE" | "DECLINED" | "LEFT" | "REMOVED" | "REVOKED";
+export type DomainStatus = "PENDING" | "VERIFIED" | "LAPSED";
+
+export interface OrgLink {
+  id: string;
+  label: string;
+  url: string;
+}
+
+export interface OrganizationsTable {
+  id: string;
+  handle: string;
+  name: string;
+  bio: string | null;
+  website: string | null;
+  avatar_ref: string | null;
+  links: JsonColumn;
+  listed: boolean;
+  members_public: boolean;
+  archived: boolean;
+  taken_down: boolean;
+  created_by: string;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface OrgMembersTable {
+  id: string;
+  org_id: string;
+  address: string;
+  role: OrgRole;
+  status: StoredMemberStatus;
+  app_scope_all: boolean;
+  app_dids: JsonColumn;
+  hidden: boolean;
+  invited_by: string | null;
+  invited_at: Timestamp;
+  joined_at: Timestamp | null;
+  ended_at: Timestamp | null;
+  updated_at: Timestamp;
+}
+
+export interface OrgTeamsTable {
+  id: string;
+  org_id: string;
+  slug: string;
+  name: string;
+  app_dids: JsonColumn;
+  created_at: Timestamp;
+}
+
+export interface OrgTeamMembersTable {
+  team_id: string;
+  member_id: string;
+}
+
+export interface OrgInviteLinksTable {
+  id: string;
+  org_id: string;
+  token_hash: string;
+  role: OrgRole;
+  max_uses: number;
+  uses: Defaulted<number>;
+  expires_at: Timestamp;
+  revoked: Defaulted<boolean>;
+  created_by: string;
+  created_at: Timestamp;
+}
+
+export interface OrgAppsTable {
+  app_did: string;
+  org_id: string;
+  frozen: Defaulted<boolean>;
+  added_at: Timestamp;
+}
+
+export interface OrgDomainsTable {
+  id: string;
+  org_id: string;
+  domain: string;
+  token: string;
+  status: DomainStatus;
+  verified_at: Timestamp | null;
+  last_checked_at: Timestamp | null;
+  failures: Defaulted<number>;
+  created_at: Timestamp;
+}
+
+export interface OrgAuditTable {
+  id: string;
+  org_id: string;
+  at: Timestamp;
+  /** Lowercase address, or "system". */
+  actor: string;
+  action: string;
+  details: JsonColumn;
+}
+
+export interface ReservedHandlesTable {
+  handle: string;
+  until: Timestamp;
+  reason: string;
+  org_id: string | null;
+}
+
+export interface OrgUsedSignaturesTable {
+  hash: string;
+  expires_at: Timestamp;
+}
+
+export interface OrgsDB {
+  organizations: OrganizationsTable;
+  org_members: OrgMembersTable;
+  org_teams: OrgTeamsTable;
+  org_team_members: OrgTeamMembersTable;
+  org_invite_links: OrgInviteLinksTable;
+  org_apps: OrgAppsTable;
+  org_domains: OrgDomainsTable;
+  org_audit: OrgAuditTable;
+  reserved_handles: ReservedHandlesTable;
+  org_used_signatures: OrgUsedSignaturesTable;
+}
+
+export type OrgsKysely = Kysely<OrgsDB>;
+
+export interface OrgRecord {
+  id: string;
+  handle: string;
+  name: string;
+  bio: string | null;
+  website: string | null;
+  avatarRef: string | null;
+  links: OrgLink[];
+  listed: boolean;
+  membersPublic: boolean;
+  archived: boolean;
+  takenDown: boolean;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type OrgPatch = Partial<
+  Pick<OrgRecord, "handle" | "name" | "bio" | "website" | "avatarRef" | "links" | "listed" | "membersPublic" | "archived" | "takenDown">
+>;
+
+export interface MemberRecord {
+  id: string;
+  orgId: string;
+  /** Lowercase. */
+  address: string;
+  role: OrgRole;
+  status: StoredMemberStatus;
+  appScopeAll: boolean;
+  appDids: string[];
+  hidden: boolean;
+  invitedBy: string | null;
+  invitedAt: Date;
+  joinedAt: Date | null;
+  endedAt: Date | null;
+  updatedAt: Date;
+}
+
+export type MemberPatch = Partial<
+  Pick<MemberRecord, "role" | "status" | "appScopeAll" | "appDids" | "hidden" | "joinedAt" | "endedAt">
+> & { updatedAt: Date };
+
+export interface TeamRecord {
+  id: string;
+  orgId: string;
+  slug: string;
+  name: string;
+  appDids: string[];
+  /** Member record ids. */
+  memberIds: string[];
+  createdAt: Date;
+}
+
+export type TeamPatch = Partial<Pick<TeamRecord, "slug" | "name" | "appDids">>;
+
+export interface InviteLinkRecord {
+  id: string;
+  orgId: string;
+  /** sha256 hex of the token; the token itself is never stored. */
+  tokenHash: string;
+  role: OrgRole;
+  maxUses: number;
+  uses: number;
+  expiresAt: Date;
+  revoked: boolean;
+  createdBy: string;
+  createdAt: Date;
+}
+
+export interface OrgAppRecord {
+  appDid: string;
+  orgId: string;
+  frozen: boolean;
+  addedAt: Date;
+}
+
+export interface DomainRecord {
+  id: string;
+  orgId: string;
+  domain: string;
+  /** The random part of the proof token. */
+  token: string;
+  status: DomainStatus;
+  verifiedAt: Date | null;
+  lastCheckedAt: Date | null;
+  failures: number;
+  createdAt: Date;
+}
+
+export interface AuditRecord {
+  id: string;
+  orgId: string;
+  at: Date;
+  actor: string;
+  action: string;
+  details: Record<string, unknown>;
+}
+
+export interface AuditCursor {
+  at: Date;
+  id: string;
+}
+
+export interface ReservedHandleRecord {
+  handle: string;
+  until: Date;
+  /** ARCHIVED, CHANGED or RELEASED. */
+  reason: string;
+  orgId: string | null;
+}
+
+export interface OrgSearch {
+  /** A LIKE prefix pattern (escape character \), or null for every listed organization. */
+  pattern: string | null;
+  limit: number;
+  after?: { handle: string; id: string };
+}
+
+export interface OrgStore {
+  insertOrganization(org: OrgRecord): Promise<boolean>;
+  organization(id: string): Promise<OrgRecord | undefined>;
+  organizationByHandle(handle: string): Promise<OrgRecord | undefined>;
+  organizationsByIds(ids: readonly string[]): Promise<OrgRecord[]>;
+  updateOrganization(id: string, patch: OrgPatch, now: Date): Promise<OrgRecord | undefined>;
+  countOrganizationsCreatedBy(address: string): Promise<number>;
+  searchOrganizations(search: OrgSearch): Promise<OrgRecord[]>;
+  insertMember(member: MemberRecord): Promise<void>;
+  member(id: string): Promise<MemberRecord | undefined>;
+  openMember(orgId: string, address: string): Promise<MemberRecord | undefined>;
+  updateMember(id: string, patch: MemberPatch): Promise<MemberRecord | undefined>;
+  members(orgId: string, statuses?: readonly StoredMemberStatus[]): Promise<MemberRecord[]>;
+  membershipsOf(address: string, statuses: readonly StoredMemberStatus[]): Promise<MemberRecord[]>;
+  insertTeam(team: TeamRecord): Promise<void>;
+  team(id: string): Promise<TeamRecord | undefined>;
+  teams(orgId: string): Promise<TeamRecord[]>;
+  updateTeam(id: string, patch: TeamPatch): Promise<TeamRecord | undefined>;
+  deleteTeam(id: string): Promise<boolean>;
+  setTeamMembers(teamId: string, memberIds: readonly string[]): Promise<void>;
+  removeMemberFromTeams(memberId: string): Promise<void>;
+  insertInviteLink(link: InviteLinkRecord): Promise<void>;
+  inviteLink(id: string): Promise<InviteLinkRecord | undefined>;
+  inviteLinkByHash(tokenHash: string): Promise<InviteLinkRecord | undefined>;
+  inviteLinks(orgId: string): Promise<InviteLinkRecord[]>;
+  useInviteLink(id: string, now: Date): Promise<boolean>;
+  revokeInviteLink(id: string): Promise<void>;
+  orgApps(orgId: string): Promise<OrgAppRecord[]>;
+  orgOfApp(appDid: string): Promise<OrgAppRecord | undefined>;
+  verifiedDomains(orgIds: readonly string[]): Promise<Map<string, string[]>>;
+  verifiedOrgNamed(name: string, exceptOrgId: string): Promise<OrgRecord | undefined>;
+  appendAudit(entry: AuditRecord): Promise<void>;
+  auditPage(orgId: string, limit: number, after?: AuditCursor): Promise<AuditRecord[]>;
+  reserveHandle(record: ReservedHandleRecord): Promise<void>;
+  reservedHandle(handle: string, now: Date): Promise<ReservedHandleRecord | undefined>;
+  /** Replay guard: true iff the signature hash was not seen before. */
+  useSignature(hash: string, expiresAt: Date): Promise<boolean>;
+  /** Deletes expired signature hashes; returns how many. */
+  pruneUsedSignatures(now: Date): Promise<number>;
+}
