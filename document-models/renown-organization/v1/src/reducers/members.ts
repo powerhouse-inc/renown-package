@@ -40,11 +40,6 @@ function isOpen(status: Status): boolean {
   return status === "INVITED" || status === "ACTIVE";
 }
 
-/** Owners and admins act for every app of the organization. */
-function hasAllScope(role: Role): boolean {
-  return role === "OWNER" || role === "ADMIN";
-}
-
 function memberById(state: RenownOrganizationState, id: string): RenownOrgMember {
   const member = state.members.find((m) => m.id === id);
   if (!member) throw new MemberNotFoundError(`No member with id ${id}`);
@@ -92,7 +87,7 @@ export const renownOrganizationMembersOperations: RenownOrganizationMembersOpera
       address: lower,
       role,
       status: "INVITED",
-      appScope: { all: hasAllScope(role), appDids: [] },
+      appScope: { all: false, appDids: [] },
       hidden: false,
       joinedAt: null,
       updatedAt: invitedAt,
@@ -128,11 +123,14 @@ export const renownOrganizationMembersOperations: RenownOrganizationMembersOpera
     const { id, all, appDids, at } = action.input;
     const member = memberById(state, id);
     if (!isOpen(member.status)) throw new MemberNotActiveError(`Member ${id} is ${member.status}`);
-    member.appScope = { all: all || hasAllScope(member.role), appDids: appDidList(appDids) };
+    member.appScope = { all, appDids: appDidList(appDids) };
     member.updatedAt = at;
   },
   setMemberHiddenOperation(state, action) {
     const member = memberById(state, action.input.id);
+    if (!isOpen(member.status)) {
+      throw new MemberNotActiveError(`Member ${member.id} is ${member.status}`);
+    }
     member.hidden = action.input.hidden;
     member.updatedAt = action.input.at;
   },

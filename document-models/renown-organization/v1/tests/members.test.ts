@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addTeam,
+  effectiveAllScope,
   archiveOrg,
   initOrganization,
   setOrgListed,
@@ -44,7 +45,7 @@ function member(d: Doc, id: string): RenownOrgMember {
 }
 
 describe("RenownOrganization members module", () => {
-  it("invites with a lowercased address and scope ALL for owners and admins only", () => {
+  it("invites with a lowercased address and an empty stored scope for every role", () => {
     let d = utils.createDocument();
     d = reducer(d, inviteMember({ id: "m1", address: "0xAbC0000000000000000000000000000000000001", role: "ADMIN", invitedAt: AT }));
     d = reducer(d, inviteMember({ id: "m2", address: address(2), role: "PUBLISHER", invitedAt: AT }));
@@ -54,7 +55,7 @@ describe("RenownOrganization members module", () => {
         address: "0xabc0000000000000000000000000000000000001",
         role: "ADMIN",
         status: "INVITED",
-        appScope: { all: true, appDids: [] },
+        appScope: { all: false, appDids: [] },
         hidden: false,
         joinedAt: null,
         updatedAt: AT,
@@ -117,18 +118,18 @@ describe("RenownOrganization members module", () => {
       undefined,
       "The organization must keep at least one owner",
     ]);
-    expect(member(d, "m1")).toMatchObject({ role: "ADMIN", status: "ACTIVE", appScope: { all: true } });
+    expect(member(d, "m1")).toMatchObject({ role: "ADMIN", status: "ACTIVE", appScope: { all: false } });
     expect(member(d, "m2")).toMatchObject({ role: "OWNER", status: "ACTIVE", appScope: { all: false } });
   });
 
   it("caps active members at 500", () => {
-    const d = utils.createDocument();
+    const d = structuredClone(utils.createDocument());
     d.state.global.members = Array.from({ length: 500 }, (_, i) => ({
       id: `m${i}`,
       address: address(i + 1),
       role: i === 0 ? ("OWNER" as const) : ("MEMBER" as const),
       status: "ACTIVE" as const,
-      appScope: { all: i === 0, appDids: [] },
+      appScope: { all: false, appDids: [] },
       hidden: false,
       joinedAt: AT,
       updatedAt: AT,
@@ -152,26 +153,41 @@ describe("RenownOrganization members module", () => {
     expect(errors(d).slice(-2)).toEqual(["Member m2 is LEFT", "Member m2 is LEFT"]);
   });
 
-  it("sets app scopes: deduplicated, validated, always ALL for owners", () => {
+  it("sets app scopes: deduplicated, validated, stores the given scope; effectiveAllScope derives ALL for owners and admins", () => {
     let d = withActive(2);
     d = reducer(d, setMemberAppScope({ id: "m2", all: false, appDids: [app(1), app(2), app(1)], at: AT }));
     expect(member(d, "m2").appScope).toEqual({ all: false, appDids: [app(1), app(2)] });
     d = reducer(d, setMemberAppScope({ id: "m1", all: false, appDids: [], at: AT }));
-    expect(member(d, "m1").appScope).toEqual({ all: true, appDids: [] });
+    expect(member(d, "m1").appScope).toEqual({ all: false, appDids: [] });
+    expect(effectiveAllScope(member(d, "m1"))).toBe(true);
+    expect(effectiveAllScope(member(d, "m2"))).toBe(false);
     d = reducer(d, setMemberAppScope({ id: "m2", all: false, appDids: ["did:web:x"], at: AT }));
     d = reducer(d, setMemberAppScope({ id: "m2", all: false, appDids: Array.from({ length: 201 }, (_, i) => app(i)), at: AT }));
     expect(errors(d).slice(-2)).toEqual(["Invalid app DID: did:web:x", "At most 200 app DIDs"]);
     expect(member(d, "m2").appScope.appDids).toEqual([app(1), app(2)]);
     d = reducer(d, setMemberAppScope({ id: "m2", all: true, appDids: [], at: LATER }));
     expect(member(d, "m2").appScope).toEqual({ all: true, appDids: [] });
+    expect(effectiveAllScope(member(d, "m2"))).toBe(true);
+  });
+
+  it("keeps only the explicit scope when an invited admin is demoted", () => {
+    let d = utils.createDocument();
+    d = reducer(d, inviteMember({ id: "a1", address: address(5), role: "ADMIN", invitedAt: AT }));
+    expect(effectiveAllScope(member(d, "a1"))).toBe(true);
+    d = reducer(d, setMemberRole({ id: "a1", role: "PUBLISHER", at: LATER }));
+    expect(member(d, "a1").appScope).toEqual({ all: false, appDids: [] });
+    expect(effectiveAllScope(member(d, "a1"))).toBe(false);
   });
 
   it("lets a member hide their membership", () => {
-    let d = withActive(1);
+    let d = withActive(2);
     d = reducer(d, setMemberHidden({ id: "m1", hidden: true, at: LATER }));
     expect(member(d, "m1")).toMatchObject({ hidden: true, updatedAt: LATER });
     d = reducer(d, setMemberHidden({ id: "m9", hidden: true, at: LATER }));
     expect(errors(d).at(-1)).toBe("No member with id m9");
+    d = reducer(d, setMemberStatus({ id: "m2", status: "LEFT", at: LATER }));
+    d = reducer(d, setMemberHidden({ id: "m2", hidden: true, at: LATER }));
+    expect(errors(d).at(-1)).toBe("Member m2 is LEFT");
   });
 
   it("archives: unlisted, invites revoked, active members removed, teams emptied", () => {
@@ -243,7 +259,7 @@ describe("RenownOrganization teams", () => {
   });
 
   it("caps teams at 50", () => {
-    const d = utils.createDocument();
+    const d = structuredClone(utils.createDocument());
     d.state.global.teams = Array.from({ length: 50 }, (_, i) => ({ id: `t${i}`, slug: `team-${i}`, name: `Team ${i}`, appDids: [], memberIds: [] }));
     const next = reducer(d, addTeam({ id: "t50", slug: "late", name: "Late", appDids: [] }));
     expect(errors(next)).toEqual(["An organization holds at most 50 teams"]);

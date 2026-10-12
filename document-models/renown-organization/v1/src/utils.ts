@@ -73,3 +73,13 @@ export function isTeamSlug(value: string): boolean {
 export function isTeamName(value: string): boolean {
   return trimmedWithin(value, MAX_TEAM_NAME_LENGTH);
 }
+
+/** Owners and admins act for every app of the organization, whatever scope is stored. */
+export function effectiveAllScope(member: {
+  role: string;
+  appScope: { all: boolean };
+}): boolean {
+  return (
+    member.role === "OWNER" || member.role === "ADMIN" || member.appScope.all
+  );
+}
