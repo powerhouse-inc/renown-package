@@ -1,4 +1,5 @@
 import { sql } from "kysely";
+import type { OrgClaim } from "../../../sdk/orgs.js";
 import type { ReadModelDb } from "../../renown-auth/lookups.js";
 import { ORGS_NAMESPACE, type OrgRole, type OrgsDB } from "./types.js";
 
@@ -89,16 +90,8 @@ export async function orgAvatarRef(db: ReadModelDb, orgId: string): Promise<stri
   }
 }
 
-/** One entry of the OIDC `orgs` claim. */
-export interface OrgClaim {
-  id: string;
-  did: string;
-  handle: string;
-  name: string;
-  role: OrgRole;
-  teams: string[];
-  verifiedDomains: string[];
-}
+/** One entry of the OIDC `orgs` claim (the one shared definition lives in the SDK). */
+export type { OrgClaim };
 
 /**
  * The subject's ACTIVE memberships (hidden ones included: the subject

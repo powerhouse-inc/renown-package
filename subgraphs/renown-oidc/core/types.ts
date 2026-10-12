@@ -4,16 +4,8 @@ export interface OidcAllowedOrg {
   minRole: "OWNER" | "ADMIN" | "PUBLISHER" | "MEMBER";
 }
 
-/** One entry of the `orgs` claim (renown-orgs `orgClaimsFor`). */
-export interface OrgClaim {
-  id: string;
-  did: string;
-  handle: string;
-  name: string;
-  role: string;
-  teams: string[];
-  verifiedDomains: string[];
-}
+/** One entry of the `orgs` claim (renown-orgs `orgClaimsFor`); defined once, in the SDK. */
+export type { OrgClaim } from "../../../sdk/orgs.js";
 
 export interface OidcClient {
   id: string;

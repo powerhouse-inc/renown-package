@@ -227,4 +227,71 @@ export const TRANSFERS_SDL = `
   }
 `;
 
-export const SECURITY_SDL = [PROPOSALS_SDL, DOMAINS_SDL, WORKLOADS_SDL, CREDENTIALS_SDL, TRANSFERS_SDL].join("\n");
+export const ATTESTATIONS_SDL = `
+  type ReleaseAttestation {
+    id: String!
+    appDid: String!
+    version: String!
+    "sha256:<64 lowercase hex>"
+    artifactDigest: String!
+    "The owning organization when signed; empty for person-owned apps."
+    orgId: String!
+    "Lowercase address."
+    signer: String!
+    "The signer's role when the attestation was accepted; null for person-owned apps."
+    signerRole: OrgRole
+    "Organization apps: the signer's membership of that time is still ACTIVE (never ended since). Person apps: the signer still publishes the app."
+    signerStillMember: Boolean!
+    "As signed (ISO-8601)."
+    issuedAt: String!
+    signature: String!
+    "When renown-orgs accepted it."
+    createdAt: String!
+  }
+
+  type ReleaseAttestationPage {
+    items: [ReleaseAttestation!]!
+    next: String
+  }
+
+  extend type Query {
+    "Public: an app's release attestations, newest first; limit 1-50 (20 when omitted)."
+    releaseAttestations(appDid: String!, limit: Int, after: String): ReleaseAttestationPage!
+    "Public: one attestation, for /verify's cross-check; null when unknown."
+    releaseAttestation(id: String!): ReleaseAttestation
+  }
+
+  extend type Mutation {
+    """
+    Stores an EIP-712 ReleaseAttestation (domain Renown Release / 1 / chain 1; sdk RELEASE_DOMAIN and RELEASE_TYPES)
+    signed by signer (EOA, or ERC-1271/6492 smart wallet): the signature is the authentication. The signer must publish
+    the app at submit time: its personal publisher (orgId empty) or an ACTIVE PUBLISHER+ of the owning organization
+    whose scope covers it (orgId that organization). issuedAt: at most 5 minutes ahead, at most 30 days old. One per
+    app, version and signer (resubmitting the same signature returns it); at most 100 per app per day (LIMIT_REACHED).
+    Errors also APP_FROZEN.
+    """
+    attestRelease(appDid: String!, version: String!, artifactDigest: String!, orgId: String!, issuedAt: String!, signer: String!, signature: String!): ReleaseAttestation!
+  }
+`;
+
+export const INSIGHTS_SDL = `
+  type OrganizationStats {
+    orgId: String!
+    apps: Int!
+    "Each app's distinct users with a metric report in the last 30 days, summed: an upper bound (a user of two apps counts twice)."
+    activeUsers30d: Int!
+    "Unrevoked, unexpired delegations for the organization's apps that count under organization rules (the newest 2000 live ones are checked)."
+    activeDelegations: Int!
+    "Release attestations accepted in the last 30 days."
+    attestations30d: Int!
+  }
+
+  extend type Query {
+    "Public totals; null when the organization is unknown or taken down."
+    organizationStats(orgId: String!): OrganizationStats
+    "Public: the DID document (JSON) of did:web:<host>:org:<orgId>; null when unknown, archived or taken down (did.json answers 404)."
+    organizationDidDocument(orgId: String!): String
+  }
+`;
+
+export const SECURITY_SDL = [PROPOSALS_SDL, DOMAINS_SDL, WORKLOADS_SDL, CREDENTIALS_SDL, TRANSFERS_SDL, ATTESTATIONS_SDL, INSIGHTS_SDL].join("\n");

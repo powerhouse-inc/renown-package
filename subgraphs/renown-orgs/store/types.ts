@@ -247,6 +247,21 @@ export interface OrgUsedSignaturesTable {
   expires_at: Timestamp;
 }
 
+export interface OrgReleaseAttestationsTable {
+  id: string;
+  app_did: string;
+  version: string;
+  artifact_digest: string;
+  /** "" for person-owned apps. */
+  org_id: string;
+  /** Lowercase. */
+  signer: string;
+  signer_role: OrgRole | null;
+  issued_at: Timestamp;
+  signature: string;
+  created_at: Timestamp;
+}
+
 export interface OrgsDB {
   organizations: OrganizationsTable;
   org_members: OrgMembersTable;
@@ -263,6 +278,7 @@ export interface OrgsDB {
   org_credential_suspensions: OrgCredentialSuspensionsTable;
   org_member_suspensions: OrgMemberSuspensionsTable;
   org_app_transfers: OrgAppTransfersTable;
+  org_release_attestations: OrgReleaseAttestationsTable;
 }
 
 export type OrgsKysely = Kysely<OrgsDB>;
@@ -410,6 +426,31 @@ export interface OrgSearch {
   after?: { handle: string; id: string };
 }
 
+/** A signed release attestation as stored (spec 3.7). */
+export interface AttestationRecord {
+  id: string;
+  appDid: string;
+  version: string;
+  /** sha256:<64 lowercase hex> */
+  artifactDigest: string;
+  /** The owning organisation when signed; "" for person-owned apps. */
+  orgId: string;
+  /** Lowercase. */
+  signer: string;
+  /** The signer's role when the attestation was accepted; null for person-owned apps. */
+  signerRole: OrgRole | null;
+  /** As signed (the client's clock). */
+  issuedAt: Date;
+  signature: string;
+  /** When renown-orgs accepted it. */
+  createdAt: Date;
+}
+
+export interface AttestationCursor {
+  createdAt: Date;
+  id: string;
+}
+
 export interface OrgStore {
   /**
    * Runs `fn` against a store bound to one transaction: every write commits
@@ -530,4 +571,14 @@ export interface OrgStore {
   jobLastRun(name: string): Promise<Date | undefined>;
   /** Notes that the sweeper examined a proposal without progressing it, so others get their turn in the batch. */
   markProposalChecked(id: string, now: Date): Promise<void>;
+  /** False when the app, version and signer already have one. */
+  insertAttestation(attestation: AttestationRecord): Promise<boolean>;
+  attestation(id: string): Promise<AttestationRecord | undefined>;
+  attestationBy(appDid: string, version: string, signer: string): Promise<AttestationRecord | undefined>;
+  /** Newest first (createdAt, then id), strictly after the cursor. */
+  attestationsPage(appDid: string, limit: number, after?: AttestationCursor): Promise<AttestationRecord[]>;
+  /** Attestations of `appDid` accepted at or after `since`. */
+  countAttestationsSince(appDid: string, since: Date): Promise<number>;
+  /** Attestations signed for `orgId` accepted at or after `since`. */
+  countOrgAttestationsSince(orgId: string, since: Date): Promise<number>;
 }

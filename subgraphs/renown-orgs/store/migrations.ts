@@ -260,4 +260,28 @@ export async function migrate(db: Kysely<any>): Promise<void> {
   await db.schema.createIndex("org_app_transfers_from").ifNotExists().on("org_app_transfers").columns(["from_kind", "from_id"]).execute();
   await db.schema.createIndex("org_app_transfers_to").ifNotExists().on("org_app_transfers").columns(["to_kind", "to_id"]).execute();
   await db.schema.createIndex("org_app_transfers_due").ifNotExists().on("org_app_transfers").columns(["status", "expires_at"]).execute();
+  // A2: release attestations; one per app, version and signer.
+  await db.schema
+    .createTable("org_release_attestations")
+    .ifNotExists()
+    .addColumn("id", "text", (col) => col.primaryKey())
+    .addColumn("app_did", "text", (col) => col.notNull())
+    .addColumn("version", "text", (col) => col.notNull())
+    .addColumn("artifact_digest", "text", (col) => col.notNull())
+    .addColumn("org_id", "text", (col) => col.notNull())
+    .addColumn("signer", "text", (col) => col.notNull())
+    .addColumn("signer_role", "text")
+    .addColumn("issued_at", "timestamptz", (col) => col.notNull())
+    .addColumn("signature", "text", (col) => col.notNull())
+    .addColumn("created_at", "timestamptz", (col) => col.notNull())
+    .execute();
+  await db.schema
+    .createIndex("org_release_attestations_once")
+    .ifNotExists()
+    .unique()
+    .on("org_release_attestations")
+    .columns(["app_did", "version", "signer"])
+    .execute();
+  await db.schema.createIndex("org_release_attestations_app").ifNotExists().on("org_release_attestations").columns(["app_did", "created_at"]).execute();
+  await db.schema.createIndex("org_release_attestations_org").ifNotExists().on("org_release_attestations").columns(["org_id", "created_at"]).execute();
 }

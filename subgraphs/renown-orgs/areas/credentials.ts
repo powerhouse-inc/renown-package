@@ -16,7 +16,7 @@ export const MAX_SUSPEND_IDS = 100;
 const STATUS_CONCURRENCY = 10;
 
 /** `fn` over `items`, at most `limit` at a time, in order. */
-async function mapLimited<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function mapLimited<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = [];
   for (let i = 0; i < items.length; i += limit) out.push(...(await Promise.all(items.slice(i, i + limit).map(fn))));
   return out;

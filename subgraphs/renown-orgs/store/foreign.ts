@@ -178,6 +178,21 @@ export async function credentialsForApps(db: ReadModelDb, appDids: readonly stri
   return rows.map(toCredential);
 }
 
+/** Unrevoked delegations to any of `appDids` not expired at `now`, newest first, at most `limit`. */
+export async function liveCredentialsForApps(db: ReadModelDb, appDids: readonly string[], now: Date, limit: number): Promise<CredentialRow[]> {
+  if (appDids.length === 0) return [];
+  const rows = await credentials(db)
+    .select([...CREDENTIAL_COLUMNS, issuedAtUtc().as("issuance_date")])
+    .where("credential_subject_id", "in", [...appDids])
+    .where("revoked", "=", false)
+    .where((eb) => eb.or([eb("expiration_date", "is", null), eb("expiration_date", ">", now)]))
+    .orderBy("issuance_date", "desc")
+    .orderBy("credential_id", "desc")
+    .limit(limit)
+    .execute();
+  return rows.map(toCredential);
+}
+
 /** Unrevoked, unexpired delegations by `issuer` to any of `appDids`; with `issuedBy`, only those issued at or before it. */
 export async function liveCredentialsOf(
   db: ReadModelDb,
@@ -275,4 +290,22 @@ export async function setWorkloadOwner(
     .where((eb) => (expected.ownerOrgId === null ? eb("owner_org_id", "is", null) : eb("owner_org_id", "=", expected.ownerOrgId)))
     .executeTakeFirst();
   return Number(result.numUpdatedRows) > 0;
+}
+
+/**
+ * For each app, the distinct users with a metric report accepted at or after
+ * `since`, summed: a user of two apps counts twice, so this is an upper bound
+ * on the organisation's distinct users.
+ */
+export async function activeUsersOfApps(db: ReadModelDb, appDids: readonly string[], since: Date): Promise<number> {
+  if (appDids.length === 0) return 0;
+  const rows = await db
+    .queryNamespace<StatsDB>(STATS_NAMESPACE)
+    .selectFrom("app_metric_values")
+    .select(["app_did", sql<number>`count(distinct user_did)::int`.as("users")])
+    .where("app_did", "in", [...appDids])
+    .where("updated_at", ">=", since)
+    .groupBy("app_did")
+    .execute();
+  return rows.reduce((sum, row) => sum + Number(row.users), 0);
 }

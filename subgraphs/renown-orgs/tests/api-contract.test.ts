@@ -4,8 +4,8 @@ import { schema } from "../schema.js";
 
 type Phase = "A1" | "A2" | "A3";
 const PHASES: readonly Phase[] = ["A1", "A2", "A3"];
-/** Phases whose SDL is complete; A2 and A3 each add theirs in their last task. */
-const SHIPPED: readonly Phase[] = ["A1"];
+/** Phases whose SDL is complete; A3 adds its own in its last task. */
+const SHIPPED: readonly Phase[] = ["A1", "A2"];
 
 const AUTH = "auth: OrgAuthInput";
 

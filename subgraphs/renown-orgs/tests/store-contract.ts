@@ -473,5 +473,34 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect(await store.deleteOrgApp("did:key:za", "o1")).toMatchObject({ orgId: "o1", frozen: true, addedAt: T0 });
       expect(await store.orgOfApp("did:key:za")).toBeUndefined();
     });
+    it("keeps one attestation per app, version and signer, pages and counts them", async () => {
+      const { store } = await open();
+      const attestation = (id: string, version: string, createdAt: Date, signer = ALICE) => ({
+        id,
+        appDid: "did:key:za",
+        version,
+        artifactDigest: `sha256:${"a".repeat(64)}`,
+        orgId: "o1",
+        signer,
+        signerRole: "PUBLISHER" as const,
+        issuedAt: createdAt,
+        signature: "0xsig",
+        createdAt,
+      });
+      expect(await store.insertAttestation(attestation("a1", "1.0.0", T0))).toBe(true);
+      expect(await store.insertAttestation(attestation("a2", "1.0.0", at(1)))).toBe(false);
+      expect(await store.insertAttestation(attestation("a3", "1.0.0", at(1), BOB))).toBe(true);
+      expect(await store.insertAttestation(attestation("a4", "1.1.0", at(2)))).toBe(true);
+      expect(await store.insertAttestation({ ...attestation("a5", "1.0.0", at(3), "0xABC0000000000000000000000000000000000001") })).toBe(false);
+      expect((await store.attestationBy("did:key:za", "1.0.0", BOB))?.id).toBe("a3");
+      expect(await store.attestationBy("did:key:za", "9.9.9", BOB)).toBeUndefined();
+      expect((await store.attestationsPage("did:key:za", 2)).map((a) => a.id)).toEqual(["a4", "a3"]);
+      expect((await store.attestationsPage("did:key:za", 5, { createdAt: at(1), id: "a3" })).map((a) => a.id)).toEqual(["a1"]);
+      expect(await store.countAttestationsSince("did:key:za", at(1))).toBe(2);
+      expect(await store.countOrgAttestationsSince("o1", T0)).toBe(3);
+      expect(await store.countOrgAttestationsSince("o2", T0)).toBe(0);
+      expect(await store.attestation("a1")).toEqual(attestation("a1", "1.0.0", T0));
+      expect(await store.attestation("a2")).toBeUndefined();
+    });
   });
 }

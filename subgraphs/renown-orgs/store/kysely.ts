@@ -1,5 +1,7 @@
 import { sql, type Selectable } from "kysely";
 import type {
+  AttestationCursor,
+  AttestationRecord,
   AuditCursor,
   AuditRecord,
   DomainPatch,
@@ -21,6 +23,7 @@ import type {
   OrgPatch,
   OrgProposalsTable,
   OrgRecord,
+  OrgReleaseAttestationsTable,
   OrgSearch,
   OrgsKysely,
   OrgStore,
@@ -160,6 +163,21 @@ function toTransfer(row: Selectable<OrgAppTransfersTable>): TransferRecord {
     decidedBy: row.decided_by,
     proposalId: row.proposal_id,
     reason: row.reason,
+  };
+}
+
+function toAttestation(row: Selectable<OrgReleaseAttestationsTable>): AttestationRecord {
+  return {
+    id: row.id,
+    appDid: row.app_did,
+    version: row.version,
+    artifactDigest: row.artifact_digest,
+    orgId: row.org_id,
+    signer: row.signer,
+    signerRole: row.signer_role,
+    issuedAt: toDate(row.issued_at),
+    signature: row.signature,
+    createdAt: toDate(row.created_at),
   };
 }
 
@@ -1055,5 +1073,73 @@ export class KyselyOrgStore implements OrgStore {
 
   async markProposalChecked(id: string, now: Date): Promise<void> {
     await this.db.updateTable("org_proposals").set({ checked_at: now }).where("id", "=", id).execute();
+  }
+
+  async insertAttestation(a: AttestationRecord): Promise<boolean> {
+    const inserted = await this.db
+      .insertInto("org_release_attestations")
+      .values({
+        id: a.id,
+        app_did: a.appDid,
+        version: a.version,
+        artifact_digest: a.artifactDigest,
+        org_id: a.orgId,
+        signer: a.signer.toLowerCase(),
+        signer_role: a.signerRole,
+        issued_at: a.issuedAt,
+        signature: a.signature,
+        created_at: a.createdAt,
+      })
+      .onConflict((oc) => oc.doNothing())
+      .returning("id")
+      .executeTakeFirst();
+    return inserted !== undefined;
+  }
+
+  async attestation(id: string): Promise<AttestationRecord | undefined> {
+    const row = await this.db.selectFrom("org_release_attestations").selectAll().where("id", "=", id).executeTakeFirst();
+    return row && toAttestation(row);
+  }
+
+  async attestationBy(appDid: string, version: string, signer: string): Promise<AttestationRecord | undefined> {
+    const row = await this.db
+      .selectFrom("org_release_attestations")
+      .selectAll()
+      .where("app_did", "=", appDid)
+      .where("version", "=", version)
+      .where("signer", "=", signer.toLowerCase())
+      .executeTakeFirst();
+    return row && toAttestation(row);
+  }
+
+  async attestationsPage(appDid: string, limit: number, after?: AttestationCursor): Promise<AttestationRecord[]> {
+    let query = this.db.selectFrom("org_release_attestations").selectAll().where("app_did", "=", appDid);
+    if (after) {
+      query = query.where((eb) =>
+        eb.or([eb("created_at", "<", after.createdAt), eb.and([eb("created_at", "=", after.createdAt), eb("id", "<", after.id)])]),
+      );
+    }
+    const rows = await query.orderBy("created_at", "desc").orderBy("id", "desc").limit(limit).execute();
+    return rows.map(toAttestation);
+  }
+
+  async countAttestationsSince(appDid: string, since: Date): Promise<number> {
+    const row = await this.db
+      .selectFrom("org_release_attestations")
+      .select(sql<number>`count(*)::int`.as("n"))
+      .where("app_did", "=", appDid)
+      .where("created_at", ">=", since)
+      .executeTakeFirstOrThrow();
+    return Number(row.n);
+  }
+
+  async countOrgAttestationsSince(orgId: string, since: Date): Promise<number> {
+    const row = await this.db
+      .selectFrom("org_release_attestations")
+      .select(sql<number>`count(*)::int`.as("n"))
+      .where("org_id", "=", orgId)
+      .where("created_at", ">=", since)
+      .executeTakeFirstOrThrow();
+    return Number(row.n);
   }
 }

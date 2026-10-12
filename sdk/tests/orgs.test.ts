@@ -1,5 +1,6 @@
+import { hashTypedData } from "viem";
 import { describe, expect, it } from "vitest";
-import { canonicalJson, ORG_ROLES, orgMessage, parseOrgRole, roleAtLeast } from "../orgs.js";
+import { canonicalJson, ORG_ROLES, orgMessage, parseOrgRole, RELEASE_DOMAIN, RELEASE_TYPES, releaseTypedData, roleAtLeast } from "../orgs.js";
 
 const TS = "2026-10-12T12:00:00.000Z";
 
@@ -52,5 +53,27 @@ describe("orgMessage (renown.id and Vetra pin these vectors)", () => {
     expect(
       await orgMessage("acceptOrgInviteLink", undefined, { token: "abc", auth: { address: "0x1", signature: "0x", timestamp: TS } }, TS),
     ).toBe(`Renown organization acceptOrgInviteLink - 9c5955952c12f09397bd7fcf56624bea656322913fd00d884661c3b126d17a28 at ${TS}`);
+  });
+});
+
+describe("release attestations", () => {
+  it("signs the spec's EIP-712 domain and type (pinned digest)", () => {
+    expect(RELEASE_DOMAIN).toEqual({ name: "Renown Release", version: "1", chainId: 1 });
+    expect(RELEASE_TYPES.ReleaseAttestation.map((field) => `${field.type} ${field.name}`)).toEqual([
+      "string appDid",
+      "string version",
+      "string artifactDigest",
+      "string orgId",
+      "string issuedAt",
+    ]);
+    const typed = releaseTypedData({
+      appDid: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
+      version: "1.4.0",
+      artifactDigest: `sha256:${"ab".repeat(32)}`,
+      orgId: "",
+      issuedAt: TS,
+    });
+    expect(typed.primaryType).toBe("ReleaseAttestation");
+    expect(hashTypedData(typed)).toBe("0x43728eb03c4cceb9ea1f9150324df1eef8628987665e83977e7cfe4d0588ebc4");
   });
 });

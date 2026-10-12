@@ -64,3 +64,54 @@ export async function orgMessage(
   const { auth: _auth, orgId: _orgId, ...rest } = args;
   return `Renown organization ${mutation} ${orgId || "-"} ${await sha256Hex(canonicalJson(rest))} at ${timestamp}`;
 }
+
+/** One entry of the OIDC `orgs` claim (an ACTIVE membership of a live organisation). */
+export interface OrgClaim {
+  id: string;
+  /** did:web:<host>:org:<id> */
+  did: string;
+  handle: string;
+  name: string;
+  role: OrgRole;
+  /** Team slugs. */
+  teams: string[];
+  verifiedDomains: string[];
+}
+
+/**
+ * Release attestations: an EIP-712 `ReleaseAttestation` signed by a publisher
+ * of the app (the personal publisher, or a covered PUBLISHER+ of the owning
+ * organisation). renown-orgs `attestRelease`, renown.id `/verify` and SDK
+ * users all sign and verify with exactly these constants.
+ */
+export const RELEASE_DOMAIN = { name: "Renown Release", version: "1", chainId: 1 } as const;
+
+export const RELEASE_PRIMARY_TYPE = "ReleaseAttestation" as const;
+
+export const RELEASE_TYPES = {
+  ReleaseAttestation: [
+    { name: "appDid", type: "string" },
+    { name: "version", type: "string" },
+    { name: "artifactDigest", type: "string" },
+    { name: "orgId", type: "string" },
+    { name: "issuedAt", type: "string" },
+  ],
+} as const;
+
+/** A type alias (not an interface) so it fits viem's Record-typed messages. */
+export type ReleaseMessage = {
+  /** The app's did:key. */
+  appDid: string;
+  version: string;
+  /** sha256:<64 lowercase hex> */
+  artifactDigest: string;
+  /** The owning organisation's id; "" for person-owned apps. */
+  orgId: string;
+  /** ISO-8601 with a zone (e.g. 2026-10-12T12:00:00.000Z). */
+  issuedAt: string;
+};
+
+/** The typed data a wallet signs (eth_signTypedData_v4) for `message`. */
+export function releaseTypedData(message: ReleaseMessage) {
+  return { domain: RELEASE_DOMAIN, types: RELEASE_TYPES, primaryType: RELEASE_PRIMARY_TYPE, message };
+}
