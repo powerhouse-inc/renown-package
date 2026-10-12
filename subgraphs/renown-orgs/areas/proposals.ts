@@ -5,11 +5,13 @@ import type { OrgArgs, OrgContext } from "../core/auth.js";
 import { requireOrg, requireRole } from "../core/authz.js";
 import { badInput, forbidden, limitReached, notFound, orgError } from "../core/errors.js";
 import {
+  effectiveThreshold,
   executableAtFor,
   MAX_PENDING_PROPOSALS,
   ownersNotice,
   PROPOSAL_TTL_MS,
   thresholdFor,
+  thresholdMet,
   type ProposalInput,
 } from "../core/proposals.js";
 import { iso, isoOrNull } from "../output.js";
@@ -101,13 +103,13 @@ export async function createProposal(
     executedAt: null,
     reason: null,
   };
-  const proposal = { ...draft, executableAt: executableAtFor(draft, rt.config(), now) };
+  const proposal = { ...draft, executableAt: executableAtFor(draft, owners, rt.config(), now) };
   await rt.store().insertProposal(proposal);
   const waiting = owners.filter((owner) => !approvals.includes(owner));
   const note = { proposalId: proposal.id, kind };
-  const notify: OrgNotificationIntent[] = [ownersNotice("PROPOSAL_CREATED", note)];
+  const notify: OrgNotificationIntent[] = ownersNotice("proposal.created", note);
   if (proposal.executableAt === null && waiting.length > 0) notify.push({ to: waiting, kind: "PROPOSAL_NEEDS_APPROVAL", payload: note });
-  if (kind === "RECOVER") notify.push(ownersNotice("RECOVERY_STARTED", { ...note, ...payload }));
+  if (kind === "RECOVER") notify.push({ to: "OWNERS", kind: "RECOVERY_STARTED", payload: { ...note, ...payload } });
   await rt.record({
     orgId: org.id,
     actor: proposer,
@@ -131,11 +133,17 @@ export async function runProposal(rt: OrgRuntime, proposal: ProposalRecord, acto
   const store = rt.store();
   const now = rt.now();
   if (proposal.status !== "PENDING") throw notExecutable(`The proposal is ${proposal.status}`);
+  // Owners before and after the change are notified: ADD_OWNER, REMOVE_OWNER and DELETE_ORG change who they are.
+  const ownersBefore = await activeOwners(rt, proposal.orgId);
+  // Only current owners' approvals count, against today's threshold: an owner who
+  // left no longer consents, and owners added since must consent too.
+  if (!thresholdMet(proposal, ownersBefore)) {
+    if (proposal.executableAt) await store.updateProposal(proposal.id, { executableAt: null }, "PENDING");
+    throw notExecutable(`The proposal needs ${effectiveThreshold(proposal, ownersBefore)} approvals from current owners`);
+  }
   const executableAt = proposal.executableAt;
   if (!executableAt || executableAt.getTime() > now.getTime()) throw notExecutable("The proposal is not executable yet");
   if (executableAt.getTime() >= proposal.expiresAt.getTime()) throw notExecutable("The proposal expired");
-  // Owners before and after the change are notified: ADD_OWNER, REMOVE_OWNER and DELETE_ORG change who they are.
-  const ownersBefore = await activeOwners(rt, proposal.orgId);
   const claimed = await store.updateProposal(proposal.id, { status: "EXECUTED", executedAt: now }, "PENDING");
   if (!claimed) throw notExecutable("The proposal is no longer pending");
   const org = await store.organization(proposal.orgId);
@@ -166,7 +174,7 @@ export async function runProposal(rt: OrgRuntime, proposal: ProposalRecord, acto
     at: now,
     details: { ...note, reason },
     event: { type: "proposal.executed", data: note },
-    notify: [ownersNotice("PROPOSAL_EXECUTED", { ...note, reason }, owners)],
+    notify: ownersNotice("proposal.executed", { ...note, reason }, owners),
   });
   return result;
 }
@@ -183,7 +191,7 @@ export async function expireProposal(rt: OrgRuntime, proposal: ProposalRecord, n
     at: now,
     details: note,
     event: { type: "proposal.cancelled", data: note },
-    notify: [ownersNotice("PROPOSAL_CANCELLED", note)],
+    notify: ownersNotice("proposal.expired", note),
   });
 }
 
@@ -248,12 +256,15 @@ export const proposalResolvers: Area = (rt) => ({
         if (proposal.status !== "PENDING") throw notExecutable(`The proposal is ${proposal.status}`);
         if (!isLive(proposal, now)) throw notExecutable("The proposal expired");
         if (proposal.approvals.includes(caller)) return proposalOutput(proposal);
+        const owners = await activeOwners(rt, args.orgId);
         const approvals = [...proposal.approvals, caller];
-        const executableAt = executableAtFor({ ...proposal, approvals }, rt.config(), now);
+        const metBefore = thresholdMet(proposal, owners);
+        const executableAt = executableAtFor({ ...proposal, approvals }, owners, rt.config(), now, metBefore);
         const updated = await store.updateProposal(proposal.id, { approvals, executableAt }, "PENDING");
         if (!updated) throw notExecutable("The proposal is no longer pending");
-        const note = { proposalId: proposal.id, kind: proposal.kind, status: "PENDING" };
-        // The status stays PENDING: a webhook event, no owner notification (§3.10 has no approval kind).
+        // Reaching the threshold starts the countdown: a state change owners hear about.
+        const thresholdReached = !metBefore && executableAt !== null;
+        const note = { proposalId: proposal.id, kind: proposal.kind, status: "PENDING", thresholdReached };
         await rt.record({
           orgId: args.orgId,
           actor: caller,
@@ -261,6 +272,7 @@ export const proposalResolvers: Area = (rt) => ({
           at: now,
           details: { ...note, executableAt: isoOrNull(updated.executableAt) },
           event: { type: "proposal.approved", data: note },
+          notify: thresholdReached ? ownersNotice("proposal.approved", { ...note, executableAt: isoOrNull(executableAt) }) : [],
         });
         return proposalOutput(updated);
       });
@@ -284,7 +296,7 @@ export const proposalResolvers: Area = (rt) => ({
           at: now,
           details: note,
           event: { type: "proposal.cancelled", data: note },
-          notify: [ownersNotice("PROPOSAL_CANCELLED", note)],
+          notify: ownersNotice("proposal.cancelled", note),
         });
         return proposalOutput(cancelled);
       });

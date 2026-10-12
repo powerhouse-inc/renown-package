@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Action } from "document-model";
 import type { RenownOrganizationState } from "../../../document-models/renown-organization/index.js";
 import type { RecordedActivity } from "../core/activity.js";
 import type { OrganizationOutput } from "../output.js";
 import type { ProposalOutput } from "../areas/proposals.js";
+import { ownersNotice } from "../core/proposals.js";
 import {
   ALICE,
   BOB,
@@ -198,6 +200,7 @@ describe("proposals", () => {
     }
     expect((await failure(propose(t, id, "CHANGE_HANDLE", { handle: "fresh" }))).code).toBe("LIMIT_REACHED");
   });
+
   it("never persists role-derived scope: a promoted owner keeps an explicit stored scope", async () => {
     const t = harnessResolvers(h);
     const { id } = await createOrg(t, ALICE, "acme");
@@ -239,5 +242,119 @@ describe("proposals", () => {
     const notices = events.flatMap((e) => (e.notify ?? []).filter((n) => n.kind.startsWith("PROPOSAL_")).map((n) => [n.kind, n.to]));
     expect(notices).toContainEqual(["PROPOSAL_CANCELLED", "OWNERS"]);
     expect(notices.at(-1)).toEqual(["PROPOSAL_EXECUTED", [lower(ALICE), lower(BOB)]]);
+  });
+  it("counts only current owners' approvals: an owner who left no longer consents", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    await addOwner(t, id, BOB);
+    await addOwner(t, id, CAROL);
+    const p = await propose(t, id, "REMOVE_OWNER", { address: CAROL.address });
+    await t.mutate("leaveOrganization", { orgId: id }, ALICE);
+    expect((await act(t, "approveOrgProposal", id, p.id, BOB)).executableAt).toBeNull();
+    t.tick(HOUR);
+    expect((await failure(act(t, "executeOrgProposal", id, p.id, BOB))).code).toBe("PROPOSAL_NOT_EXECUTABLE");
+    const approved = await act(t, "approveOrgProposal", id, p.id, CAROL);
+    expect(approved.executableAt).toBe(t.clock.now.toISOString());
+    expect((await act(t, "executeOrgProposal", id, p.id, BOB)).status).toBe("EXECUTED");
+  });
+
+  it("raises the threshold for owners added since: a sole owner's staged proposal needs the new owner", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    const staged = await propose(t, id, "CHANGE_HANDLE", { handle: "acme-two" });
+    expect(staged.threshold).toBe(1);
+    await addOwner(t, id, BOB);
+    expect((await failure(act(t, "executeOrgProposal", id, staged.id))).code).toBe("PROPOSAL_NOT_EXECUTABLE");
+    expect((await t.store.proposal(staged.id))?.executableAt).toBeNull();
+    t.tick(HOUR);
+    const approved = await act(t, "approveOrgProposal", id, staged.id, BOB);
+    expect(approved.executableAt).toBe(t.clock.now.toISOString());
+    expect((await act(t, "executeOrgProposal", id, staged.id)).status).toBe("EXECUTED");
+  });
+
+  it("CHANGE_HANDLE never leaves the old handle free while the document is written", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    const p = await propose(t, id, "CHANGE_HANDLE", { handle: "acme-labs" });
+    t.tick(HOUR);
+    const apply = t.reactor.execute.getMockImplementation();
+    if (!apply) throw new Error("the fake reactor has an implementation");
+    let raced: Promise<{ code: unknown }> | undefined;
+    t.reactor.execute.mockImplementationOnce(async (docId: string, branch: string, actions: Action[]) => {
+      raced = failure(createOrg(t, DAVE, "acme"));
+      await raced;
+      return apply(docId, branch, actions);
+    });
+    expect((await act(t, "executeOrgProposal", id, p.id)).status).toBe("EXECUTED");
+    expect((await raced)?.code).toBe("HANDLE_RESERVED");
+    expect(await t.store.reservedHandle("acme", t.clock.now)).toMatchObject({ reason: "CHANGED", orgId: id });
+  });
+
+  it("an applied change stays EXECUTED when a follow-up fails", async () => {
+    const t = harnessResolvers(h);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { id } = await createOrg(t, ALICE, "acme");
+    const other = await propose(t, id, "CHANGE_HANDLE", { handle: "acme-two" });
+    const del = await propose(t, id, "DELETE_ORG", {});
+    t.tick(HOUR);
+    const reserve = vi.spyOn(t.store, "reserveHandle").mockRejectedValueOnce(new Error("db hiccup"));
+    expect(await act(t, "executeOrgProposal", id, del.id)).toMatchObject({ status: "EXECUTED", reason: null });
+    expect(reserve).toHaveBeenCalled();
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining("could not reserve the handle"));
+    expect(await t.store.organization(id)).toMatchObject({ archived: true });
+    expect((await t.store.proposal(other.id))?.status).toBe("CANCELLED");
+    reserve.mockRestore();
+    logged.mockRestore();
+  });
+
+  it("the proposer's second approval is a no-op; an admin may not execute", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    await addOwner(t, id, BOB);
+    await join(t, id, CAROL, "MEMBER");
+    await join(t, id, DAVE, "ADMIN");
+    const p = await propose(t, id, "ADD_OWNER", { address: CAROL.address });
+    expect(await act(t, "approveOrgProposal", id, p.id)).toMatchObject({ approvals: [lower(ALICE)], executableAt: null });
+    await act(t, "approveOrgProposal", id, p.id, BOB);
+    t.tick(HOUR);
+    expect((await failure(act(t, "executeOrgProposal", id, p.id, DAVE))).code).toBe("FORBIDDEN");
+  });
+
+  it("an approval before the delay elapses sets executableAt to createdAt + delay", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    await addOwner(t, id, BOB);
+    await join(t, id, CAROL, "MEMBER");
+    const p = await propose(t, id, "ADD_OWNER", { address: CAROL.address });
+    t.tick(10 * 60_000);
+    const approved = await act(t, "approveOrgProposal", id, p.id, BOB);
+    expect(approved.executableAt).toBe(new Date(Date.parse(p.createdAt) + HOUR).toISOString());
+    expect((await failure(act(t, "executeOrgProposal", id, p.id))).code).toBe("PROPOSAL_NOT_EXECUTABLE");
+  });
+
+  it("a proposal is NOT_FOUND through another organization", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    const { id: beta } = await createOrg(t, ALICE, "beta");
+    const p = await propose(t, id, "CHANGE_HANDLE", { handle: "acme-two" });
+    for (const field of ["approveOrgProposal", "cancelOrgProposal", "executeOrgProposal"]) {
+      expect((await failure(act(t, field, beta, p.id))).code, field).toBe("NOT_FOUND");
+    }
+  });
+
+  it("reaching the threshold is a proposal.approved state change handed to the owners notice hook", async () => {
+    const events: RecordedActivity[] = [];
+    const t = harnessResolvers(h, { sinks: [(a) => Promise.resolve(void events.push(a))] });
+    const { id } = await createOrg(t, ALICE, "acme");
+    await addOwner(t, id, BOB);
+    await join(t, id, CAROL, "MEMBER");
+    const p = await propose(t, id, "ADD_OWNER", { address: CAROL.address });
+    await act(t, "approveOrgProposal", id, p.id, BOB);
+    const approved = events.filter((e) => e.event?.type === "proposal.approved" && e.event.data.proposalId === p.id);
+    expect(approved.map((e) => e.event?.data.thresholdReached)).toEqual([true]);
+    expect(ownersNotice("proposal.approved", { proposalId: p.id })).toEqual([]);
+    expect(ownersNotice("proposal.created", { proposalId: p.id })).toEqual([
+      { to: "OWNERS", kind: "PROPOSAL_CREATED", payload: { proposalId: p.id, event: "proposal.created" } },
+    ]);
   });
 });

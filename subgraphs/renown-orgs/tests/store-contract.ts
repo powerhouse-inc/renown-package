@@ -232,6 +232,8 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect(await store.reservedHandle("acme", at(10))).toBeUndefined();
       await store.reserveHandle({ handle: "acme", until: at(20), reason: "RELEASED", orgId: null });
       expect((await store.reservedHandle("acme", at(15)))?.reason).toBe("RELEASED");
+      await store.deleteReservedHandle("ACME");
+      expect(await store.reservedHandle("acme", at(15))).toBeUndefined();
     });
 
     it("guards replays: a signature hash is usable once until pruned", async () => {

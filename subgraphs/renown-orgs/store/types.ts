@@ -364,6 +364,8 @@ export interface OrgStore {
   auditPage(orgId: string, limit: number, after?: AuditCursor): Promise<AuditRecord[]>;
   reserveHandle(record: ReservedHandleRecord): Promise<void>;
   reservedHandle(handle: string, now: Date): Promise<ReservedHandleRecord | undefined>;
+  /** Drops a handle reservation (compensation for a handle change whose document write failed). */
+  deleteReservedHandle(handle: string): Promise<void>;
   /** Replay guard: true iff the signature hash was not seen before. */
   useSignature(hash: string, expiresAt: Date): Promise<boolean>;
   /** Deletes signature hashes that expired strictly before `now`; returns how many. */

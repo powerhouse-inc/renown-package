@@ -129,21 +129,29 @@ const changeHandle: ProposalHandler = {
       if (handle === org.handle) return "That is already the handle";
       const problem = await orgHandleProblem({ store, relationalDb: rt.deps.relationalDb, now }, handle, org.id);
       if (problem) return `HANDLE_${problem}: "${handle}" can no longer be used`;
+      // The old handle is reserved for this organization (it may change back) in the same
+      // transaction that releases it, so it is never free while the document is written.
+      const previous = await store.reservedHandle(org.handle, now);
       try {
-        await store.updateOrganization(org.id, { handle }, now);
+        await store.transaction(async (tx) => {
+          await tx.updateOrganization(org.id, { handle }, now);
+          await tx.reserveHandle({
+            handle: org.handle,
+            until: new Date(now.getTime() + HANDLE_CHANGE_RESERVATION_DAYS * DAY_MS),
+            reason: "CHANGED",
+            orgId: org.id,
+          });
+        });
       } catch {
         return `HANDLE_TAKEN: "${handle}" was taken`;
       }
       await writeDocument(rt, "proposal.CHANGE_HANDLE", org.id, [orgActions.setOrgHandle({ handle })], () =>
-        store.updateOrganization(org.id, { handle: org.handle }, org.updatedAt),
+        store.transaction(async (tx) => {
+          await tx.updateOrganization(org.id, { handle: org.handle }, org.updatedAt);
+          if (previous) await tx.reserveHandle(previous);
+          else await tx.deleteReservedHandle(org.handle);
+        }),
       );
-      // The old handle stays with this organization for a while (it may change back).
-      await store.reserveHandle({
-        handle: org.handle,
-        until: new Date(now.getTime() + HANDLE_CHANGE_RESERVATION_DAYS * DAY_MS),
-        reason: "CHANGED",
-        orgId: org.id,
-      });
       const data = { fields: ["handle"], from: org.handle, to: handle };
       await rt.record({
         orgId: org.id,
@@ -186,30 +194,20 @@ const deleteOrg: ProposalHandler = {
         for (const team of teams) await tx.setTeamMembers(team.id, team.memberIds);
       }),
     );
-    // Store-only follow-ups: an archived organization refuses every write, so none needs undoing.
-    for (const link of await store.inviteLinks(org.id)) if (!link.revoked) await store.revokeInviteLink(link.id);
-    for (const pending of await store.proposals(org.id, "PENDING")) {
-      if (pending.id === proposal.id) continue;
-      const cancelled = await store.updateProposal(pending.id, { status: "CANCELLED", reason: "The organization was archived" }, "PENDING");
-      if (!cancelled) continue;
-      const note = { proposalId: pending.id, kind: pending.kind, status: "CANCELLED" };
-      await rt.record({
-        orgId: org.id,
-        actor,
-        action: "proposal.DELETE_ORG.cancel",
-        at: now,
-        details: note,
-        event: { type: "proposal.cancelled", data: note },
-        // The owners were just removed: name them, "OWNERS" would reach nobody.
-        notify: [ownersNotice("PROPOSAL_CANCELLED", note, owners)],
-      });
-    }
-    await store.reserveHandle({
-      handle: org.handle,
-      until: new Date(now.getTime() + ARCHIVE_RESERVATION_DAYS * DAY_MS),
-      reason: "ARCHIVED",
-      orgId: null,
+    // The archive is done. Store-only follow-ups: an archived organization refuses every
+    // write, so none needs undoing, and a failing one is logged, never a FAILED proposal.
+    await afterwards("revoke invite links", async () => {
+      for (const link of await store.inviteLinks(org.id)) if (!link.revoked) await store.revokeInviteLink(link.id);
     });
+    await afterwards("cancel pending proposals", () => cancelPending(rt, org.id, proposal.id, owners, actor, now));
+    await afterwards("reserve the handle", () =>
+      store.reserveHandle({
+        handle: org.handle,
+        until: new Date(now.getTime() + ARCHIVE_RESERVATION_DAYS * DAY_MS),
+        reason: "ARCHIVED",
+        orgId: null,
+      }),
+    );
     for (const member of open) if (member.status === "ACTIVE") await membershipEnded(rt, member, "REMOVED", actor, now);
     await rt.record({
       orgId: org.id,
@@ -222,6 +220,36 @@ const deleteOrg: ProposalHandler = {
     return null;
   },
 };
+
+/** A follow-up of an applied change: its failure is logged, the change stands. */
+async function afterwards(what: string, fn: () => Promise<unknown>): Promise<void> {
+  try {
+    await fn();
+  } catch (error) {
+    console.error(`[renown-orgs] DELETE_ORG: could not ${what}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** Cancels the other pending proposals of an archived organization, telling its former owners. */
+async function cancelPending(rt: OrgRuntime, orgId: string, exceptId: string, owners: string[], actor: string, now: Date): Promise<void> {
+  const store = rt.store();
+  for (const pending of await store.proposals(orgId, "PENDING")) {
+    if (pending.id === exceptId) continue;
+    const cancelled = await store.updateProposal(pending.id, { status: "CANCELLED", reason: "The organization was archived" }, "PENDING");
+    if (!cancelled) continue;
+    const note = { proposalId: pending.id, kind: pending.kind, status: "CANCELLED" };
+    await rt.record({
+      orgId,
+      actor,
+      action: "proposal.DELETE_ORG.cancel",
+      at: now,
+      details: note,
+      event: { type: "proposal.cancelled", data: note },
+      // The owners were just removed: name them, "OWNERS" would reach nobody.
+      notify: ownersNotice("proposal.cancelled", note, owners),
+    });
+  }
+}
 
 /** The executable kinds; Tasks 3 and 7 add RECOVER, TRANSFER_APP_OUT, FREEZE_APP and UNFREEZE_APP. */
 export const PROPOSAL_KINDS: Partial<Record<ProposalKind, ProposalHandler>> = {

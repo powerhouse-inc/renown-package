@@ -18,14 +18,40 @@ export function thresholdFor(kind: ProposalKind, owners: number): number {
   return kind === "RECOVER" ? 0 : Math.min(2, owners);
 }
 
-/** When the proposal may run: kept once set; null while approvals are below the threshold. */
+/**
+ * The approvals needed now: never below what was needed when proposed, and
+ * at least min(2, current owners), so owners added since then must consent
+ * too (RECOVER: 0).
+ */
+export function effectiveThreshold(proposal: Pick<ProposalRecord, "kind" | "threshold">, owners: readonly string[]): number {
+  return proposal.kind === "RECOVER" ? 0 : Math.max(proposal.threshold, thresholdFor(proposal.kind, owners.length));
+}
+
+/** The approvals that still count: those of current ACTIVE owners. */
+export function validApprovals(proposal: Pick<ProposalRecord, "approvals">, owners: readonly string[]): string[] {
+  return proposal.approvals.filter((address) => owners.includes(address));
+}
+
+/** Whether the current owners' approvals reach the effective threshold. */
+export function thresholdMet(proposal: Pick<ProposalRecord, "kind" | "threshold" | "approvals">, owners: readonly string[]): boolean {
+  return validApprovals(proposal, owners).length >= effectiveThreshold(proposal, owners);
+}
+
+/**
+ * When the proposal may run, given the current active `owners`: null while
+ * their approvals are below the effective threshold; kept once set while
+ * the threshold stays met; max(createdAt + delay, now) when it is reached now.
+ * `metBefore` says whether it was already met before this change.
+ */
 export function executableAtFor(
   proposal: Pick<ProposalRecord, "kind" | "createdAt" | "approvals" | "threshold" | "executableAt">,
+  owners: readonly string[],
   config: OrgsConfig,
   now: Date,
+  metBefore = true,
 ): Date | null {
-  if (proposal.executableAt) return proposal.executableAt;
-  if (proposal.approvals.length < proposal.threshold) return null;
+  if (!thresholdMet(proposal, owners)) return null;
+  if (proposal.executableAt && metBefore) return proposal.executableAt;
   return new Date(Math.max(proposal.createdAt.getTime() + delayMs(proposal.kind, config), now.getTime()));
 }
 
@@ -57,16 +83,39 @@ export interface ProposalHandler {
   execute(ctx: ExecuteContext): Promise<string | null>;
 }
 
+/** The proposal state changes owners hear about (the webhook event names, plus expiry). */
+export type ProposalNoticeEvent =
+  | "proposal.created"
+  | "proposal.approved"
+  | "proposal.executed"
+  | "proposal.cancelled"
+  | "proposal.expired";
+
 /**
- * The notification of a proposal state change: every one goes to all active
- * owners (spec §3.5). It travels as a notify intent on the recorded activity;
- * A3's notification sink is what stores it, so this is the one place A3 hooks in.
- * `to` names the owners explicitly when the change itself alters who they are.
+ * The notification kind of each proposal state change. "proposal.approved"
+ * (the threshold was reached and the countdown started) has no §3.10 kind
+ * yet: A3 decides whether owners are notified of it.
+ */
+const PROPOSAL_NOTICE_KINDS: Record<ProposalNoticeEvent, OrgNotificationKind | null> = {
+  "proposal.created": "PROPOSAL_CREATED",
+  "proposal.approved": null,
+  "proposal.executed": "PROPOSAL_EXECUTED",
+  "proposal.cancelled": "PROPOSAL_CANCELLED",
+  "proposal.expired": "PROPOSAL_CANCELLED",
+};
+
+/**
+ * The owners' notifications of a proposal state change (spec §3.5: every one
+ * goes to all active owners). They travel as notify intents on the recorded
+ * activity; A3's notification sink stores them, so this is the one place A3
+ * hooks in. `to` names the owners explicitly when the change itself alters
+ * who they are.
  */
 export function ownersNotice(
-  kind: OrgNotificationKind,
+  event: ProposalNoticeEvent,
   payload: Record<string, unknown>,
   to: OrgNotificationIntent["to"] = "OWNERS",
-): OrgNotificationIntent {
-  return { to, kind, payload };
+): OrgNotificationIntent[] {
+  const kind = PROPOSAL_NOTICE_KINDS[event];
+  return kind ? [{ to, kind, payload: { ...payload, event } }] : [];
 }

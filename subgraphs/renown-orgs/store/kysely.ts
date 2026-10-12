@@ -620,6 +620,10 @@ export class KyselyOrgStore implements OrgStore {
     return row && { handle: row.handle, until: toDate(row.until), reason: row.reason, orgId: row.org_id };
   }
 
+  async deleteReservedHandle(handle: string): Promise<void> {
+    await this.db.deleteFrom("reserved_handles").where("handle", "=", handle.toLowerCase()).execute();
+  }
+
   async useSignature(hash: string, expiresAt: Date): Promise<boolean> {
     const row = await this.db
       .insertInto("org_used_signatures")
