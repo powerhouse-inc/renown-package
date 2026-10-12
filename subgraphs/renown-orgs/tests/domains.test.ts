@@ -385,7 +385,7 @@ describe("review fixes", () => {
     };
     const replica = () => harnessResolvers(h, { net, now: () => new Date(T0.getTime() + DAY) }).rt;
     const now = new Date(T0.getTime() + DAY);
-    await Promise.all([domainsJob(replica()).run(now), domainsJob(replica()).run(now)]);
+    await Promise.all([domainsJob(replica()).run(now, null), domainsJob(replica()).run(now, null)]);
     expect(await t.store.domain(d.id)).toMatchObject({ status: "VERIFIED", failures: 1, lastCheckedAt: now });
   });
   it("applies a re-check only if nobody checked the domain since it was read (compare-and-set)", async () => {
@@ -405,7 +405,7 @@ describe("review fixes", () => {
       throw Object.assign(new Error("ENODATA"), { code: "ENODATA" });
     };
     const read = vi.spyOn(t.store, "domain").mockResolvedValue(stale);
-    await domainsJob(t.rt).run(t.clock.now);
+    await domainsJob(t.rt).run(t.clock.now, null);
     read.mockRestore();
     expect(await t.store.domain(d.id)).toMatchObject({ status: "VERIFIED", failures: 0 });
   });

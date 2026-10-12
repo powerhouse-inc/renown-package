@@ -284,4 +284,18 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .execute();
   await db.schema.createIndex("org_release_attestations_app").ifNotExists().on("org_release_attestations").columns(["app_did", "created_at"]).execute();
   await db.schema.createIndex("org_release_attestations_org").ifNotExists().on("org_release_attestations").columns(["org_id", "created_at"]).execute();
+  // A3: the in-app inbox.
+  await db.schema
+    .createTable("org_notifications")
+    .ifNotExists()
+    .addColumn("id", "text", (col) => col.primaryKey())
+    .addColumn("recipient", "text", (col) => col.notNull())
+    .addColumn("kind", "text", (col) => col.notNull())
+    .addColumn("org_id", "text", (col) => col.notNull())
+    .addColumn("payload", "jsonb", (col) => col.notNull().defaultTo(sql`'{}'::jsonb`))
+    .addColumn("created_at", "timestamptz", (col) => col.notNull())
+    .addColumn("read_at", "timestamptz")
+    .execute();
+  await db.schema.createIndex("org_notifications_recipient").ifNotExists().on("org_notifications").columns(["recipient", "created_at", "id"]).execute();
+  await db.schema.createIndex("org_notifications_created").ifNotExists().on("org_notifications").column("created_at").execute();
 }

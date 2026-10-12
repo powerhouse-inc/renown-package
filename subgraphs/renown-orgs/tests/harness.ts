@@ -275,7 +275,7 @@ export async function addOwner(t: TestResolvers, orgId: string, who: Account): P
 /** A delegation credential row from `issuer` to `appDid`, as the renown-credential processor writes it. */
 export async function insertCredential(
   h: Harness,
-  row: { credentialId: string; issuer: string; appDid: string; revoked?: boolean; expiresAt?: Date | null; issuedAt?: Date },
+  row: { credentialId: string; issuer: string; appDid: string; revoked?: boolean; expiresAt?: Date | null; issuedAt?: Date; createdAt?: Date },
 ): Promise<void> {
   await h.root
     .withSchema(CRED_NS)
@@ -306,6 +306,7 @@ export async function insertCredential(
       revoked: row.revoked ?? false,
       revoked_at: null,
       revocation_reason: null,
+      created_at: row.createdAt ?? T0,
     })
     .execute();
 }

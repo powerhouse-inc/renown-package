@@ -1,11 +1,13 @@
 import { actions as orgActions } from "../../document-models/renown-organization/index.js";
 import { domainRestoreOf } from "./areas/domains.js";
+import { NOTIFICATION_RETENTION_DAYS } from "./areas/notifications.js";
 import { writeDocument } from "./areas/members.js";
 import { expireProposal, rearmProposal, runProposal } from "./areas/proposals.js";
 import { expireTransfer } from "./areas/transfers.js";
 import { proveDomain } from "./core/domain-proof.js";
 import type { SweepJob } from "./core/sweeper.js";
 import type { OrgRuntime } from "./runtime.js";
+import { credentialsCreatedBetween } from "./store/foreign.js";
 
 const MINUTE_MS = 60_000;
 /** How often expired used-signature hashes are deleted. */
@@ -169,7 +171,53 @@ export function transfersJob(rt: OrgRuntime): SweepJob {
   };
 }
 
+const DAY_MS = 24 * HOUR_MS;
+/** Delegations per run of delegationsJob. */
+const DELEGATION_BATCH = 500;
+
+/** Daily: deletes notifications older than the retention period. */
+export function notificationsPruneJob(rt: OrgRuntime): SweepJob {
+  return {
+    name: "notifications-prune",
+    everyMs: DAY_MS,
+    async run(now) {
+      await rt.store().pruneNotifications(new Date(now.getTime() - NOTIFICATION_RETENTION_DAYS * DAY_MS));
+    },
+  };
+}
+
+/**
+ * Every 5 minutes: tells an organisation's admins (DELEGATION_ADDED) about
+ * delegations created for its apps since the job last started. The first
+ * run only sets the mark (no backlog). A failed read fails the run, so the
+ * sweeper gives the claim back and the next run covers the same window.
+ */
+export function delegationsJob(rt: OrgRuntime): SweepJob {
+  return {
+    name: "delegations",
+    everyMs: 5 * MINUTE_MS,
+    async run(now, previous) {
+      if (!previous) return;
+      const store = rt.store();
+      for (const row of await credentialsCreatedBetween(rt.deps.relationalDb, previous, now, DELEGATION_BATCH)) {
+        const app = await store.orgOfApp(row.appDid);
+        if (!app) continue;
+        const payload = { credentialId: row.credentialId, appDid: row.appDid, issuer: row.issuer };
+        // record never throws: an audit or notification write that fails is logged.
+        await rt.record({
+          orgId: app.orgId,
+          actor: "system",
+          action: "system.delegationAdded",
+          at: now,
+          details: payload,
+          notify: [{ to: "ADMINS", kind: "DELEGATION_ADDED", payload }],
+        });
+      }
+    },
+  };
+}
+
 /** Every sweep job of renown-orgs; later tasks append theirs. */
 export function sweepJobs(rt: OrgRuntime): SweepJob[] {
-  return [proposalsJob(rt), signaturesJob(rt), domainsJob(rt), transfersJob(rt)];
+  return [proposalsJob(rt), signaturesJob(rt), domainsJob(rt), transfersJob(rt), notificationsPruneJob(rt), delegationsJob(rt)];
 }

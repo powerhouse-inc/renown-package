@@ -247,6 +247,27 @@ export interface OrgUsedSignaturesTable {
   expires_at: Timestamp;
 }
 
+export interface OrgNotificationsTable {
+  id: string;
+  recipient: string;
+  kind: string;
+  org_id: string;
+  payload: JsonColumn;
+  created_at: Timestamp;
+  read_at: Timestamp | null;
+}
+
+export interface NotificationRecord {
+  id: string;
+  /** Lowercase address. */
+  recipient: string;
+  kind: string;
+  orgId: string;
+  payload: Record<string, unknown>;
+  createdAt: Date;
+  readAt: Date | null;
+}
+
 export interface OrgReleaseAttestationsTable {
   id: string;
   app_did: string;
@@ -280,6 +301,7 @@ export interface OrgsDB {
   org_member_suspensions: OrgMemberSuspensionsTable;
   org_app_transfers: OrgAppTransfersTable;
   org_release_attestations: OrgReleaseAttestationsTable;
+  org_notifications: OrgNotificationsTable;
 }
 
 export type OrgsKysely = Kysely<OrgsDB>;
@@ -582,4 +604,12 @@ export interface OrgStore {
   countAttestationsSince(appDid: string, since: Date): Promise<number>;
   /** Attestations signed for `orgId` accepted at or after `since`. */
   countOrgAttestationsSince(orgId: string, since: Date): Promise<number>;
+  insertNotifications(rows: readonly NotificationRecord[]): Promise<void>;
+  /** Newest first, strictly after the cursor. */
+  notificationsPage(recipient: string, options: { unreadOnly: boolean; limit: number; after?: { createdAt: Date; id: string } }): Promise<NotificationRecord[]>;
+  unreadNotificationCount(recipient: string): Promise<number>;
+  /** Marks the recipient's unread notifications (`ids`, or every one) read; returns how many changed. */
+  markNotificationsRead(recipient: string, ids: readonly string[] | "ALL", now: Date): Promise<number>;
+  /** Deletes notifications created before `before`; returns how many. */
+  pruneNotifications(before: Date): Promise<number>;
 }

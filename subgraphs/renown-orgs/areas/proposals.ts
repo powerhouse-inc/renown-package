@@ -5,6 +5,7 @@ import type { OrgArgs, OrgContext } from "../core/auth.js";
 import { requireOrg, requireRole } from "../core/authz.js";
 import { badInput, forbidden, limitReached, notFound, orgError } from "../core/errors.js";
 import {
+  approvalNotice,
   effectiveThreshold,
   executableAtFor,
   MAX_PENDING_PROPOSALS,
@@ -286,7 +287,10 @@ export const proposalResolvers: Area = (rt) => ({
           at: now,
           details: { ...note, executableAt: isoOrNull(updated.executableAt) },
           event: { type: "proposal.approved", data: note },
-          notify: thresholdReached ? ownersNotice("proposal.approved", { ...note, executableAt: isoOrNull(executableAt) }) : [],
+          notify: approvalNotice({ proposalId: proposal.id, kind: proposal.kind }, owners, approvals, {
+            met: executableAt !== null,
+            reached: thresholdReached,
+          }),
         });
         return proposalOutput(updated);
       });

@@ -309,3 +309,16 @@ export async function activeUsersOfApps(db: ReadModelDb, appDids: readonly strin
     .execute();
   return rows.reduce((sum, row) => sum + Number(row.users), 0);
 }
+
+/** Credentials created in (from, to], oldest first, at most `limit`. */
+export async function credentialsCreatedBetween(db: ReadModelDb, from: Date, to: Date, limit: number): Promise<CredentialRow[]> {
+  const rows = await credentials(db)
+    .select([...CREDENTIAL_COLUMNS, issuedAtUtc().as("issuance_date")])
+    .where("created_at", ">", from)
+    .where("created_at", "<=", to)
+    .orderBy("created_at")
+    .orderBy("credential_id")
+    .limit(limit)
+    .execute();
+  return rows.map(toCredential);
+}

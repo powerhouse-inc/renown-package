@@ -93,8 +93,9 @@ export type ProposalNoticeEvent =
 
 /**
  * The notification kind of each proposal state change. "proposal.approved"
- * (the threshold was reached and the countdown started) has no §3.10 kind
- * yet: A3 decides whether owners are notified of it.
+ * (the threshold was reached and the countdown started) has no §3.10 kind:
+ * owners hear of it through its webhook event only. An approval that leaves
+ * the threshold unmet is approvalNotice's.
  */
 const PROPOSAL_NOTICE_KINDS: Record<ProposalNoticeEvent, OrgNotificationKind | null> = {
   "proposal.created": "PROPOSAL_CREATED",
@@ -118,4 +119,21 @@ export function ownersNotice(
 ): OrgNotificationIntent[] {
   const kind = PROPOSAL_NOTICE_KINDS[event];
   return kind ? [{ to, kind, payload: { ...payload, event } }] : [];
+}
+
+/**
+ * The notifications of an approval: while the threshold is still unmet, the
+ * active owners who have not approved yet are asked again
+ * (PROPOSAL_NEEDS_APPROVAL); once it is reached, "proposal.approved".
+ */
+export function approvalNotice(
+  payload: Record<string, unknown>,
+  owners: readonly string[],
+  approvals: readonly string[],
+  state: { met: boolean; reached: boolean },
+): OrgNotificationIntent[] {
+  if (state.reached) return ownersNotice("proposal.approved", payload);
+  if (state.met) return [];
+  const waiting = owners.filter((owner) => !approvals.includes(owner));
+  return waiting.length > 0 ? [{ to: waiting, kind: "PROPOSAL_NEEDS_APPROVAL", payload }] : [];
 }

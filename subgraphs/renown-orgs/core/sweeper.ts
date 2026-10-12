@@ -10,7 +10,8 @@ export interface SweepJob {
   name: string;
   /** Minimum time between two runs. */
   everyMs: number;
-  run(now: Date): Promise<void>;
+  /** previous: when the job last started, or null on its first run. */
+  run(now: Date, previous: Date | null): Promise<void>;
 }
 
 /**
@@ -39,7 +40,7 @@ export function createSweeper(deps: {
           const claim = await store.claimJob(job.name, now, job.everyMs);
           if (!claim) continue;
           try {
-            await job.run(now);
+            await job.run(now, claim.previous);
             ran.push(job.name);
           } catch (error) {
             log(`[renown-orgs] sweep job ${job.name} failed: ${error instanceof Error ? error.message : String(error)}`);

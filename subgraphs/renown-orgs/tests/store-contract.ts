@@ -502,5 +502,20 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect(await store.attestation("a1")).toEqual(attestation("a1", "1.0.0", T0));
       expect(await store.attestation("a2")).toBeUndefined();
     });
+    it("keeps notifications per recipient, pages them, marks only the recipient's own as read, prunes old ones", async () => {
+      const { store } = await open();
+      const note = (id: string, recipient: string, createdAt: Date) => ({ id, recipient, kind: "INVITED", orgId: "o1", payload: { n: id }, createdAt, readAt: null });
+      await store.insertNotifications([note("n1", ALICE, T0), note("n2", ALICE, at(1)), note("n3", ALICE, at(2)), note("n4", BOB, at(2))]);
+      expect((await store.notificationsPage(ALICE, { unreadOnly: false, limit: 2 })).map((n) => n.id)).toEqual(["n3", "n2"]);
+      expect((await store.notificationsPage(ALICE, { unreadOnly: false, limit: 5, after: { createdAt: at(1), id: "n2" } })).map((n) => n.id)).toEqual(["n1"]);
+      expect(await store.unreadNotificationCount(ALICE)).toBe(3);
+      expect(await store.markNotificationsRead(ALICE, ["n1", "n4"], at(3))).toBe(1);
+      expect(await store.markNotificationsRead(ALICE, ["n1"], at(4))).toBe(0);
+      expect((await store.notificationsPage(ALICE, { unreadOnly: true, limit: 5 })).map((n) => n.id)).toEqual(["n3", "n2"]);
+      expect(await store.markNotificationsRead(ALICE, "ALL", at(5))).toBe(2);
+      expect(await store.unreadNotificationCount(BOB)).toBe(1);
+      expect(await store.pruneNotifications(at(2))).toBe(2);
+      expect((await store.notificationsPage(ALICE, { unreadOnly: false, limit: 5 })).map((n) => n.id)).toEqual(["n3"]);
+    });
   });
 }

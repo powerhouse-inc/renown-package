@@ -15,11 +15,13 @@ import type {
   PartyKind,
   SuspensionRecord,
   MemberSuspensionRecord,
+  NotificationRecord,
   OrganizationsTable,
   OrgInviteLinksTable,
   OrgLink,
   OrgDomainsTable,
   OrgMembersTable,
+  OrgNotificationsTable,
   OrgPatch,
   OrgProposalsTable,
   OrgRecord,
@@ -1141,5 +1143,74 @@ export class KyselyOrgStore implements OrgStore {
       .where("created_at", ">=", since)
       .executeTakeFirstOrThrow();
     return Number(row.n);
+  }
+
+  async insertNotifications(rows: readonly NotificationRecord[]): Promise<void> {
+    if (rows.length === 0) return;
+    await this.db
+      .insertInto("org_notifications")
+      .values(
+        rows.map((row) => ({
+          id: row.id,
+          recipient: row.recipient.toLowerCase(),
+          kind: row.kind,
+          org_id: row.orgId,
+          payload: JSON.stringify(row.payload),
+          created_at: row.createdAt,
+          read_at: row.readAt,
+        })),
+      )
+      .execute();
+  }
+
+  async notificationsPage(
+    recipient: string,
+    options: { unreadOnly: boolean; limit: number; after?: { createdAt: Date; id: string } },
+  ): Promise<NotificationRecord[]> {
+    let query = this.db.selectFrom("org_notifications").selectAll().where("recipient", "=", recipient.toLowerCase());
+    if (options.unreadOnly) query = query.where("read_at", "is", null);
+    const after = options.after;
+    if (after) {
+      query = query.where((eb) =>
+        eb.or([eb("created_at", "<", after.createdAt), eb.and([eb("created_at", "=", after.createdAt), eb("id", "<", after.id)])]),
+      );
+    }
+    const rows = await query.orderBy("created_at", "desc").orderBy("id", "desc").limit(options.limit).execute();
+    return rows.map((row: Selectable<OrgNotificationsTable>) => ({
+      id: row.id,
+      recipient: row.recipient,
+      kind: row.kind,
+      orgId: row.org_id,
+      payload: jsonValue<Record<string, unknown>>(row.payload, {}),
+      createdAt: toDate(row.created_at),
+      readAt: toDateOrNull(row.read_at),
+    }));
+  }
+
+  async unreadNotificationCount(recipient: string): Promise<number> {
+    const row = await this.db
+      .selectFrom("org_notifications")
+      .select(sql<number>`count(*)::int`.as("n"))
+      .where("recipient", "=", recipient.toLowerCase())
+      .where("read_at", "is", null)
+      .executeTakeFirstOrThrow();
+    return Number(row.n);
+  }
+
+  async markNotificationsRead(recipient: string, ids: readonly string[] | "ALL", now: Date): Promise<number> {
+    if (ids !== "ALL" && ids.length === 0) return 0;
+    let query = this.db
+      .updateTable("org_notifications")
+      .set({ read_at: now })
+      .where("recipient", "=", recipient.toLowerCase())
+      .where("read_at", "is", null);
+    if (ids !== "ALL") query = query.where("id", "in", [...ids]);
+    const result = await query.executeTakeFirst();
+    return Number(result.numUpdatedRows);
+  }
+
+  async pruneNotifications(before: Date): Promise<number> {
+    const result = await this.db.deleteFrom("org_notifications").where("created_at", "<", before).executeTakeFirst();
+    return Number(result.numDeletedRows);
   }
 }

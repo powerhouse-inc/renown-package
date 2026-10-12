@@ -89,6 +89,8 @@ export interface OrgRuntime {
   record(activity: OrgActivity): Promise<void>;
   /** Organisation rules as other subgraphs see them (credential status), over relationalDb; created once. */
   policy(): OrgPolicy;
+  /** Activity sinks; built-in areas append theirs once. */
+  readonly sinks: ActivitySink[];
   readonly hooks: { membershipEnded: ((event: MembershipEnded) => Promise<void>)[] };
 }
 
@@ -124,7 +126,8 @@ export function createRuntime(deps: OrgsResolverDeps): OrgRuntime {
     if (!current) throw unavailable();
     return current;
   };
-  const record = createActivityRecorder({ store, newId, sinks: deps.sinks ?? [] });
+  const sinks: ActivitySink[] = [...(deps.sinks ?? [])];
+  const record = createActivityRecorder({ store, newId, sinks });
   let policy: OrgPolicy | undefined;
 
   return {
@@ -174,6 +177,7 @@ export function createRuntime(deps: OrgsResolverDeps): OrgRuntime {
       if (failed?.error) throw badInput("document", `${failed.action.type} failed: ${failed.error}`);
     },
     record,
+    sinks,
     policy: () => (policy ??= createOrgPolicy(deps.relationalDb, deps.config().didHost)),
     hooks: { membershipEnded: [...(deps.membershipHooks ?? [])] },
   };
