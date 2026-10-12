@@ -148,4 +148,59 @@ export const OIDC_SDL = `
 `;
 
 /** Every A3 block; later tasks append theirs. */
-export const INTEGRATIONS_SDL = [NOTIFICATIONS_SDL, WEBHOOKS_SDL, OIDC_SDL].join("\n");
+export const MODERATION_SDL = `
+  enum OrgReportReason {
+    IMPERSONATION
+    HANDLE_DISPUTE
+    SPAM
+    ABUSE
+    OTHER
+  }
+
+  enum OrgReportStatus {
+    OPEN
+    RESOLVED
+  }
+
+  enum OrgReportResolution {
+    DISMISS
+    "takenDown=true: notice page; out of the directory, search, claims and did.json; OIDC clients and webhooks stop"
+    TAKE_DOWN
+    "Renames the organisation to org-<first 8 of id>; the old handle is reserved 30 days for the org verified for <handle>.<tld>"
+    RELEASE_HANDLE
+    "takenDown=false"
+    RESTORE
+  }
+
+  type OrgReport {
+    id: String!
+    orgId: String!
+    "Null when the organisation no longer exists"
+    org: OrgSummary
+    reporter: String!
+    reason: OrgReportReason!
+    details: String
+    status: OrgReportStatus!
+    resolution: OrgReportResolution
+    resolvedBy: String
+    resolvedAt: String
+    note: String
+    createdAt: String!
+  }
+
+  extend type Query {
+    "Platform admins (RENOWN_PLATFORM_ADMINS) only; newest first."
+    orgReports(status: OrgReportStatus, auth: OrgAuthInput): [OrgReport!]!
+    "Admins: a JSON array of the newest 10 000 audit entries, newest first; 10 exports an hour per caller."
+    orgAuditExport(orgId: String!, auth: OrgAuthInput): String!
+  }
+
+  extend type Mutation {
+    "Anyone signed in; details at most 1000 characters; 5 reports per address per day."
+    reportOrganization(orgId: String!, reason: OrgReportReason!, details: String, auth: OrgAuthInput): Boolean!
+    "Platform admins only; each report is resolved once and audited on the organisation."
+    resolveOrgReport(reportId: String!, resolution: OrgReportResolution!, note: String, auth: OrgAuthInput): OrgReport!
+  }
+`;
+
+export const INTEGRATIONS_SDL = [NOTIFICATIONS_SDL, WEBHOOKS_SDL, OIDC_SDL, MODERATION_SDL].join("\n");

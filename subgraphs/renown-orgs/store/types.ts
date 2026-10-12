@@ -377,6 +377,45 @@ export interface OrgOidcClientLink {
   createdAt: Date;
 }
 
+export type ReportStatus = "OPEN" | "RESOLVED";
+
+/** A3: reports about organisations, resolved by platform admins (spec §3.11). */
+export interface OrgReportsTable {
+  id: string;
+  org_id: string;
+  /** Lowercase address. */
+  reporter: string;
+  reason: string;
+  details: string | null;
+  status: ReportStatus;
+  resolution: string | null;
+  resolved_by: string | null;
+  resolved_at: Timestamp | null;
+  note: string | null;
+  created_at: Timestamp;
+}
+
+export interface ReportRecord {
+  id: string;
+  orgId: string;
+  reporter: string;
+  reason: string;
+  details: string | null;
+  status: ReportStatus;
+  resolution: string | null;
+  resolvedBy: string | null;
+  resolvedAt: Date | null;
+  note: string | null;
+  createdAt: Date;
+}
+
+export interface ReportResolution {
+  resolution: string;
+  resolvedBy: string;
+  resolvedAt: Date;
+  note: string | null;
+}
+
 export interface OrgsDB {
   organizations: OrganizationsTable;
   org_members: OrgMembersTable;
@@ -399,6 +438,7 @@ export interface OrgsDB {
   org_webhooks: OrgWebhooksTable;
   org_webhook_deliveries: OrgWebhookDeliveriesTable;
   org_oidc_clients: OrgOidcClientsTable;
+  org_reports: OrgReportsTable;
 }
 
 export type OrgsKysely = Kysely<OrgsDB>;
@@ -756,4 +796,14 @@ export interface OrgStore {
   insertOrgOidcClient(link: OrgOidcClientLink): Promise<void>;
   /** The organisation's OIDC clients, createdAt order. */
   orgOidcClients(orgId: string): Promise<OrgOidcClientLink[]>;
+  insertReport(report: ReportRecord): Promise<void>;
+  report(id: string): Promise<ReportRecord | undefined>;
+  /** Newest first (createdAt, then id); only `status` when given. */
+  reports(status?: ReportStatus): Promise<ReportRecord[]>;
+  /** Reports filed by `reporter` at or after `since`. */
+  countReportsSince(reporter: string, since: Date): Promise<number>;
+  /** Resolves an OPEN report (compare-and-set); undefined when it is not OPEN or unknown. */
+  resolveReport(id: string, resolution: ReportResolution): Promise<ReportRecord | undefined>;
+  /** Puts a RESOLVED report back to OPEN (compensation for a resolution that could not be applied). */
+  reopenReport(id: string): Promise<void>;
 }

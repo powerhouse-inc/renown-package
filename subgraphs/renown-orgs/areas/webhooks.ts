@@ -74,7 +74,7 @@ function requireKey(rt: OrgRuntime): Uint8Array {
 
 /**
  * Queues a delivery for every enabled endpoint of the organisation subscribed
- * to the activity's event. A failure is logged by the activity recorder; it
+ * to the activity's event, unless the organisation is gone or taken down. A failure is logged by the activity recorder; it
  * never fails the mutation.
  */
 export function webhookSink(rt: OrgRuntime): ActivitySink {
@@ -82,6 +82,8 @@ export function webhookSink(rt: OrgRuntime): ActivitySink {
     const event = activity.event;
     if (!event) return;
     const store = rt.store();
+    // A taken-down organisation sends nothing (spec §3.11).
+    if ((await store.organization(activity.orgId))?.takenDown !== false) return;
     const hooks = (await store.webhooks(activity.orgId)).filter((w) => w.enabled && w.events.includes(event.type));
     if (hooks.length === 0) return;
     const body = eventBody({ id: activity.id, type: event.type, orgId: activity.orgId, createdAt: activity.at, data: event.data });

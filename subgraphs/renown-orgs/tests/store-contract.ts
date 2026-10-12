@@ -601,5 +601,25 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       await store.pruneDeliveries("w1", 0);
       expect((await store.deliveries("w1", 10)).map((d) => d.id)).toEqual(["d2", "d1"]);
     });
+    it("keeps reports, counts a reporter's recent ones and resolves each once", async () => {
+      const { store } = await open();
+      const report = (id: string, createdAt: Date, reporter = ALICE) => ({
+        id, orgId: "o1", reporter, reason: "SPAM", details: null, status: "OPEN" as const, resolution: null, resolvedBy: null, resolvedAt: null, note: null, createdAt,
+      });
+      await store.insertReport(report("r1", T0));
+      await store.insertReport(report("r2", at(1)));
+      await store.insertReport(report("r3", at(2), BOB));
+      expect(await store.countReportsSince(ALICE, at(1))).toBe(1);
+      expect((await store.reports("OPEN")).map((r) => r.id)).toEqual(["r3", "r2", "r1"]);
+      expect(await store.report("r2")).toMatchObject({ id: "r2", orgId: "o1", reporter: ALICE, reason: "SPAM", status: "OPEN", createdAt: at(1) });
+      expect(await store.report("nope")).toBeUndefined();
+      expect(await store.resolveReport("r1", { resolution: "DISMISS", resolvedBy: BOB, resolvedAt: at(3), note: "ok" })).toMatchObject({ status: "RESOLVED", resolution: "DISMISS", resolvedBy: BOB, resolvedAt: at(3), note: "ok" });
+      expect(await store.resolveReport("r1", { resolution: "TAKE_DOWN", resolvedBy: BOB, resolvedAt: at(4), note: null })).toBeUndefined();
+      expect(await store.resolveReport("nope", { resolution: "DISMISS", resolvedBy: BOB, resolvedAt: at(4), note: null })).toBeUndefined();
+      expect((await store.reports("RESOLVED")).map((r) => r.id)).toEqual(["r1"]);
+      expect((await store.reports()).map((r) => r.id)).toEqual(["r3", "r2", "r1"]);
+      await store.reopenReport("r1");
+      expect(await store.report("r1")).toMatchObject({ status: "OPEN", resolution: null, resolvedBy: null, resolvedAt: null, note: null });
+    });
   });
 }

@@ -38,7 +38,7 @@ function describe(error: unknown): string {
 }
 
 /**
- * One delivery attempt. It claims the delivery first (compare-and-set on its
+ * One delivery attempt (none for a taken-down organisation: FAILED). It claims the delivery first (compare-and-set on its
  * next_attempt_at, counting the attempt), so two runs never send it twice;
  * undefined when another run has it. Then it signs the stored body with the
  * endpoint's secret and POSTs it through the SSRF guard (https, public
@@ -53,6 +53,10 @@ export async function attemptDelivery(rt: OrgRuntime, delivery: DeliveryRecord, 
   const webhook = await store.webhook(delivery.webhookId);
   if (!webhook || !webhook.enabled) {
     return store.updateDelivery(delivery.id, { status: "FAILED", lastError: "The endpoint is disabled", nextAttemptAt: null });
+  }
+  if ((await store.organization(webhook.orgId))?.takenDown !== false) {
+    // Queued before the takedown (spec §3.11): never sent.
+    return store.updateDelivery(delivery.id, { status: "FAILED", lastError: "The organization is taken down", nextAttemptAt: null });
   }
   if (delivery.attempts >= MAX_ATTEMPTS) {
     // Its last attempt was interrupted after the claim.

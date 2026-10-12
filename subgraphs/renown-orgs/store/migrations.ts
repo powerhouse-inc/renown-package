@@ -353,4 +353,22 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("created_at", "timestamptz", (col) => col.notNull())
     .execute();
   await db.schema.createIndex("org_oidc_clients_org").ifNotExists().on("org_oidc_clients").column("org_id").execute();
+  // A3: reports about organisations (spec §3.11).
+  await db.schema
+    .createTable("org_reports")
+    .ifNotExists()
+    .addColumn("id", "text", (col) => col.primaryKey())
+    .addColumn("org_id", "text", (col) => col.notNull())
+    .addColumn("reporter", "text", (col) => col.notNull())
+    .addColumn("reason", "text", (col) => col.notNull())
+    .addColumn("details", "text")
+    .addColumn("status", "text", (col) => col.notNull())
+    .addColumn("resolution", "text")
+    .addColumn("resolved_by", "text")
+    .addColumn("resolved_at", "timestamptz")
+    .addColumn("note", "text")
+    .addColumn("created_at", "timestamptz", (col) => col.notNull())
+    .execute();
+  await db.schema.createIndex("org_reports_status").ifNotExists().on("org_reports").columns(["status", "created_at"]).execute();
+  await db.schema.createIndex("org_reports_reporter").ifNotExists().on("org_reports").columns(["reporter", "created_at"]).execute();
 }

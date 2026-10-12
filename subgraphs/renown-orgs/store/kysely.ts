@@ -33,6 +33,10 @@ import type {
   OrgProposalsTable,
   OrgRecord,
   OrgReleaseAttestationsTable,
+  OrgReportsTable,
+  ReportRecord,
+  ReportResolution,
+  ReportStatus,
   OrgSearch,
   OrgsKysely,
   OrgStore,
@@ -56,6 +60,22 @@ export function toDate(value: Date | string): Date {
 
 function toDateOrNull(value: Date | string | null): Date | null {
   return value === null ? null : toDate(value);
+}
+
+function toReport(row: Selectable<OrgReportsTable>): ReportRecord {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    reporter: row.reporter,
+    reason: row.reason,
+    details: row.details,
+    status: row.status,
+    resolution: row.resolution,
+    resolvedBy: row.resolved_by,
+    resolvedAt: toDateOrNull(row.resolved_at),
+    note: row.note,
+    createdAt: toDate(row.created_at),
+  };
 }
 
 /** A jsonb value as the driver returned it (parsed, or a JSON string), or `fallback`. */
@@ -1487,5 +1507,71 @@ export class KyselyOrgStore implements OrgStore {
       .orderBy("client_id")
       .execute();
     return rows.map((row) => ({ clientId: row.client_id, orgId: row.org_id, createdBy: row.created_by, createdAt: toDate(row.created_at) }));
+  }
+
+  async insertReport(r: ReportRecord): Promise<void> {
+    await this.db
+      .insertInto("org_reports")
+      .values({
+        id: r.id,
+        org_id: r.orgId,
+        reporter: r.reporter.toLowerCase(),
+        reason: r.reason,
+        details: r.details,
+        status: r.status,
+        resolution: r.resolution,
+        resolved_by: r.resolvedBy,
+        resolved_at: r.resolvedAt,
+        note: r.note,
+        created_at: r.createdAt,
+      })
+      .execute();
+  }
+
+  async report(id: string): Promise<ReportRecord | undefined> {
+    const row = await this.db.selectFrom("org_reports").selectAll().where("id", "=", id).executeTakeFirst();
+    return row && toReport(row);
+  }
+
+  async reports(status?: ReportStatus): Promise<ReportRecord[]> {
+    let query = this.db.selectFrom("org_reports").selectAll();
+    if (status) query = query.where("status", "=", status);
+    const rows = await query.orderBy("created_at", "desc").orderBy("id", "desc").execute();
+    return rows.map(toReport);
+  }
+
+  async countReportsSince(reporter: string, since: Date): Promise<number> {
+    const row = await this.db
+      .selectFrom("org_reports")
+      .select(sql<number>`count(*)::int`.as("n"))
+      .where("reporter", "=", reporter.toLowerCase())
+      .where("created_at", ">=", since)
+      .executeTakeFirstOrThrow();
+    return Number(row.n);
+  }
+
+  async resolveReport(id: string, resolution: ReportResolution): Promise<ReportRecord | undefined> {
+    const row = await this.db
+      .updateTable("org_reports")
+      .set({
+        status: "RESOLVED",
+        resolution: resolution.resolution,
+        resolved_by: resolution.resolvedBy,
+        resolved_at: resolution.resolvedAt,
+        note: resolution.note,
+      })
+      .where("id", "=", id)
+      .where("status", "=", "OPEN")
+      .returningAll()
+      .executeTakeFirst();
+    return row && toReport(row);
+  }
+
+  async reopenReport(id: string): Promise<void> {
+    await this.db
+      .updateTable("org_reports")
+      .set({ status: "OPEN", resolution: null, resolved_by: null, resolved_at: null, note: null })
+      .where("id", "=", id)
+      .execute();
   }
 }
