@@ -4,12 +4,16 @@ import type { Action } from "document-model";
 import { Kysely, sql } from "kysely";
 import { PGliteDialect } from "kysely-pglite-dialect";
 import { privateKeyToAccount } from "viem/accounts";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { reducer, utils, type RenownUserDocument } from "../../../document-models/renown-user/index.js";
 import type { MediaBackend, StoredObject } from "../../../media/backend.js";
 import { RenownUserProcessor } from "../../../processors/renown-user/index.js";
 import { up as upUser } from "../../../processors/renown-user/migrations.js";
 import type { DB as UserDB } from "../../../processors/renown-user/schema.js";
+import { KyselyOrgStore } from "../../renown-orgs/store/kysely.js";
+import { migrate as migrateOrgs } from "../../renown-orgs/store/migrations.js";
+import type { OrgsDB } from "../../renown-orgs/store/types.js";
+import { org } from "../../renown-orgs/tests/store-contract.js";
 import { createHandleClaims } from "../core/handle-claims.js";
 import { profileMessage, profilePayload, type ProfileFields } from "../core/signed-message.js";
 import { createResolvers, type ResolverDeps } from "../resolvers.js";
@@ -421,5 +425,36 @@ describe("renown_upsertProfile listed", () => {
     const id = await signed(ALICE, { username: "alice.eth" });
     expect(reactor.applied(id)).toEqual(["SET_ETH_ADDRESS", "SET_USERNAME"]);
     expect((await row(id)).listed).toBe(false);
+  });
+});
+
+describe("handles shared with organizations", () => {
+  let orgs: KyselyOrgStore;
+
+  beforeAll(async () => {
+    await sql`create schema if not exists "renown-orgs"`.execute(root);
+    const db = root.withSchema("renown-orgs") as unknown as Kysely<OrgsDB>;
+    await migrateOrgs(db);
+    orgs = new KyselyOrgStore(db);
+  });
+
+  afterEach(async () => {
+    await orgs.db.deleteFrom("organizations").execute();
+    await orgs.db.deleteFrom("reserved_handles").execute();
+  });
+
+  it("refuses a handle an organization holds, in any case", async () => {
+    await orgs.insertOrganization(org("o1", "acme"));
+    const { signed } = setup();
+    await expect(signed(ALICE, { handle: "Acme" })).rejects.toMatchObject({ extensions: { code: "HANDLE_TAKEN", field: "handle" } });
+    expect(await signed(BOB, { handle: "acme-fan" })).toMatch(/^doc-/);
+  });
+
+  it("refuses a reserved handle until the reservation ends", async () => {
+    const { signed } = setup();
+    await orgs.reserveHandle({ handle: "oldco", until: new Date(Date.now() + 60_000), reason: "ARCHIVED", orgId: "o9" });
+    await expect(signed(ALICE, { handle: "oldco" })).rejects.toMatchObject({ extensions: { code: "HANDLE_TAKEN", field: "handle" } });
+    await orgs.reserveHandle({ handle: "oldco", until: new Date(Date.now() - 1000), reason: "ARCHIVED", orgId: "o9" });
+    expect(await signed(ALICE, { handle: "oldco" })).toMatch(/^doc-/);
   });
 });

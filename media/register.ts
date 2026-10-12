@@ -5,6 +5,7 @@ import type { DB as RenownUserDB } from "../processors/renown-user/schema.js";
 import { createMediaHandler } from "./media-route.js";
 import { appImageLookup } from "../subgraphs/renown-stats/store/media-lookup.js";
 import { createMediaBackend } from "./registry.js";
+import { orgAvatarRef } from "../subgraphs/renown-orgs/store/lookups.js";
 import { mediaBackend, publishMediaBackend } from "./slot.js";
 import { createUploadHandler } from "./upload-route.js";
 
@@ -40,9 +41,10 @@ export function registerMedia(module: IProcessorHostModule): void {
       createMediaHandler({
         backend: mediaBackend,
         fields: {
+          // A user's avatar, else an organization's (orgs upload through the same route).
           avatar: async (documentId) =>
             (await users().select("avatar_ref").where("document_id", "=", documentId).executeTakeFirst())
-              ?.avatar_ref ?? null,
+              ?.avatar_ref ?? (await orgAvatarRef(module.relationalDb, documentId)),
           // App-profile images, recorded by renown-stats' upsertAppProfile.
           logo: appImageLookup(module.relationalDb, "logo"),
           cover: appImageLookup(module.relationalDb, "cover"),

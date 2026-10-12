@@ -6,6 +6,8 @@ import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
 import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
 import type { DB as RenownCredentialDB } from "../../processors/renown-credential/schema.js";
+import { orgHandleStatus, publicMembershipsOf } from "../renown-orgs/store/lookups.js";
+import type { ReadModelDb } from "../renown-auth/lookups.js";
 import { parseUserSearch, searchListedUsers, type UserSearchArgs } from "./search.js";
 
 interface RenownUserInput {
@@ -191,6 +193,18 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
   const db: any = subgraph.relationalDb;
 
   return {
+    ReadRenownUser: {
+      /** Never fails the profile: an unreadable organizations namespace lists nothing. */
+      memberOf: async (parent: { ethAddress?: string | null }) => {
+        if (!parent.ethAddress) return [];
+        try {
+          return await publicMembershipsOf(db as ReadModelDb, parent.ethAddress);
+        } catch (error) {
+          console.warn(`[renown-read-model] memberOf failed: ${error instanceof Error ? error.message : String(error)}`);
+          return [];
+        }
+      },
+    },
     Query: {
       renownUser: async (
         parent: unknown,
@@ -312,6 +326,13 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
         const handle = normalizeHandle(args.handle);
         const problem = handleProblem(handle);
         if (problem) return { handle, available: false, reason: problem };
+        let orgStatus: "TAKEN" | "RESERVED" | null;
+        try {
+          orgStatus = await orgHandleStatus(db as ReadModelDb, handle, new Date());
+        } catch {
+          throw new GraphQLError("Handles cannot be checked right now", { extensions: { code: "SERVICE_UNAVAILABLE" } });
+        }
+        if (orgStatus) return { handle, available: false, reason: orgStatus };
         const owner = await RenownUserProcessor.query<RenownUserDB>("renown-user", db)
           .selectFrom("renown_user")
           .select("eth_address")

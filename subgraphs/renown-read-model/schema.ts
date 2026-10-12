@@ -19,6 +19,8 @@ export const schema: DocumentNode = gql`
     avatar: String
     "Opted in to people search (renownUserSearch)"
     listed: Boolean!
+    "Public organization memberships (active, not hidden, in organizations that show their members)"
+    memberOf: [ReadRenownOrgMembership!]!
     createdAt: DateTime
     updatedAt: DateTime
   }
@@ -33,6 +35,14 @@ export const schema: DocumentNode = gql`
     id: String!
     label: String!
     url: String!
+  }
+
+  "An organization a user publicly belongs to; role is OWNER, ADMIN, PUBLISHER or MEMBER."
+  type ReadRenownOrgMembership {
+    orgId: String!
+    handle: String!
+    name: String!
+    role: String!
   }
 
   input RenownUserInput {
