@@ -298,6 +298,43 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       await expect(db.updateTable("org_domains").set({ status: "VERIFIED" }).where("id", "=", "d4").execute()).rejects.toThrow();
     });
 
+    it("claims each sweep job once per interval and undoes a claim", async () => {
+      const { store } = await open();
+      const MINUTE = 60_000;
+      expect(await store.claimJob("proposals", T0, MINUTE)).toEqual({ previous: null });
+      expect(await store.claimJob("proposals", T0, MINUTE)).toBeNull();
+      expect(await store.claimJob("proposals", at(0.5), MINUTE)).toBeNull();
+      const claims = await Promise.all([store.claimJob("proposals", at(1), MINUTE), store.claimJob("proposals", at(1), MINUTE)]);
+      expect(claims.filter(Boolean)).toEqual([{ previous: T0 }]);
+      await store.releaseJob("proposals", at(1), T0);
+      expect(await store.jobLastRun("proposals")).toEqual(T0);
+      expect(await store.claimJob("domains", at(2), MINUTE)).toEqual({ previous: null });
+      await store.releaseJob("domains", at(2), null);
+      expect(await store.jobLastRun("domains")).toBeUndefined();
+    });
+
+    it("lists unarmed pending proposals whose approvals reach their threshold", async () => {
+      const { store } = await open();
+      const base = {
+        orgId: "o1",
+        kind: "ADD_OWNER" as const,
+        payload: { address: BOB },
+        proposer: ALICE,
+        status: "PENDING" as const,
+        threshold: 2,
+        createdAt: T0,
+        executableAt: null,
+        expiresAt: at(60),
+        executedAt: null,
+        reason: null,
+      };
+      await store.insertProposal({ ...base, id: "low", approvals: [ALICE] });
+      await store.insertProposal({ ...base, id: "stuck", approvals: [ALICE, BOB] });
+      await store.insertProposal({ ...base, id: "armed", approvals: [ALICE, BOB], executableAt: at(5) });
+      await store.insertProposal({ ...base, id: "old", approvals: [ALICE, BOB], expiresAt: at(1) });
+      expect((await store.rearmableProposals(at(2), 10)).map((p) => p.id)).toEqual(["stuck"]);
+    });
+
     it("keeps proposals and moves them only from the expected status", async () => {
       const { store } = await open();
       const base = {

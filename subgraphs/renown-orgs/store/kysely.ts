@@ -701,4 +701,56 @@ export class KyselyOrgStore implements OrgStore {
       .execute();
     return rows.map(toProposal);
   }
+
+  async rearmableProposals(now: Date, limit: number): Promise<ProposalRecord[]> {
+    const rows = await this.db
+      .selectFrom("org_proposals")
+      .selectAll()
+      .where("status", "=", "PENDING")
+      .where("executable_at", "is", null)
+      .where("expires_at", ">", now)
+      .where(sql<boolean>`jsonb_array_length(approvals) >= threshold`)
+      .orderBy("created_at")
+      .orderBy("id")
+      .limit(limit)
+      .execute();
+    return rows.map(toProposal);
+  }
+
+  async claimJob(name: string, now: Date, everyMs: number): Promise<{ previous: Date | null } | null> {
+    const row = await this.db.selectFrom("org_jobs").select("last_run_at").where("name", "=", name).executeTakeFirst();
+    if (!row) {
+      const inserted = await this.db
+        .insertInto("org_jobs")
+        .values({ name, last_run_at: now })
+        .onConflict((oc) => oc.column("name").doNothing())
+        .returning("name")
+        .executeTakeFirst();
+      return inserted ? { previous: null } : null;
+    }
+    const previous = toDate(row.last_run_at);
+    if (now.getTime() - previous.getTime() < everyMs) return null;
+    // Compare-and-set: of two replicas that read the same previous run, one wins.
+    const claimed = await this.db
+      .updateTable("org_jobs")
+      .set({ last_run_at: now })
+      .where("name", "=", name)
+      .where("last_run_at", "=", previous)
+      .returning("name")
+      .executeTakeFirst();
+    return claimed ? { previous } : null;
+  }
+
+  async releaseJob(name: string, claimedAt: Date, previous: Date | null): Promise<void> {
+    if (previous === null) {
+      await this.db.deleteFrom("org_jobs").where("name", "=", name).where("last_run_at", "=", claimedAt).execute();
+      return;
+    }
+    await this.db.updateTable("org_jobs").set({ last_run_at: previous }).where("name", "=", name).where("last_run_at", "=", claimedAt).execute();
+  }
+
+  async jobLastRun(name: string): Promise<Date | undefined> {
+    const row = await this.db.selectFrom("org_jobs").select("last_run_at").where("name", "=", name).executeTakeFirst();
+    return row ? toDate(row.last_run_at) : undefined;
+  }
 }

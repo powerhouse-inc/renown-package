@@ -3,6 +3,7 @@ import { GraphQLError } from "graphql";
 import { Kysely, sql } from "kysely";
 import { PGliteDialect } from "kysely-pglite-dialect";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SWEEP_INTERVAL_MS } from "../core/sweeper.js";
 import { PRUNE_INTERVAL_MS, RenownOrgsSubgraph } from "../index.js";
 import { KyselyOrgStore } from "../store/kysely.js";
 
@@ -51,19 +52,29 @@ describe("RenownOrgsSubgraph", () => {
   });
 });
 
-describe("RenownOrgsSubgraph used-signature sweep", () => {
+describe("RenownOrgsSubgraph sweeper", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  it("prunes used signatures every 5 minutes once set up, once per setup, and stops on disconnect", async () => {
+  it("starts one 60 s timer after setup and stops it on disconnect", async () => {
+    const setSpy = vi.spyOn(globalThis, "setInterval");
+    const clearSpy = vi.spyOn(globalThis, "clearInterval");
+    const { subgraph } = makeSubgraph(pgliteNamespace);
+    await subgraph.onSetup();
+    await subgraph.onSetup();
+    expect(setSpy.mock.calls.filter(([, ms]) => ms === 60_000)).toHaveLength(1);
+    await subgraph.onDisconnect();
+    expect(clearSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("prunes used signatures from the sweep, not before the first tick, and stops on disconnect", async () => {
     const prune = vi.spyOn(KyselyOrgStore.prototype, "pruneUsedSignatures").mockResolvedValue(0);
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const { subgraph } = makeSubgraph(pgliteNamespace);
     await subgraph.onSetup();
-    await subgraph.onSetup();
-    await vi.advanceTimersByTimeAsync(PRUNE_INTERVAL_MS - 1);
+    await vi.advanceTimersByTimeAsync(SWEEP_INTERVAL_MS - 1);
     expect(prune).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(prune).toHaveBeenCalledTimes(1);
@@ -73,13 +84,13 @@ describe("RenownOrgsSubgraph used-signature sweep", () => {
     expect(prune).toHaveBeenCalledTimes(1);
   });
 
-  it("logs a failed sweep instead of throwing", async () => {
+  it("logs a failed sweep job instead of throwing", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(KyselyOrgStore.prototype, "pruneUsedSignatures").mockRejectedValue(new Error("db down"));
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const { subgraph } = makeSubgraph(pgliteNamespace);
     await subgraph.onSetup();
-    await vi.advanceTimersByTimeAsync(PRUNE_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(SWEEP_INTERVAL_MS);
     expect(log).toHaveBeenCalledWith(expect.stringContaining("db down"));
     await subgraph.onDisconnect();
   });

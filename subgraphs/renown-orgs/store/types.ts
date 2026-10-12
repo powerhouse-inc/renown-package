@@ -138,6 +138,11 @@ export interface ProposalPayload {
   domain?: string;
 }
 
+export interface OrgJobsTable {
+  name: string;
+  last_run_at: Timestamp;
+}
+
 export interface OrgProposalsTable {
   id: string;
   org_id: string;
@@ -190,6 +195,7 @@ export interface OrgsDB {
   reserved_handles: ReservedHandlesTable;
   org_used_signatures: OrgUsedSignaturesTable;
   org_proposals: OrgProposalsTable;
+  org_jobs: OrgJobsTable;
 }
 
 export type OrgsKysely = Kysely<OrgsDB>;
@@ -378,4 +384,11 @@ export interface OrgStore {
   updateProposal(id: string, patch: ProposalPatch, expected: ProposalStatus): Promise<ProposalRecord | undefined>;
   /** PENDING proposals executable or expired at `now`, oldest first. */
   dueProposals(now: Date, limit: number): Promise<ProposalRecord[]>;
+  /** Unexpired PENDING proposals without a countdown whose approvals could already reach their threshold, oldest first. */
+  rearmableProposals(now: Date, limit: number): Promise<ProposalRecord[]>;
+  /** Claims a run of job `name` at `now` unless one started less than `everyMs` ago; the previous start, or null. */
+  claimJob(name: string, now: Date, everyMs: number): Promise<{ previous: Date | null } | null>;
+  /** Undoes the claim made at `claimedAt` (back to `previous`, or no row). */
+  releaseJob(name: string, claimedAt: Date, previous: Date | null): Promise<void>;
+  jobLastRun(name: string): Promise<Date | undefined>;
 }

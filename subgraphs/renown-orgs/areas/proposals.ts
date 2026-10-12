@@ -123,6 +123,19 @@ export async function createProposal(
 }
 
 /**
+ * Gives a PENDING, unexpired proposal without a countdown whose threshold is
+ * met (again) the countdown max(createdAt + delay, now), so a transient
+ * threshold drop cannot strand it. It does not run it. The caller holds the org lock.
+ */
+export async function rearmProposal(rt: OrgRuntime, proposal: ProposalRecord, now: Date, owners?: string[]): Promise<void> {
+  if (!isLive(proposal, now) || proposal.executableAt) return;
+  const current = owners ?? (await activeOwners(rt, proposal.orgId));
+  if (!thresholdMet(proposal, current)) return;
+  const executableAt = executableAtFor(proposal, current, rt.config(), now, false);
+  await rt.store().updateProposal(proposal.id, { executableAt }, "PENDING");
+}
+
+/**
  * Runs a matured proposal once: claims it (PENDING -> EXECUTED, conditional),
  * then lets its handler re-validate and apply. A reason or a throw moves it
  * to FAILED; SERVICE_UNAVAILABLE (a document that could not be written, the
@@ -141,6 +154,7 @@ export async function runProposal(rt: OrgRuntime, proposal: ProposalRecord, acto
     if (proposal.executableAt) await store.updateProposal(proposal.id, { executableAt: null }, "PENDING");
     throw notExecutable(`The proposal needs ${effectiveThreshold(proposal, ownersBefore)} approvals from current owners`);
   }
+  if (!proposal.executableAt) await rearmProposal(rt, proposal, now, ownersBefore);
   const executableAt = proposal.executableAt;
   if (!executableAt || executableAt.getTime() > now.getTime()) throw notExecutable("The proposal is not executable yet");
   if (executableAt.getTime() >= proposal.expiresAt.getTime()) throw notExecutable("The proposal expired");

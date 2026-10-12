@@ -25,7 +25,8 @@ import { orgMessage } from "../../../sdk/orgs.js";
 import type { OrgAuthInput } from "../core/auth.js";
 import type { OrgsConfig } from "../core/config.js";
 import type { OrganizationOutput } from "../output.js";
-import { createResolvers } from "../resolvers.js";
+import { resolversFor } from "../resolvers.js";
+import { createRuntime } from "../runtime.js";
 import type { OrgsResolverDeps } from "../runtime.js";
 import { KyselyOrgStore } from "../store/kysely.js";
 import { migrate } from "../store/migrations.js";
@@ -155,7 +156,7 @@ export function harnessResolvers(h: Harness, overrides: Partial<OrgsResolverDeps
   const store = new KyselyOrgStore(h.root.withSchema(ORGS_NAMESPACE));
   const clock = { now: T0 };
   let ids = 0;
-  const resolvers = createResolvers({
+  const rt = createRuntime({
     reactorClient: reactor as unknown as OrgsResolverDeps["reactorClient"],
     relationalDb: h.relationalDb as OrgsResolverDeps["relationalDb"],
     store: () => store,
@@ -164,7 +165,8 @@ export function harnessResolvers(h: Harness, overrides: Partial<OrgsResolverDeps
     newId: () => `id-${String(++ids).padStart(4, "0")}`,
     media: () => null,
     ...overrides,
-  }) as { Query: Record<string, Resolver>; Mutation: Record<string, Resolver> };
+  });
+  const resolvers = resolversFor(rt) as { Query: Record<string, Resolver>; Mutation: Record<string, Resolver> };
   const ctx = (who?: Account) => (who ? { user: { address: who.address } } : {});
   async function auth(field: string, args: Record<string, unknown>, who: Account, timestamp = clock.now.toISOString()): Promise<OrgAuthInput> {
     const message = await orgMessage(field, typeof args.orgId === "string" ? args.orgId : null, args, timestamp);
@@ -172,6 +174,7 @@ export function harnessResolvers(h: Harness, overrides: Partial<OrgsResolverDeps
   }
   return {
     reactor,
+    rt,
     store,
     clock,
     resolvers,

@@ -201,4 +201,11 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .execute();
   await db.schema.createIndex("org_proposals_org").ifNotExists().on("org_proposals").columns(["org_id", "created_at"]).execute();
   await db.schema.createIndex("org_proposals_status").ifNotExists().on("org_proposals").columns(["status", "executable_at"]).execute();
+  // A2: the last claimed run of each sweep job, shared by every replica.
+  await db.schema
+    .createTable("org_jobs")
+    .ifNotExists()
+    .addColumn("name", "text", (col) => col.primaryKey())
+    .addColumn("last_run_at", "timestamptz", (col) => col.notNull())
+    .execute();
 }
