@@ -1,0 +1,259 @@
+scalar Unknown
+scalar DateTime
+scalar Address
+scalar AttachmentRef
+scalar Amount_Tokens
+scalar EthereumAddress
+scalar EmailAddress
+scalar Amount_Percentage
+scalar Date
+scalar URL
+scalar Amount_Money
+scalar OLabel
+scalar Currency
+scalar PHID
+scalar OID
+scalar Amount_Fiat
+scalar Amount_Currency
+scalar Amount_Crypto
+scalar Amount
+scalar Upload
+
+type RenownOrganizationState {
+  "Lowercase; unique across users and organizations (enforced by the write path)"
+  handle: String
+  "1-64 characters"
+  name: String
+  "At most 280 characters"
+  bio: String
+  "An http(s) URL"
+  website: String
+  "attachment://v1:<sha256>"
+  avatar: String
+  "At most 8, in display order"
+  links: [RenownOrgLink!]!
+  "Opted in to the organization directory"
+  listed: Boolean!
+  "Active, non-hidden members are shown publicly"
+  membersPublic: Boolean!
+  archived: Boolean!
+  takenDown: Boolean!
+  "Lowercase address of the creator; set once by INIT_ORGANIZATION"
+  createdBy: EthereumAddress
+  "Every membership record ever created (rows are never removed)"
+  members: [RenownOrgMember!]!
+  "At most 50 flat teams"
+  teams: [RenownOrgTeam!]!
+  apps: [RenownOrgApp!]!
+  domains: [RenownOrgDomain!]!
+  "Delegation credential ids suspended by the organization"
+  suspendedCredentialIds: [String!]!
+}
+
+type RenownOrgLink {
+  id: OID!
+  label: String!
+  url: String!
+}
+
+enum RenownOrgRole {
+  OWNER
+  ADMIN
+  PUBLISHER
+  MEMBER
+}
+
+enum RenownOrgMemberStatus {
+  INVITED
+  ACTIVE
+  DECLINED
+  LEFT
+  REMOVED
+  REVOKED
+}
+
+type RenownOrgAppScope {
+  all: Boolean!
+  appDids: [String!]!
+}
+
+type RenownOrgMember {
+  id: OID!
+  "Lowercase"
+  address: EthereumAddress!
+  role: RenownOrgRole!
+  status: RenownOrgMemberStatus!
+  appScope: RenownOrgAppScope!
+  hidden: Boolean!
+  joinedAt: DateTime
+  updatedAt: DateTime!
+}
+
+type RenownOrgTeam {
+  id: OID!
+  slug: String!
+  name: String!
+  appDids: [String!]!
+  memberIds: [OID!]!
+}
+
+type RenownOrgApp {
+  appDid: String!
+  addedAt: DateTime!
+  frozen: Boolean!
+}
+
+enum RenownOrgDomainStatus {
+  PENDING
+  VERIFIED
+  LAPSED
+}
+
+type RenownOrgDomain {
+  id: OID!
+  domain: String!
+  status: RenownOrgDomainStatus!
+  verifiedAt: DateTime
+}
+
+# profile
+
+input InitOrganizationInput {
+  handle: String!
+  name: String!
+  createdBy: EthereumAddress!
+}
+
+input SetOrgProfileInput {
+  name: String
+  bio: String
+  website: String
+  avatar: String
+  links: [SetOrgProfileLinkInput!]
+}
+
+input SetOrgProfileLinkInput {
+  id: OID!
+  label: String!
+  url: String!
+}
+
+input SetOrgHandleInput {
+  handle: String!
+}
+
+input SetOrgListedInput {
+  listed: Boolean!
+}
+
+input SetMembersPublicInput {
+  membersPublic: Boolean!
+}
+
+input ArchiveOrgInput {
+  archivedAt: DateTime!
+}
+
+input SetTakenDownInput {
+  takenDown: Boolean!
+}
+
+# members
+
+input InviteMemberInput {
+  id: OID!
+  address: EthereumAddress!
+  role: RenownOrgRole!
+  invitedAt: DateTime!
+}
+
+input SetMemberStatusInput {
+  id: OID!
+  status: RenownOrgMemberStatus!
+  at: DateTime!
+}
+
+input SetMemberRoleInput {
+  id: OID!
+  role: RenownOrgRole!
+  at: DateTime!
+}
+
+input SetMemberAppScopeInput {
+  id: OID!
+  all: Boolean!
+  appDids: [String!]!
+  at: DateTime!
+}
+
+input SetMemberHiddenInput {
+  id: OID!
+  hidden: Boolean!
+  at: DateTime!
+}
+
+input AddTeamInput {
+  id: OID!
+  slug: String!
+  name: String!
+  appDids: [String!]!
+}
+
+input UpdateTeamInput {
+  id: OID!
+  slug: String
+  name: String
+  appDids: [String!]
+}
+
+input RemoveTeamInput {
+  id: OID!
+}
+
+input SetTeamMembersInput {
+  id: OID!
+  memberIds: [OID!]!
+}
+
+# apps
+
+input AddOrgAppInput {
+  appDid: String!
+  addedAt: DateTime!
+}
+
+input RemoveOrgAppInput {
+  appDid: String!
+}
+
+input SetAppFrozenInput {
+  appDid: String!
+  frozen: Boolean!
+}
+
+# domains
+
+input AddDomainInput {
+  id: OID!
+  domain: String!
+}
+
+input SetDomainStatusInput {
+  id: OID!
+  status: RenownOrgDomainStatus!
+  verifiedAt: DateTime
+}
+
+input RemoveDomainInput {
+  id: OID!
+}
+
+# security
+
+input SuspendCredentialsInput {
+  credentialIds: [String!]!
+}
+
+input UnsuspendCredentialInput {
+  credentialId: String!
+}

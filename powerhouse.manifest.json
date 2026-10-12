@@ -25,7 +25,10 @@
     },
     {
       "name": "RenownAppProfile",
-      "id": "powerhouse/renown-app-profile"
+      "id": "powerhouse/renown-app-profile"    },
+    {
+      "name": "RenownOrganization",
+      "id": "powerhouse/renown-organization"
     }
   ],
   "apps": [],
