@@ -1,7 +1,8 @@
 import { sql } from "kysely";
 import { getAddress } from "viem";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createOrgPolicy } from "../../renown-orgs/core/org-policy.js";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { actions as orgActions, type RenownOrganizationDocument } from "../../../document-models/renown-organization/index.js";
+import { createOrgPolicy, type OrgPolicy } from "../../renown-orgs/core/org-policy.js";
 import { KyselyOrgStore } from "../../renown-orgs/store/kysely.js";
 import { migrate as migrateOrgs } from "../../renown-orgs/store/migrations.js";
 import { memberRecord, org } from "../../renown-orgs/tests/store-contract.js";
@@ -31,7 +32,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await resetHarness(h);
-  for (const table of ["organizations", "org_members", "org_apps", "org_audit"] as const) await orgs.db.deleteFrom(table).execute();
+  for (const table of ["organizations", "org_members", "org_apps", "org_audit", "org_domains"] as const) await orgs.db.deleteFrom(table).execute();
   await orgs.insertOrganization(org("o1", "acme", { name: "Acme" }));
   await orgs.insertMember(memberRecord("m-owner", "o1", OWNER, { role: "OWNER", appScopeAll: true }));
   await orgs.insertMember(memberRecord("m-bob", "o1", BOB, { role: "PUBLISHER", appDids: [APP] }));
@@ -45,8 +46,19 @@ async function registerApps() {
   await registerApp(h, PERSON_APP);
 }
 
-function setup() {
-  return harnessResolvers(h, { orgPolicy: () => createOrgPolicy(h.relationalDb, "renown.test") });
+/** Resolvers with the organisation documents of o1 and o2; `wrap` may alter the policy. */
+function setup(wrap: (policy: OrgPolicy) => OrgPolicy = (policy) => policy) {
+  const policy = wrap(createOrgPolicy(h.relationalDb, "renown.test"));
+  const t = harnessResolvers(h, { orgPolicy: () => policy });
+  t.reactor.seedOrganization("o1", "acme");
+  t.reactor.seedOrganization("o2", "globex");
+  return t;
+}
+
+/** The apps the organisation document `orgId` lists. */
+function documentApps(t: ReturnType<typeof setup>, orgId: string): string[] {
+  const doc = t.reactor.docs.get(orgId) as unknown as RenownOrganizationDocument;
+  return doc.state.global.apps.map((app) => app.appDid);
 }
 
 describe("org-owned apps", () => {
@@ -61,6 +73,7 @@ describe("org-owned apps", () => {
       frozen: false,
     });
     expect(await orgs.orgOfApp(APP)).toMatchObject({ orgId: "o1", frozen: false });
+    expect(documentApps(t, "o1")).toEqual([APP]);
     expect((await t.index.appProfile(APP))?.publisherOrgId).toBe("o1");
     expect((await t.appProfiles({ orgId: "o1" })).items.map((i) => i.appDid)).toEqual([APP]);
   });
@@ -88,13 +101,14 @@ describe("org-owned apps", () => {
     expect(await t.appProfile(APP)).toMatchObject({ tagline: "By Acme", frozen: true });
   });
 
-  it("finds an organisation's apps by its DID", async () => {
+  it("finds an organisation's apps by its DID on this host only", async () => {
     await registerApps();
     const t = setup();
     await t.upsert({ appDid: APP, name: "Acme App", publisherOrgId: "o1" }, relayed(BOB));
     const byPublisher = (publisherDid: string) =>
       (t.resolvers as unknown as { Query: Record<string, (p: unknown, a: unknown, c: unknown) => Promise<{ appDid: string }[]>> }).Query.appProfilesByPublisher(null, { publisherDid }, {});
-    expect((await byPublisher("did:web:www.renown.id:org:o1")).map((p) => p.appDid)).toEqual([APP]);
+    expect((await byPublisher("did:web:renown.test:org:o1")).map((p) => p.appDid)).toEqual([APP]);
+    expect((await failure(byPublisher("did:web:www.renown.id:org:o1"))).code).toBe("BAD_USER_INPUT");
     expect((await byPublisher(`did:pkh:eip155:1:${getAddress(BOB)}`)).map((p) => p.appDid)).toEqual([APP]);
   });
 
@@ -134,5 +148,131 @@ describe("org-owned apps", () => {
     await orgs.db.insertInto("org_apps").values({ app_did: PERSON_APP, org_id: "o1", frozen: false, added_at: new Date("2026-10-01T00:00:00Z") }).execute();
     expect((await failure(t.upsert({ appDid: PERSON_APP, tagline: "x" }, relayed(OWNER)))).code).toBe("FORBIDDEN");
     expect(await t.appProfile(GLOBEX_APP)).toMatchObject({ tagline: null, publisherOrg: { id: "o2", handle: "globex" } });
+  });
+
+  it("attaches before claiming: an app another organisation took meanwhile is refused without recording the org", async () => {
+    await registerApps();
+    await registerApp(h, CONTESTED_APP);
+    await h.root.withSchema(WORKLOAD_NS).updateTable("workload_identities").set({ owner_org_id: "o1" }).where("did", "=", CONTESTED_APP).execute();
+    await orgs.db.insertInto("org_apps").values({ app_did: CONTESTED_APP, org_id: "o2", frozen: false, added_at: new Date("2026-10-01T00:00:00Z") }).execute();
+    let stale = true;
+    // The first ownership read predates the other organisation's attach.
+    const t = setup((policy) => ({
+      ...policy,
+      orgOfApp: (appDid) => {
+        if (!stale) return policy.orgOfApp(appDid);
+        stale = false;
+        return Promise.resolve(null);
+      },
+    }));
+    expect((await failure(t.upsert({ appDid: CONTESTED_APP, name: "x", publisherOrgId: "o1" }, relayed(OWNER)))).code).toBe("FORBIDDEN");
+    expect(await t.index.appProfile(CONTESTED_APP)).toBeUndefined();
+    expect(t.reactor.createEmpty).not.toHaveBeenCalled();
+    expect(await orgs.orgOfApp(CONTESTED_APP)).toMatchObject({ orgId: "o2" });
+  });
+
+  it("undoes its attach when the claim fails or loses", async () => {
+    await registerApps();
+    const failing = setup();
+    failing.reactor.createEmpty.mockRejectedValueOnce(new Error("reactor down"));
+    await expect(failing.upsert({ appDid: APP, name: "x", publisherOrgId: "o1" }, relayed(BOB))).rejects.toThrow("reactor down");
+    expect(await orgs.orgOfApp(APP)).toBeUndefined();
+
+    // Another process claims the profile (for the person) between our attach and our claim.
+    let rival: ReturnType<typeof setup> | undefined;
+    const t = setup((policy) => ({
+      ...policy,
+      attachApp: async (...args) => {
+        const attached = await policy.attachApp(...args);
+        await rival?.index.claimAppProfile({ appDid: APP, documentId: "rival", publisherAddress: OWNER }, new Date("2026-10-01T00:00:00Z"));
+        return attached;
+      },
+    }));
+    rival = t;
+    expect((await failure(t.upsert({ appDid: APP, name: "x", publisherOrgId: "o1" }, relayed(BOB)))).code).toBe("FORBIDDEN");
+    expect(await orgs.orgOfApp(APP)).toBeUndefined();
+    expect((await t.index.appProfile(APP))?.publisherOrgId).toBeUndefined();
+    expect(documentApps(t, "o1")).toEqual([]);
+    expect((await orgs.db.selectFrom("org_audit").select("action").where("org_id", "=", "o1").execute()).map((r) => r.action).sort()).toEqual([
+      "attachApp",
+      "attachApp",
+      "detachApp",
+      "detachApp",
+    ]);
+  });
+
+  it("re-attaches an org profile whose org_apps row was lost, for covered publishers only", async () => {
+    await registerApps();
+    const t = setup();
+    await t.upsert({ appDid: APP, name: "Acme App", publisherOrgId: "o1" }, relayed(BOB));
+    await orgs.db.deleteFrom("org_apps").where("app_did", "=", APP).execute();
+    expect((await failure(t.upsert({ appDid: APP, tagline: "x" }, relayed(CAROL)))).code).toBe("FORBIDDEN");
+    expect(await orgs.orgOfApp(APP)).toBeUndefined();
+    expect(await t.upsert({ appDid: APP, tagline: "Repaired" }, relayed(BOB))).toBe(true);
+    expect(await orgs.orgOfApp(APP)).toMatchObject({ orgId: "o1" });
+    expect(documentApps(t, "o1")).toEqual([APP]);
+    expect(await t.appProfile(APP)).toMatchObject({ tagline: "Repaired", publisherOrg: { id: "o1" } });
+  });
+
+  it("logs organisation document mirrors that fail or that the reducer rejects, without failing the claim", async () => {
+    await registerApps();
+    await registerApp(h, GLOBEX_APP);
+    await h.root.withSchema(WORKLOAD_NS).updateTable("workload_identities").set({ owner_org_id: "o1" }).where("did", "=", GLOBEX_APP).execute();
+    const t = setup();
+    // A stale read: the document already lists APP, so the reducer rejects a second addOrgApp.
+    const stale = t.reactor.docs.get("o1");
+    await t.reactor.execute("o1", "main", [orgActions.addOrgApp({ appDid: APP, addedAt: "2026-10-01T00:00:00.000Z" })]);
+    t.reactor.get.mockResolvedValueOnce(stale as never);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect(await t.upsert({ appDid: APP, name: "Acme App", publisherOrgId: "o1" }, relayed(BOB))).toBe(true);
+      expect(warn).toHaveBeenLastCalledWith(expect.stringMatching(/organisation document mirror failed \(ADD_ORG_APP failed: .*already belongs/));
+      // No organisation document at all.
+      t.reactor.docs.delete("o1");
+      expect(await t.upsert({ appDid: GLOBEX_APP, name: "Other", publisherOrgId: "o1" }, relayed(OWNER))).toBe(true);
+      expect(warn).toHaveBeenLastCalledWith(expect.stringContaining("organisation document mirror failed (no document o1)"));
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await orgs.orgOfApp(APP)).toMatchObject({ orgId: "o1" });
+    expect(await orgs.orgOfApp(GLOBEX_APP)).toMatchObject({ orgId: "o1" });
+  });
+
+  it("answers SERVICE_UNAVAILABLE when organisations cannot be read", async () => {
+    await registerApps();
+    const t = setup((policy) => ({ ...policy, orgOfApp: () => Promise.reject(new Error("db down")) }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect((await failure(t.upsert({ appDid: PERSON_APP, name: "x" }, relayed(OWNER)))).code).toBe("SERVICE_UNAVAILABLE");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("lists a page of apps of several organisations with their cards in batched lookups", async () => {
+    await registerApps();
+    await orgs.insertOrganization(org("o2", "globex", { name: "Globex" }));
+    await orgs.insertMember(memberRecord("m-dave", "o2", DAVE, { role: "OWNER", appScopeAll: true }));
+    await registerApp(h, GLOBEX_APP);
+    await h.root.withSchema(WORKLOAD_NS).updateTable("workload_identities").set({ owner_org_id: "o2" }).where("did", "=", GLOBEX_APP).execute();
+    const at = new Date("2026-10-01T00:00:00Z");
+    for (const [id, orgId, domain, status] of [
+      ["d1", "o1", "b.acme.example", "VERIFIED"],
+      ["d2", "o1", "a.acme.example", "VERIFIED"],
+      ["d3", "o2", "globex.example", "PENDING"],
+    ] as const) {
+      await orgs.db.insertInto("org_domains").values({ id, org_id: orgId, domain, token: "t", status, verified_at: null, last_checked_at: null, failures: 0, created_at: at }).execute();
+    }
+    const t = setup();
+    await t.upsert({ appDid: APP, name: "Acme App", publisherOrgId: "o1" }, relayed(BOB));
+    await t.upsert({ appDid: GLOBEX_APP, name: "Globex App", publisherOrgId: "o2" }, relayed(DAVE));
+    await t.upsert({ appDid: PERSON_APP, name: "Mine" }, relayed(OWNER));
+    await orgs.db.updateTable("org_apps").set({ frozen: true }).where("app_did", "=", GLOBEX_APP).execute();
+    const page = (await t.appProfiles({})).items as unknown as { appDid: string; publisherOrg: { id: string; verifiedDomains: string[] } | null; frozen: boolean }[];
+    expect(page.map((p) => [p.appDid, p.publisherOrg?.id ?? null, p.publisherOrg?.verifiedDomains ?? null, p.frozen])).toEqual([
+      [PERSON_APP, null, null, false],
+      [GLOBEX_APP, "o2", [], true],
+      [APP, "o1", ["a.acme.example", "b.acme.example"], false],
+    ]);
   });
 });

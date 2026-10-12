@@ -39,10 +39,17 @@ export interface OrgPolicy {
   coversApp(orgId: string, address: string, appDid: string): Promise<boolean>;
   /** Public card of a live organisation, null when unknown or taken down. */
   orgSummary(orgId: string): Promise<OrgPublisherSummary | null>;
+  /** orgOfApp for many apps in one query; apps without an organisation are absent. */
+  orgsOfApps(appDids: readonly string[]): Promise<Map<string, OrgAppInfo>>;
+  /** orgSummary for many organisations in two queries; unknown or taken-down ones are absent. */
+  orgSummaries(orgIds: readonly string[]): Promise<Map<string, OrgPublisherSummary>>;
+  /** The organisation id of an org DID on this host (didHost); null for any other DID or host. */
   orgIdOfDid(did: string): string | null;
   orgDid(orgId: string): string;
   /** Records `appDid` as an app of `orgId` (with an audit row by `actor`); false when it already belongs to an organisation. */
   attachApp(orgId: string, appDid: string, actor: string, at: Date): Promise<boolean>;
+  /** Undoes an attachApp of this caller: removes `appDid` from `orgId` (with an audit row); false when it was not there. */
+  detachApp(orgId: string, appDid: string, actor: string, at: Date): Promise<boolean>;
 }
 
 /** The organisation id in did:web:<host>:org:<id>, or null. */
@@ -85,6 +92,42 @@ export function createOrgPolicy(db: ReadModelDb, didHost: string): OrgPolicy {
       .executeTakeFirst();
   }
 
+  function summaries(orgIds: readonly string[]): Promise<Map<string, OrgPublisherSummary>> {
+    return orEmpty(new Map<string, OrgPublisherSummary>(), async () => {
+      const out = new Map<string, OrgPublisherSummary>();
+      const ids = [...new Set(orgIds)];
+      if (ids.length === 0) return out;
+      const rows = await orgs()
+        .selectFrom("organizations")
+        .select(["id", "handle", "name"])
+        .where("id", "in", ids)
+        .where("taken_down", "=", false)
+        .execute();
+      if (rows.length === 0) return out;
+      const domains = await orgs()
+        .selectFrom("org_domains")
+        .select(["org_id", "domain"])
+        .where(
+          "org_id",
+          "in",
+          rows.map((row) => row.id),
+        )
+        .where("status", "=", "VERIFIED")
+        .orderBy("domain")
+        .execute();
+      for (const row of rows) {
+        out.set(row.id, {
+          id: row.id,
+          did: orgDid(didHost, row.id),
+          handle: row.handle,
+          name: row.name,
+          verifiedDomains: domains.filter((d) => d.org_id === row.id).map((d) => d.domain),
+        });
+      }
+      return out;
+    });
+  }
+
   return {
     orgOfApp: (appDid) =>
       orEmpty(null, async () => {
@@ -106,25 +149,18 @@ export function createOrgPolicy(db: ReadModelDb, didHost: string): OrgPolicy {
           .execute();
         return teams.some((team) => stringList(team.app_dids).includes(appDid));
       }),
-    orgSummary: (orgId) =>
-      orEmpty(null, async () => {
-        const org = await orgs()
-          .selectFrom("organizations")
-          .select(["id", "handle", "name"])
-          .where("id", "=", orgId)
-          .where("taken_down", "=", false)
-          .executeTakeFirst();
-        if (!org) return null;
-        const domains = await orgs()
-          .selectFrom("org_domains")
-          .select("domain")
-          .where("org_id", "=", orgId)
-          .where("status", "=", "VERIFIED")
-          .orderBy("domain")
-          .execute();
-        return { id: org.id, did: orgDid(didHost, org.id), handle: org.handle, name: org.name, verifiedDomains: domains.map((d) => d.domain) };
+    orgSummary: async (orgId) => (await summaries([orgId])).get(orgId) ?? null,
+    orgsOfApps: (appDids) =>
+      orEmpty(new Map<string, OrgAppInfo>(), async () => {
+        if (appDids.length === 0) return new Map<string, OrgAppInfo>();
+        const rows = await orgs().selectFrom("org_apps").select(["app_did", "org_id", "frozen"]).where("app_did", "in", [...appDids]).execute();
+        return new Map(rows.map((row) => [row.app_did, { orgId: row.org_id, frozen: row.frozen }]));
       }),
-    orgIdOfDid: parseOrgDid,
+    orgSummaries: summaries,
+    orgIdOfDid: (did) => {
+      const id = parseOrgDid(did);
+      return id !== null && did.trim() === orgDid(didHost, id) ? id : null;
+    },
     orgDid: (orgId) => orgDid(didHost, orgId),
     attachApp: (orgId, appDid, actor, at) =>
       orEmpty(false, async () => {
@@ -139,6 +175,23 @@ export function createOrgPolicy(db: ReadModelDb, didHost: string): OrgPolicy {
           await trx
             .insertInto("org_audit")
             .values({ id: generateId(), org_id: orgId, at, actor, action: "attachApp", details: JSON.stringify({ appDid }) })
+            .execute();
+          return true;
+        });
+      }),
+    detachApp: (orgId, appDid, actor, at) =>
+      orEmpty(false, async () => {
+        return (await writable()).transaction().execute(async (trx) => {
+          const removed = await trx
+            .deleteFrom("org_apps")
+            .where("app_did", "=", appDid)
+            .where("org_id", "=", orgId)
+            .returning("app_did")
+            .executeTakeFirst();
+          if (!removed) return false;
+          await trx
+            .insertInto("org_audit")
+            .values({ id: generateId(), org_id: orgId, at, actor, action: "detachApp", details: JSON.stringify({ appDid }) })
             .execute();
           return true;
         });

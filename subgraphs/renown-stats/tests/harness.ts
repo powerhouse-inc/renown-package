@@ -12,6 +12,12 @@ import {
   utils as profileUtils,
 } from "../../../document-models/renown-app-profile/index.js";
 import {
+  actions as orgActions,
+  reducer as orgReducer,
+  renownOrganizationDocumentType,
+  utils as orgUtils,
+} from "../../../document-models/renown-organization/index.js";
+import {
   reducer as statsReducer,
   renownUserStatsDocumentType,
   utils as statsUtils,
@@ -166,10 +172,12 @@ export function fakeReactor() {
   const reducers: Record<string, (doc: PHDocument, action: Action) => PHDocument> = {
     [renownUserStatsDocumentType]: statsReducer as never,
     [renownAppProfileDocumentType]: profileReducer as never,
+    [renownOrganizationDocumentType]: orgReducer as never,
   };
   const creators: Record<string, () => PHDocument> = {
     [renownUserStatsDocumentType]: () => statsUtils.createDocument() as never,
     [renownAppProfileDocumentType]: () => profileUtils.createDocument() as never,
+    [renownOrganizationDocumentType]: () => orgUtils.createDocument() as never,
   };
   return {
     docs,
@@ -185,6 +193,13 @@ export function fakeReactor() {
       docs.set(id, doc);
       return Promise.resolve(doc);
     }),
+    /** An organisation document with id `orgId`, initialised as createOrganization does. */
+    seedOrganization(orgId: string, handle: string, createdBy = OWNER): void {
+      const doc = orgUtils.createDocument() as unknown as PHDocument;
+      docs.set(orgId, { ...doc, header: { ...doc.header, id: orgId } });
+      const init = orgActions.initOrganization({ handle, name: handle, createdBy });
+      docs.set(orgId, orgReducer(docs.get(orgId) as never, init) as unknown as PHDocument);
+    },
     get: vi.fn((id: string) => {
       const doc = docs.get(id);
       return doc ? Promise.resolve(doc) : Promise.reject(new Error(`no document ${id}`));

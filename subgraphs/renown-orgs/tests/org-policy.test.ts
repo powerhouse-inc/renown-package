@@ -39,6 +39,11 @@ describe("OrgPolicy", () => {
     expect(await policy.orgOfApp(APP_A)).toEqual({ orgId: id, frozen: false });
     expect(await policy.orgOfApp(APP_B)).toBeNull();
     expect((await t.store.auditPage(id, 1))[0]).toMatchObject({ action: "attachApp", actor: lower(ALICE), details: { appDid: APP_A } });
+    expect(await policy.attachApp(id, APP_B, lower(ALICE), later)).toBe(true);
+    expect(await policy.detachApp("other", APP_B, lower(ALICE), later)).toBe(false);
+    expect(await policy.detachApp(id, APP_B, lower(ALICE), new Date(later.getTime() + 1000))).toBe(true);
+    expect(await policy.orgOfApp(APP_B)).toBeNull();
+    expect((await t.store.auditPage(id, 1))[0]).toMatchObject({ action: "detachApp", details: { appDid: APP_B } });
     expect(await policy.activeRole(id, BOB.address)).toBe("PUBLISHER");
     expect(await policy.activeRole(id, DAVE.address)).toBeNull();
     expect(await policy.coversApp(id, lower(ALICE), APP_B)).toBe(true);
@@ -61,6 +66,15 @@ describe("OrgPolicy", () => {
     expect(createOrgPolicy(h.relationalDb, "renown.test").orgDid("abc")).toBe("did:web:renown.test:org:abc");
   });
 
+  it("resolves org DIDs of its own host only", () => {
+    const policy = createOrgPolicy(h.relationalDb, "renown.test");
+    expect(policy.orgIdOfDid(" did:web:renown.test:org:abc ")).toBe("abc");
+    expect(policy.orgIdOfDid("did:web:www.renown.id:org:abc")).toBeNull();
+    expect(policy.orgIdOfDid("did:web:evil.example:org:abc")).toBeNull();
+    expect(policy.orgIdOfDid("did:pkh:eip155:1:0x1")).toBeNull();
+    expect(createOrgPolicy(h.relationalDb, "localhost%3A3000").orgIdOfDid("did:web:localhost%3A3000:org:x")).toBe("x");
+  });
+
   it("reads a missing renown-orgs namespace as no organizations", async () => {
     const empty = new Kysely<any>({ dialect: new PGliteDialect(new PGlite()) });
     const db = {
@@ -73,6 +87,8 @@ describe("OrgPolicy", () => {
     expect(await policy.coversApp("o", lower(ALICE), APP_A)).toBe(false);
     expect(await policy.orgSummary("o")).toBeNull();
     expect(await policy.attachApp("o", APP_A, lower(ALICE), T0)).toBe(false);
+    expect(await policy.detachApp("o", APP_A, lower(ALICE), T0)).toBe(false);
+    expect(policy.orgIdOfDid("did:web:renown.test:org:o")).toBe("o");
     await empty.destroy();
   });
 });
