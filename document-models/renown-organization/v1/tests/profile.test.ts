@@ -15,7 +15,6 @@ import {
 } from "document-models/renown-organization/v1";
 
 const ALICE = "0xAbC0000000000000000000000000000000000001";
-const AT = "2026-10-12T12:00:00.000Z";
 const AVATAR = `attachment://v1:${"a".repeat(64)}`;
 
 function errors(d: ReturnType<typeof utils.createDocument>): (string | undefined)[] {
