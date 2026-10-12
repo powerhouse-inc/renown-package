@@ -541,6 +541,19 @@ describe("organisation to person, freezing", () => {
     expect((await t.store.orgOfApp(APP))?.frozen).toBe(true);
   });
 
+  it("leaves the frozen flag alone when the organisation document cannot be read", async () => {
+    const { t, acme } = await orgApp();
+    const freeze = await t.mutate<ProposalOutput>("proposeOrgChange", { orgId: acme.id, kind: "FREEZE_APP", payload: { appDid: APP } }, BOB);
+    const get = vi.spyOn(t.reactor, "get").mockRejectedValueOnce(new Error("reactor down"));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const outcome = await t.mutate<ProposalOutput>("executeOrgProposal", { orgId: acme.id, proposalId: freeze.id }, BOB).catch((e: unknown) => e);
+    errors.mockRestore();
+    get.mockRestore();
+    expect(outcome).not.toMatchObject({ status: "EXECUTED" });
+    expect((await t.store.orgOfApp(APP))?.frozen).toBe(false);
+    expect((await t.store.proposal(freeze.id))?.status).toBe("PENDING");
+  });
+
   it("fails a transfer-out proposal whose app was frozen before it ran", async () => {
     const { t, acme } = await orgApp();
     const out = await t.mutate<ProposalOutput>(

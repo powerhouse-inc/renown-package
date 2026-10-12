@@ -18,6 +18,7 @@ import { handleError, normalizeHandle, orgHandleProblem } from "../core/handles.
 import { iso, isExpiredInvite, organizationOutput, type OrganizationOutput } from "../output.js";
 import type { Area, OrgRuntime } from "../runtime.js";
 import type { MemberRecord, OrgLink, OrgPatch, OrgRecord, OrgSearch, OrgStore } from "../store/types.js";
+import { writeDocument } from "./members.js";
 
 export const MAX_ORGS_PER_CREATOR = 20;
 export const MAX_MEMBERSHIPS_PER_WALLET = 50;
@@ -344,17 +345,13 @@ export const organizationResolvers: Area = (rt) => ({
       const patch = validateProfile(args);
       return rt.lock(`org:${args.orgId}`, async () => {
         const store = rt.store();
-        await requireOrg(store, args.orgId);
+        const before = await requireOrg(store, args.orgId);
         await requireRole(store, args.orgId, caller, "ADMIN");
         // Only after authorisation: the check reveals whether a media object exists.
         if (patch.avatar) await assertAvatar(rt, patch.avatar);
         const now = rt.now();
         const setProfile = profileAction(patch);
         const membersPublic = args.membersPublic ?? undefined;
-        await rt.execute(args.orgId, [
-          ...(setProfile ? [setProfile] : []),
-          ...(membersPublic !== undefined ? [orgActions.setMembersPublic({ membersPublic })] : []),
-        ]);
         const changes: OrgPatch = {
           ...(patch.name !== undefined && { name: patch.name }),
           ...(patch.bio !== undefined && { bio: patch.bio }),
@@ -363,8 +360,24 @@ export const organizationResolvers: Area = (rt) => ({
           ...(patch.links !== undefined && { links: patch.links }),
           ...(membersPublic !== undefined && { membersPublic }),
         };
+        // Store first, then the document; a failed document write undoes the store.
         const org = await store.updateOrganization(args.orgId, changes, now);
         if (!org) throw unavailable();
+        const restore: OrgPatch = {
+          ...(changes.name !== undefined && { name: before.name }),
+          ...(changes.bio !== undefined && { bio: before.bio }),
+          ...(changes.website !== undefined && { website: before.website }),
+          ...(changes.avatarRef !== undefined && { avatarRef: before.avatarRef }),
+          ...(changes.links !== undefined && { links: before.links }),
+          ...(changes.membersPublic !== undefined && { membersPublic: before.membersPublic }),
+        };
+        await writeDocument(
+          rt,
+          "updateOrganization",
+          args.orgId,
+          [...(setProfile ? [setProfile] : []), ...(membersPublic !== undefined ? [orgActions.setMembersPublic({ membersPublic })] : [])],
+          () => store.updateOrganization(args.orgId, restore, before.updatedAt),
+        );
         await rt.record({
           orgId: org.id,
           actor: caller,
@@ -380,12 +393,15 @@ export const organizationResolvers: Area = (rt) => ({
       const caller = await rt.writer(ctx, "setOrgListed", args);
       return rt.lock(`org:${args.orgId}`, async () => {
         const store = rt.store();
-        await requireOrg(store, args.orgId);
+        const before = await requireOrg(store, args.orgId);
         await requireRole(store, args.orgId, caller, "ADMIN");
         const now = rt.now();
-        await rt.execute(args.orgId, [orgActions.setOrgListed({ listed: args.listed })]);
+        // Store first, then the document; a failed document write undoes the store.
         const org = await store.updateOrganization(args.orgId, { listed: args.listed }, now);
         if (!org) throw unavailable();
+        await writeDocument(rt, "setOrgListed", args.orgId, [orgActions.setOrgListed({ listed: args.listed })], () =>
+          store.updateOrganization(args.orgId, { listed: before.listed }, before.updatedAt),
+        );
         await rt.record({
           orgId: org.id,
           actor: caller,

@@ -169,7 +169,8 @@ describe("recovery", () => {
     const p = await t.mutate<ProposalOutput>("startOrgRecovery", { orgId: id, domain: "acme.example", newOwner: CAROL.address }, DAVE);
     t.tick(2 * HOUR);
     expect((await t.mutate<ProposalOutput>("executeOrgProposal", { orgId: id, proposalId: p.id }, DAVE)).status).toBe("EXECUTED");
-    expect(await t.store.openMember(id, lower(CAROL))).toMatchObject({ role: "OWNER", status: "ACTIVE" });
+    // Ruling D1: the stored scope is explicit only; OWNER covers every app by its role.
+    expect(await t.store.openMember(id, lower(CAROL))).toMatchObject({ role: "OWNER", status: "ACTIVE", appScopeAll: false, appDids: [] });
     expect(t.reactor.state<RenownOrganizationState>(id).members.find((m) => m.address === lower(CAROL))).toMatchObject({ role: "OWNER", status: "ACTIVE" });
     await addOwner(t, id, BOB);
     expect((await t.store.members(id, ["ACTIVE"])).filter((m) => m.role === "OWNER")).toHaveLength(3);

@@ -228,6 +228,20 @@ describe("leaving and removal", () => {
     expect((await failure(t.mutate("leaveOrganization", { orgId: id }, BOB))).code).toBe("FORBIDDEN");
   });
 
+  it("members of a taken-down organisation still leave it and decline its invites, but never accept them", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    const bob = await join(t, id, BOB, "MEMBER");
+    const carol = await t.mutate<OrgInviteOutput>("inviteOrgMember", { orgId: id, invitee: CAROL.address, role: "MEMBER" }, ALICE);
+    const dave = await t.mutate<OrgInviteOutput>("inviteOrgMember", { orgId: id, invitee: DAVE.address, role: "MEMBER" }, ALICE);
+    await t.store.updateOrganization(id, { takenDown: true }, T0);
+    expect(await t.mutate("leaveOrganization", { orgId: id }, BOB)).toBe(true);
+    expect(await t.store.member(bob)).toMatchObject({ status: "LEFT" });
+    expect(await t.mutate<OrgMemberOutput>("respondToOrgInvite", { orgId: id, inviteId: carol.id, accept: false }, CAROL)).toMatchObject({ status: "DECLINED" });
+    expect((await failure(t.mutate("respondToOrgInvite", { orgId: id, inviteId: dave.id, accept: true }, DAVE))).code).toBe("FORBIDDEN");
+    expect(await t.store.member(dave.id)).toMatchObject({ status: "INVITED" });
+  });
+
   it("serialises concurrent leaves under the org lock, so one owner always remains", async () => {
     const t = harnessResolvers(h);
     const { id } = await createOrg(t, ALICE, "acme");

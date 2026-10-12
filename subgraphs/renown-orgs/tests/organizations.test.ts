@@ -150,6 +150,23 @@ describe("updateOrganization and setOrgListed", () => {
     expect((await stored.mutate<OrganizationOutput>("updateOrganization", { orgId: id, avatar: AVATAR }, ALICE)).avatar).toBe(AVATAR);
   });
 
+  it("writes the store first: a failed store write leaves the document alone, a failed document write undoes the store", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme", { bio: "Tools" });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const storeWrite = vi.spyOn(t.store, "updateOrganization").mockRejectedValue(new Error("db down"));
+    await expect(t.mutate("updateOrganization", { orgId: id, name: "Acme Labs", membersPublic: true }, ALICE)).rejects.toThrow();
+    await expect(t.mutate("setOrgListed", { orgId: id, listed: true }, ALICE)).rejects.toThrow();
+    storeWrite.mockRestore();
+    expect(t.reactor.state<RenownOrganizationState>(id)).toMatchObject({ name: "ACME", membersPublic: false, listed: false });
+    t.reactor.execute.mockRejectedValueOnce(new Error("reactor down"));
+    expect((await failure(t.mutate("updateOrganization", { orgId: id, name: "Acme Labs", bio: "" }, ALICE))).code).toBe("SERVICE_UNAVAILABLE");
+    t.reactor.execute.mockRejectedValueOnce(new Error("reactor down"));
+    expect((await failure(t.mutate("setOrgListed", { orgId: id, listed: true }, ALICE))).code).toBe("SERVICE_UNAVAILABLE");
+    errors.mockRestore();
+    expect(await t.store.organization(id)).toMatchObject({ name: "ACME", bio: "Tools", listed: false });
+  });
+
   it("refuses non-admins, unknown organizations and archived ones", async () => {
     const t = harnessResolvers(h);
     const { id } = await createOrg(t, ALICE, "acme");

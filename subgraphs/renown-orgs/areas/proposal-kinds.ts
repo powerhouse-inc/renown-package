@@ -280,7 +280,7 @@ const recover: ProposalHandler = {
         address,
         role: "OWNER",
         status: "ACTIVE",
-        appScopeAll: true,
+        appScopeAll: false,
         appDids: [],
         hidden: false,
         invitedBy: null,
@@ -429,10 +429,18 @@ function freezeHandler(frozen: boolean): ProposalHandler {
         const app = await store.orgOfApp(appDid);
         if (!app || app.orgId !== org.id) return "The app no longer belongs to the organization";
         if (app.frozen === frozen) return null;
+        // Read the organisation document before touching the store, so a failed read
+        // changes nothing (SERVICE_UNAVAILABLE puts the proposal back to PENDING).
+        let mirrored: boolean;
+        try {
+          const doc = (await rt.deps.reactorClient.get(org.id)).state as unknown as { global: { apps?: { appDid: string }[] } };
+          // An organisation document that lost its mirror of the app gets it back first.
+          mirrored = (doc.global.apps ?? []).some((a) => a.appDid === appDid);
+        } catch (error) {
+          console.error(`[renown-orgs] proposal.${kind} ${org.id}: could not read the organisation document: ${error instanceof Error ? error.message : String(error)}`);
+          throw unavailable();
+        }
         await store.setAppFrozen(appDid, frozen);
-        // An organisation document that lost its mirror of the app gets it back first.
-        const doc = (await rt.deps.reactorClient.get(org.id)).state as unknown as { global: { apps?: { appDid: string }[] } };
-        const mirrored = (doc.global.apps ?? []).some((a) => a.appDid === appDid);
         await writeDocument(
           rt,
           `proposal.${kind}`,

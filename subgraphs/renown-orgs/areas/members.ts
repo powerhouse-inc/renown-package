@@ -323,7 +323,8 @@ export const memberResolvers: Area = (rt) => ({
       return rt.lock(`org:${args.orgId}`, async () => {
         const store = rt.store();
         const now = rt.now();
-        const org = await requireOrg(store, args.orgId);
+        // Declining works for a taken-down organisation too; accepting needs a writable one.
+        const org = await requireOrg(store, args.orgId, args.accept ? {} : { writable: false });
         const invite = await store.member(args.inviteId);
         if (!invite || invite.orgId !== org.id || invite.address !== caller) throw notFound("Invite");
         if (invite.status !== "INVITED") throw badInput("inviteId", `The invite is ${invite.status}`);
@@ -500,7 +501,8 @@ export const memberResolvers: Area = (rt) => ({
       return rt.lock(`org:${args.orgId}`, async () => {
         const store = rt.store();
         const now = rt.now();
-        const org = await requireOrg(store, args.orgId);
+        // Leaving works for a taken-down organisation too (its memberships count toward the cap).
+        const org = await requireOrg(store, args.orgId, { writable: false });
         const member = await requireRole(store, org.id, caller, "MEMBER");
         await endMembership(rt, member, "LEFT", caller, now);
         await rt.record({
