@@ -404,6 +404,18 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect(await store.deleteDomain("d2")).toBe(false);
       expect(await store.domain("d2")).toBeUndefined();
     });
+
+    it("suspends credentials once per organisation and lifts suspensions", async () => {
+      const { store } = await open();
+      const row = (credentialId: string, orgId = "o1") => ({ orgId, credentialId, reason: "ADMIN", memberAddress: null, at: T0 });
+      expect(await store.suspendCredentials([row("c1"), row("c2")])).toEqual(["c1", "c2"]);
+      expect(await store.suspendCredentials([row("c2"), row("c3"), row("c1", "o2")])).toEqual(["c3", "c1"]);
+      expect(await store.suspendedCredentialIds("o1")).toEqual(["c1", "c2", "c3"]);
+      expect(await store.credentialSuspension("o2", "c1")).toEqual(row("c1", "o2"));
+      expect(await store.credentialSuspension("o2", "c2")).toBeUndefined();
+      expect(await store.unsuspendCredential("o1", "c2")).toBe(true);
+      expect(await store.unsuspendCredential("o1", "c2")).toBe(false);
+      expect(await store.suspendedCredentialIds("o1")).toEqual(["c1", "c3"]);
+    });
   });
 }
-

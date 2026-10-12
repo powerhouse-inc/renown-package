@@ -141,4 +141,48 @@ export const WORKLOADS_SDL = `
   }
 `;
 
-export const SECURITY_SDL = [PROPOSALS_SDL, DOMAINS_SDL, WORKLOADS_SDL].join("\n");
+export const CREDENTIALS_SDL = `
+  enum OrgCredentialReason {
+    ISSUER_NOT_MEMBER
+    ISSUER_NOT_PUBLISHER
+    SUSPENDED
+    APP_FROZEN
+  }
+
+  type OrgCredentialStatus {
+    credentialId: String!
+    appDid: String
+    orgId: String
+    "Whether organisation rules let the delegation count (revocation and expiry are reported by renownCredentials)."
+    counts: Boolean!
+    reason: OrgCredentialReason
+  }
+
+  type OrgCredential {
+    credentialId: String!
+    documentId: String!
+    appDid: String!
+    issuer: String!
+    issuerRole: OrgRole
+    issuerStatus: OrgMemberStatus
+    issuanceDate: String!
+    expirationDate: String
+    revoked: Boolean!
+    status: OrgCredentialStatus!
+  }
+
+  extend type Query {
+    "Admins: delegations for the organisation's apps (newest 500)."
+    orgCredentials(orgId: String!, auth: OrgAuthInput): [OrgCredential!]!
+    "Public: whether a delegation credential counts under organisation rules; null for an unknown credential."
+    orgCredentialStatus(credentialId: String!): OrgCredentialStatus
+  }
+
+  extend type Mutation {
+    "Admins: exactly one of credentialIds and memberAddress (all of that member's live delegations for org apps)."
+    suspendOrgCredentials(orgId: String!, credentialIds: [String!], memberAddress: String, auth: OrgAuthInput): [String!]!
+    unsuspendOrgCredential(orgId: String!, credentialId: String!, auth: OrgAuthInput): Boolean!
+  }
+`;
+
+export const SECURITY_SDL = [PROPOSALS_SDL, DOMAINS_SDL, WORKLOADS_SDL, CREDENTIALS_SDL].join("\n");

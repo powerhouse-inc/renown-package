@@ -86,6 +86,16 @@ export interface OrgAppsTable {
   added_at: Timestamp;
 }
 
+/** A2: delegation credentials an organisation suspended (they stop counting under org rules). */
+export interface OrgCredentialSuspensionsTable {
+  org_id: string;
+  credential_id: string;
+  /** ADMIN, MEMBER_LEFT or MEMBER_REMOVED. */
+  reason: string;
+  member_address: string | null;
+  at: Timestamp;
+}
+
 export interface OrgDomainsTable {
   id: string;
   org_id: string;
@@ -198,6 +208,7 @@ export interface OrgsDB {
   org_used_signatures: OrgUsedSignaturesTable;
   org_proposals: OrgProposalsTable;
   org_jobs: OrgJobsTable;
+  org_credential_suspensions: OrgCredentialSuspensionsTable;
 }
 
 export type OrgsKysely = Kysely<OrgsDB>;
@@ -278,6 +289,15 @@ export interface OrgAppRecord {
   orgId: string;
   frozen: boolean;
   addedAt: Date;
+}
+
+export interface SuspensionRecord {
+  orgId: string;
+  credentialId: string;
+  /** ADMIN, MEMBER_LEFT or MEMBER_REMOVED. */
+  reason: string;
+  memberAddress: string | null;
+  at: Date;
 }
 
 export interface DomainRecord {
@@ -368,6 +388,13 @@ export interface OrgStore {
   revokeInviteLink(id: string): Promise<void>;
   orgApps(orgId: string): Promise<OrgAppRecord[]>;
   orgOfApp(appDid: string): Promise<OrgAppRecord | undefined>;
+  /** Inserts suspensions not present yet; returns the newly suspended credential ids, in input order. */
+  suspendCredentials(rows: readonly SuspensionRecord[]): Promise<string[]>;
+  /** Lifts a suspension; false when there was none. */
+  unsuspendCredential(orgId: string, credentialId: string): Promise<boolean>;
+  credentialSuspension(orgId: string, credentialId: string): Promise<SuspensionRecord | undefined>;
+  /** Suspended credential ids of `orgId`, sorted. */
+  suspendedCredentialIds(orgId: string): Promise<string[]>;
   verifiedDomains(orgIds: readonly string[]): Promise<Map<string, string[]>>;
   insertDomain(domain: DomainRecord): Promise<void>;
   domain(id: string): Promise<DomainRecord | undefined>;

@@ -8,6 +8,7 @@ import type {
   MemberPatch,
   MemberRecord,
   OrgAppRecord,
+  SuspensionRecord,
   OrganizationsTable,
   OrgInviteLinksTable,
   OrgLink,
@@ -548,6 +549,51 @@ export class KyselyOrgStore implements OrgStore {
   async orgOfApp(appDid: string): Promise<OrgAppRecord | undefined> {
     const row = await this.db.selectFrom("org_apps").selectAll().where("app_did", "=", appDid).executeTakeFirst();
     return row && { appDid: row.app_did, orgId: row.org_id, frozen: row.frozen, addedAt: toDate(row.added_at) };
+  }
+
+  async suspendCredentials(rows: readonly SuspensionRecord[]): Promise<string[]> {
+    const added: string[] = [];
+    for (const row of rows) {
+      const inserted = await this.db
+        .insertInto("org_credential_suspensions")
+        .values({ org_id: row.orgId, credential_id: row.credentialId, reason: row.reason, member_address: row.memberAddress, at: row.at })
+        .onConflict((oc) => oc.columns(["org_id", "credential_id"]).doNothing())
+        .returning("credential_id")
+        .executeTakeFirst();
+      if (inserted) added.push(inserted.credential_id);
+    }
+    return added;
+  }
+
+  async unsuspendCredential(orgId: string, credentialId: string): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom("org_credential_suspensions")
+      .where("org_id", "=", orgId)
+      .where("credential_id", "=", credentialId)
+      .executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
+  }
+
+  async credentialSuspension(orgId: string, credentialId: string): Promise<SuspensionRecord | undefined> {
+    const row = await this.db
+      .selectFrom("org_credential_suspensions")
+      .selectAll()
+      .where("org_id", "=", orgId)
+      .where("credential_id", "=", credentialId)
+      .executeTakeFirst();
+    return (
+      row && { orgId: row.org_id, credentialId: row.credential_id, reason: row.reason, memberAddress: row.member_address, at: toDate(row.at) }
+    );
+  }
+
+  async suspendedCredentialIds(orgId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom("org_credential_suspensions")
+      .select("credential_id")
+      .where("org_id", "=", orgId)
+      .orderBy("credential_id")
+      .execute();
+    return rows.map((row) => row.credential_id);
   }
 
   async verifiedDomains(orgIds: readonly string[]): Promise<Map<string, string[]>> {

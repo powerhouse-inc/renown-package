@@ -2,6 +2,7 @@ import { sql } from "kysely";
 import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
 import type { DB as RenownCredentialDB } from "../../processors/renown-credential/schema.js";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
+import type { OrgPolicy } from "../renown-orgs/core/org-policy.js";
 import type { WorkloadDB } from "../renown-workload/store/types.js";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
@@ -9,26 +10,26 @@ import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js"
 /**
  * True when `address` holds an unrevoked, unexpired Renown credential
  * delegating to `appDid`: the same fact the host checks before it accepts a
- * bearer issued by `appDid` for `address`.
+ * bearer issued by `appDid` for `address`. With `policy`, only a credential
+ * that counts under organisation rules qualifies (derived revocation for org
+ * apps; person apps always count). Throws when a read fails.
  */
 export async function hasDelegation(
   db: ReadModelDb,
   address: string,
   appDid: string,
   now: Date,
+  policy?: Pick<OrgPolicy, "credentialStatus">,
 ): Promise<boolean> {
-  const row = await RenownCredentialProcessor.query<RenownCredentialDB>(
+  const issuer = address.toLowerCase();
+  const rows = await RenownCredentialProcessor.query<RenownCredentialDB>(
     "renown-credential",
     db,
   )
     .selectFrom("renown_credential")
-    .select("document_id")
+    .select("credential_id")
     .where((eb) =>
-      eb(
-        eb.fn("LOWER", ["issuer_ethereum_address"]),
-        "=",
-        address.toLowerCase(),
-      ),
+      eb(eb.fn("LOWER", ["issuer_ethereum_address"]), "=", issuer),
     )
     .where("credential_subject_id", "=", appDid)
     .where("revoked", "=", false)
@@ -38,8 +39,13 @@ export async function hasDelegation(
         eb("expiration_date", ">", now),
       ]),
     )
-    .executeTakeFirst();
-  return row !== undefined;
+    .execute();
+  if (rows.length === 0) return false;
+  if (!policy) return true;
+  for (const credentialId of new Set(rows.map((row) => row.credential_id))) {
+    if ((await policy.credentialStatus({ credentialId, appDid, issuer })).counts) return true;
+  }
+  return false;
 }
 
 /** The relational namespace renown-workload keeps its identities in (read-only here). */

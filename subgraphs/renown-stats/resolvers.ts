@@ -62,7 +62,6 @@ import {
   hasDelegation,
   identityCount,
   workloadIdentityOwner,
-  workloadOwner,
   type ContributorProfile,
 } from "./lookups.js";
 import type {
@@ -375,16 +374,6 @@ export function createResolvers(
     console.warn(`[renown-stats] ${what} failed (${reason}); refusing`);
   }
 
-  /** The lowercase owner of the registered workload identity `appDid`; undefined if none or on error. */
-  async function ownerOf(appDid: string): Promise<string | undefined> {
-    try {
-      return await workloadOwner(relationalDb, appDid);
-    } catch (error) {
-      warn("workload identity lookup", error);
-      return undefined;
-    }
-  }
-
   /** The owner (address and organisation) of the registered workload identity `appDid`; undefined if none or on error. */
   async function identityOwnerOf(appDid: string) {
     try {
@@ -455,16 +444,27 @@ export function createResolvers(
   }
 
   /**
-   * True when `address` may act as `appDid`: `appDid` is a registered workload
-   * identity owned by `address`, and `address` holds a live delegation to it.
-   * A delegation alone proves nothing (anyone can self-publish one to any
-   * did:key). Never throws.
+   * True when `address` may act as `appDid`: `appDid` is a registered
+   * workload identity, owned by `address` (person) or by an organisation
+   * whose rules let `address` publish it (coversApp), and `address` holds a
+   * live delegation to it. A delegation alone proves nothing (anyone can
+   * self-publish one to any did:key). For org identities the delegation must
+   * also count under organisation rules (spec 3.7), and any organisation read
+   * failure refuses (fail closed); person identities never read organisation
+   * data, so an organisation outage cannot affect them. Never throws.
    */
   async function actsFor(address: string, appDid: string): Promise<boolean> {
-    const owner = await ownerOf(appDid);
-    if (owner === undefined || owner !== address.toLowerCase()) return false;
+    const caller = address.toLowerCase();
+    const identity = await identityOwnerOf(appDid);
+    if (!identity) return false;
     try {
-      return await hasDelegation(relationalDb, address, appDid, now());
+      if (identity.ownerOrgId === null) {
+        if (identity.ownerAddress !== caller) return false;
+        return await hasDelegation(relationalDb, caller, appDid, now());
+      }
+      const policy = orgPolicy();
+      if (!(await policy.coversApp(identity.ownerOrgId, caller, appDid))) return false;
+      return await hasDelegation(relationalDb, caller, appDid, now(), policy);
     } catch (error) {
       warn("delegation lookup", error);
       return false;

@@ -265,3 +265,41 @@ export async function addOwner(t: TestResolvers, orgId: string, who: Account): P
   t.tick(TEST_CONFIG.timelockSeconds * 1000);
   await t.resolvers.Mutation.executeOrgProposal(null, { orgId, proposalId: p.id }, proposerCtx);
 }
+
+/** A delegation credential row from `issuer` to `appDid`, as the renown-credential processor writes it. */
+export async function insertCredential(
+  h: Harness,
+  row: { credentialId: string; issuer: string; appDid: string; revoked?: boolean; expiresAt?: Date | null; issuedAt?: Date },
+): Promise<void> {
+  await h.root
+    .withSchema(CRED_NS)
+    .insertInto("renown_credential")
+    .values({
+      document_id: `doc-${row.credentialId}`,
+      context: "[]",
+      credential_id: row.credentialId,
+      type: "[]",
+      issuer_id: `did:pkh:eip155:1:${row.issuer}`,
+      issuer_ethereum_address: row.issuer,
+      issuance_date: row.issuedAt ?? T0,
+      expiration_date: row.expiresAt === undefined ? new Date("2027-10-12T00:00:00Z") : row.expiresAt,
+      credential_subject_id: row.appDid,
+      credential_subject_app: "test-app",
+      credential_status_id: null,
+      credential_status_type: null,
+      credential_schema_id: "schema",
+      credential_schema_type: "type",
+      proof_verification_method: "method",
+      proof_ethereum_address: row.issuer,
+      proof_created: T0,
+      proof_purpose: "assertionMethod",
+      proof_type: "EthereumEip712Signature2021",
+      proof_value: "0x",
+      proof_eip712_domain: "{}",
+      proof_eip712_primary_type: "VerifiableCredential",
+      revoked: row.revoked ?? false,
+      revoked_at: null,
+      revocation_reason: null,
+    })
+    .execute();
+}

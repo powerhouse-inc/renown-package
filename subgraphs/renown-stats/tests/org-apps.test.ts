@@ -6,7 +6,7 @@ import { createOrgPolicy, type OrgPolicy } from "../../renown-orgs/core/org-poli
 import { KyselyOrgStore } from "../../renown-orgs/store/kysely.js";
 import { migrate as migrateOrgs } from "../../renown-orgs/store/migrations.js";
 import { memberRecord, org } from "../../renown-orgs/tests/store-contract.js";
-import { failure, harnessResolvers, OWNER, openHarness, registerApp, relayed, resetHarness, WORKLOAD_NS, type Harness } from "./harness.js";
+import { CRED_NS, failure, harnessResolvers, OWNER, openHarness, registerApp, relayed, resetHarness, WORKLOAD_NS, type Harness } from "./harness.js";
 
 const APP = "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
 const PERSON_APP = "did:key:zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169";
@@ -32,7 +32,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await resetHarness(h);
-  for (const table of ["organizations", "org_members", "org_apps", "org_audit", "org_domains"] as const) await orgs.db.deleteFrom(table).execute();
+  for (const table of ["organizations", "org_members", "org_apps", "org_audit", "org_domains", "org_credential_suspensions"] as const) await orgs.db.deleteFrom(table).execute();
   await orgs.insertOrganization(org("o1", "acme", { name: "Acme" }));
   await orgs.insertMember(memberRecord("m-owner", "o1", OWNER, { role: "OWNER", appScopeAll: true }));
   await orgs.insertMember(memberRecord("m-bob", "o1", BOB, { role: "PUBLISHER", appDids: [APP] }));
@@ -274,5 +274,67 @@ describe("org-owned apps", () => {
       [GLOBEX_APP, "o2", [], true],
       [APP, "o1", ["a.acme.example", "b.acme.example"], false],
     ]);
+  });
+});
+
+/** A copy of OWNER's delegation to `appDid`, issued by `issuer` as `credentialId`. */
+async function delegate(issuer: string, appDid: string, credentialId: string) {
+  const source = await h.root.withSchema(CRED_NS).selectFrom("renown_credential").selectAll().where("credential_subject_id", "=", appDid).executeTakeFirstOrThrow();
+  await h.root
+    .withSchema(CRED_NS)
+    .insertInto("renown_credential")
+    .values({ ...source, document_id: `doc-${credentialId}`, credential_id: credentialId, issuer_ethereum_address: issuer, proof_ethereum_address: issuer, created_at: undefined, updated_at: undefined })
+    .execute();
+}
+
+describe("delegations of org apps", () => {
+  const userDid = "did:pkh:eip155:1:0x1111111111111111111111111111111111111111";
+
+  it("count for covered publishers only, and never for a frozen app", async () => {
+    await registerApps();
+    await orgs.db.insertInto("org_apps").values({ app_did: APP, org_id: "o1", frozen: false, added_at: new Date() }).execute();
+    const t = setup();
+    const report = { appDid: APP, userDid, metric: "notes", value: 1 };
+    expect(await t.report(report)).toBe(true);
+    await orgs.db.updateTable("org_members").set({ status: "REMOVED" }).where("address", "=", OWNER).execute();
+    expect((await failure(t.report(report))).code).toBe("FORBIDDEN");
+    await orgs.db.updateTable("org_members").set({ status: "ACTIVE" }).where("address", "=", OWNER).execute();
+    await orgs.db.updateTable("org_apps").set({ frozen: true }).execute();
+    expect((await failure(t.report(report))).code).toBe("FORBIDDEN");
+  });
+
+  it("let any covered publisher act for an org workload, never an uncovered one or a suspended delegation", async () => {
+    await registerApps();
+    await orgs.db.insertInto("org_apps").values({ app_did: APP, org_id: "o1", frozen: false, added_at: new Date() }).execute();
+    await delegate(BOB, APP, "c-bob");
+    await delegate(CAROL, APP, "c-carol");
+    const t = setup();
+    const as = (address: string) =>
+      (t.resolvers as unknown as { Mutation: Record<string, (p: unknown, a: unknown, c: unknown) => Promise<boolean>> }).Mutation.reportUserStat(
+        null,
+        { appDid: APP, userDid, metric: "notes", value: 1 },
+        { user: { address, appKey: APP } },
+      );
+    expect(await as(BOB)).toBe(true);
+    expect((await failure(as(CAROL))).code).toBe("FORBIDDEN");
+    await orgs.suspendCredentials([{ orgId: "o1", credentialId: "c-bob", reason: "ADMIN", memberAddress: null, at: new Date() }]);
+    expect((await failure(as(BOB))).code).toBe("FORBIDDEN");
+  });
+
+  it("fail closed for org apps and leave person apps alone when organisations cannot be read", async () => {
+    await registerApps();
+    await orgs.db.insertInto("org_apps").values({ app_did: APP, org_id: "o1", frozen: false, added_at: new Date() }).execute();
+    const down = new Error("connection refused");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const t = setup((policy) => ({
+      ...policy,
+      coversApp: () => Promise.reject(down),
+      credentialStatus: () => Promise.reject(down),
+      orgOfApp: () => Promise.reject(down),
+    }));
+    expect((await failure(t.report({ appDid: APP, userDid, metric: "notes", value: 1 }))).code).toBe("FORBIDDEN");
+    expect(await t.report({ appDid: PERSON_APP, userDid, metric: "notes", value: 1 })).toBe(true);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("connection refused"));
+    warn.mockRestore();
   });
 });

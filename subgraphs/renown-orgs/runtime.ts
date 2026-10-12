@@ -9,6 +9,7 @@ import { createKeyedLock } from "../renown-stats/core/keyed-lock.js";
 import { createActivityRecorder, type ActivitySink, type OrgActivity } from "./core/activity.js";
 import { provenAddress, requireAddress, type OrgArgs, type OrgContext } from "./core/auth.js";
 import type { OrgsConfig } from "./core/config.js";
+import { createOrgPolicy, type OrgPolicy } from "./core/org-policy.js";
 import { badInput, forbidden, rateLimited, unavailable } from "./core/errors.js";
 import { nodeNetDeps, type NetDeps } from "./core/net.js";
 import type { OrgStore } from "./store/types.js";
@@ -86,6 +87,8 @@ export interface OrgRuntime {
   /** Applies `actions` to a document; a rejected operation is BAD_USER_INPUT (field "document"). */
   execute(documentId: string, actions: Action[]): Promise<void>;
   record(activity: OrgActivity): Promise<void>;
+  /** Organisation rules as other subgraphs see them (credential status), over relationalDb; created once. */
+  policy(): OrgPolicy;
   readonly hooks: { membershipEnded: ((event: MembershipEnded) => Promise<void>)[] };
 }
 
@@ -122,6 +125,7 @@ export function createRuntime(deps: OrgsResolverDeps): OrgRuntime {
     return current;
   };
   const record = createActivityRecorder({ store, newId, sinks: deps.sinks ?? [] });
+  let policy: OrgPolicy | undefined;
 
   return {
     deps,
@@ -170,6 +174,7 @@ export function createRuntime(deps: OrgsResolverDeps): OrgRuntime {
       if (failed?.error) throw badInput("document", `${failed.action.type} failed: ${failed.error}`);
     },
     record,
+    policy: () => (policy ??= createOrgPolicy(deps.relationalDb, deps.config().didHost)),
     hooks: { membershipEnded: [...(deps.membershipHooks ?? [])] },
   };
 }

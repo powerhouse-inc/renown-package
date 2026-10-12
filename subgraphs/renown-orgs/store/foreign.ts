@@ -1,12 +1,14 @@
 import type { IRelationalDb } from "@powerhousedao/reactor-browser";
+import { RenownCredentialProcessor } from "../../../processors/renown-credential/index.js";
+import type { DB as RenownCredentialDB } from "../../../processors/renown-credential/schema.js";
 import type { ReadModelDb } from "../../renown-auth/lookups.js";
 import type { WorkloadDB } from "../../renown-workload/store/types.js";
 import { toDate } from "./kysely.js";
 
 /**
  * Reads and writes of other subgraphs' namespaces done on behalf of
- * organisations (renown-workload here; later tasks add renown-stats and the
- * credential read model).
+ * organisations: renown-workload identities and the renown-credential
+ * delegation read model.
  *
  * `queryNamespace` is read-only on the host (selectFrom/selectNoFrom/with/
  * withRecursive only), so every write goes through a memoized
@@ -94,4 +96,88 @@ export async function setWorkloadDisabled(
     .returning(WORKLOAD_COLUMNS)
     .executeTakeFirst();
   return row && toWorkload(row);
+}
+
+export interface CredentialRow {
+  credentialId: string;
+  documentId: string;
+  /** credential_subject_id: the delegated app key. */
+  appDid: string;
+  /** Lowercase issuer address. */
+  issuer: string;
+  issuanceDate: Date;
+  expirationDate: Date | null;
+  revoked: boolean;
+}
+
+function credentials(db: ReadModelDb) {
+  return RenownCredentialProcessor.query<RenownCredentialDB>("renown-credential", db).selectFrom("renown_credential");
+}
+
+const CREDENTIAL_COLUMNS = [
+  "credential_id",
+  "document_id",
+  "credential_subject_id",
+  "issuer_ethereum_address",
+  "issuance_date",
+  "expiration_date",
+  "revoked",
+] as const;
+
+function toCredential(row: {
+  credential_id: string;
+  document_id: string;
+  credential_subject_id: string | null;
+  issuer_ethereum_address: string;
+  issuance_date: Date | string;
+  expiration_date: Date | string | null;
+  revoked: boolean;
+}): CredentialRow {
+  return {
+    credentialId: row.credential_id,
+    documentId: row.document_id,
+    appDid: row.credential_subject_id ?? "",
+    issuer: row.issuer_ethereum_address.toLowerCase(),
+    issuanceDate: toDate(row.issuance_date),
+    expirationDate: row.expiration_date === null ? null : toDate(row.expiration_date),
+    revoked: row.revoked,
+  };
+}
+
+/** A credential by VC id: a live copy first, then the oldest. */
+export async function credentialById(db: ReadModelDb, credentialId: string): Promise<CredentialRow | undefined> {
+  const row = await credentials(db)
+    .select([...CREDENTIAL_COLUMNS])
+    .where("credential_id", "=", credentialId)
+    .orderBy("revoked", "asc")
+    .orderBy("created_at", "asc")
+    .executeTakeFirst();
+  return row && toCredential(row);
+}
+
+/** Delegations to any of `appDids`, newest first, at most `limit`. */
+export async function credentialsForApps(db: ReadModelDb, appDids: readonly string[], limit: number): Promise<CredentialRow[]> {
+  if (appDids.length === 0) return [];
+  const rows = await credentials(db)
+    .select([...CREDENTIAL_COLUMNS])
+    .where("credential_subject_id", "in", [...appDids])
+    .orderBy("issuance_date", "desc")
+    .orderBy("credential_id", "desc")
+    .limit(limit)
+    .execute();
+  return rows.map(toCredential);
+}
+
+/** Unrevoked, unexpired delegations by `issuer` to any of `appDids`. */
+export async function liveCredentialsOf(db: ReadModelDb, issuer: string, appDids: readonly string[], now: Date): Promise<CredentialRow[]> {
+  if (appDids.length === 0) return [];
+  const rows = await credentials(db)
+    .select([...CREDENTIAL_COLUMNS])
+    .where((eb) => eb(eb.fn("LOWER", ["issuer_ethereum_address"]), "=", issuer.toLowerCase()))
+    .where("credential_subject_id", "in", [...appDids])
+    .where("revoked", "=", false)
+    .where((eb) => eb.or([eb("expiration_date", "is", null), eb("expiration_date", ">", now)]))
+    .orderBy("credential_id")
+    .execute();
+  return rows.map(toCredential);
 }

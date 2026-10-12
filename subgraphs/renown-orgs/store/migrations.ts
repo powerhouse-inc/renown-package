@@ -210,4 +210,15 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .execute();
   // A2: when the sweeper last examined a proposal without progressing it (fair batching).
   await db.schema.alterTable("org_proposals").addColumn("checked_at", "timestamptz", (col) => col.ifNotExists()).execute();
+  // A2: delegation credentials suspended by an organisation (admin action or a member's exit).
+  await db.schema
+    .createTable("org_credential_suspensions")
+    .ifNotExists()
+    .addColumn("org_id", "text", (col) => col.notNull())
+    .addColumn("credential_id", "text", (col) => col.notNull())
+    .addColumn("reason", "text", (col) => col.notNull())
+    .addColumn("member_address", "text")
+    .addColumn("at", "timestamptz", (col) => col.notNull())
+    .addPrimaryKeyConstraint("org_credential_suspensions_pk", ["org_id", "credential_id"])
+    .execute();
 }
