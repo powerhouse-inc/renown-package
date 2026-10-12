@@ -34,7 +34,7 @@ Order: A → B → C, each staging first, then main/prod. B and C only call A's 
 
 | Capability | member | publisher | admin | owner |
 |---|---|---|---|---|
-| Listed in OIDC `orgs` claim; sees private member list and audit-free org data | ✓ | ✓ | ✓ | ✓ |
+| Listed in OIDC `orgs` claim; sees the private member list | ✓ | ✓ | ✓ | ✓ |
 | Edit app profiles of org apps in scope; delegate app keys for them; sign release attestations; operate Vetra envs/apps in scope | | ✓ | ✓ | ✓ |
 | Edit org profile; invite, change role (up to `publisher`) and remove members/publishers; teams; app scopes; domains; webhooks; org OIDC clients; suspend credentials; accept app transfers in; read audit log | | | ✓ | ✓ |
 | Promote to/demote `admin`; propose and approve high-risk changes (§3.5); cancel proposals | | | | ✓ |
@@ -57,7 +57,7 @@ Kinds: `ADD_OWNER` (promote an active member), `REMOVE_OWNER` (demote to admin o
 
 - **Threshold** = `min(2, ownerCount)` owner approvals (`RECOVER`: 0). The proposer's own approval counts.
 - **Delay** (`executableAt = max(createdAt + delay, time threshold reached)`): 48 h (`RENOWN_ORG_TIMELOCK_SECONDS`, default 172800) for `ADD_OWNER`, `REMOVE_OWNER`, `TRANSFER_APP_OUT`, `CHANGE_HANDLE` and `DELETE_ORG`; 7 days (`RENOWN_ORG_RECOVERY_SECONDS`, default 604800) for `RECOVER`; 0 for `FREEZE_APP` and `UNFREEZE_APP`, which therefore run once approved.
-- **Cancellation.** Any owner (`RECOVER`: any owner; proposer withdrawal for others) cancels before execution. Proposals expire 14 days after `createdAt` if not executed.
+- **Cancellation.** Any owner cancels a pending proposal before execution; a proposer may always withdraw their own. Proposals expire 14 days after `createdAt` if not executed.
 - **Execution.** `executeOrgProposal` (any owner or the proposer), or the store sweeper (every 60 s), runs matured proposals. Execution re-validates preconditions (e.g. the member is still active, the app is still owned) and marks the proposal `FAILED` with a reason otherwise.
 - **Single-owner orgs.** The threshold is 1 and the delay still applies. UI and API (`organization.securityWarnings`) flag `SINGLE_OWNER` until a second owner exists.
 - Every proposal state change notifies all owners (§3.10).
@@ -153,7 +153,7 @@ Kinds: `ADD_OWNER` (promote an active member), `REMOVE_OWNER` (demote to admin o
   - `org_proposals(id, org_id, kind, payload, proposer, approvals jsonb, status PENDING|EXECUTED|CANCELLED|EXPIRED|FAILED, threshold, created_at, executable_at, executed_at, reason)`;
   - `org_domains(id, org_id, domain unique-when-verified, token, status, verified_at, last_checked_at, failures)`;
   - `org_app_transfers(id, app_did, from_kind, from_id, to_kind, to_id, status, created_at, decided_at)`;
-  - `org_credential_suspensions(org_id, credential_id, reason, at)`, `org_frozen_apps` (via `organizations` apps table `org_apps(org_id, app_did, frozen, added_at)`);
+  - `org_credential_suspensions(org_id, credential_id, reason, at)`, `org_apps(org_id, app_did unique, frozen, added_at)`;
   - `org_webhooks`, `org_webhook_deliveries`, `org_notifications`, `org_reports`, `org_audit`, `org_release_attestations(id, app_did, version, artifact_digest, org_id, signer, signer_role, issued_at, signature, created_at)`, `org_oidc_clients(client_id, org_id)`, `reserved_handles(handle, until, reason)`.
 - **Authentication for writes.** Same patterns as renown-auth:
   - either a host-resolved `ctx.user.address` (bearer), or a signed-message `auth: {address, signature, timestamp}`;
