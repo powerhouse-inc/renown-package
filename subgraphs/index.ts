@@ -4,6 +4,7 @@
  */
 export * as RenownAuthSubgraph from "./renown-auth/index.js";
 export * as RenownOidcSubgraph from "./renown-oidc/index.js";
+export * as RenownOrgsSubgraph from "./renown-orgs/index.js";
 export * as RenownReadModelSubgraph from "./renown-read-model/index.js";
 export * as RenownStatsSubgraph from "./renown-stats/index.js";
 export * as RenownUserSubgraph from "./renown-user/index.js";
