@@ -16,11 +16,17 @@
 - The process timezone must be UTC (`TZ=UTC`).
 - The reverse proxy must overwrite `X-Forwarded-For` (not append to a client-supplied value): the rate limiter keys on its first hop, so a spoofable header lets callers dodge the limits.
 - New dependency: `tldts` (registrable-domain handle claims). Run `pnpm install` before building.
+- Run a single switchboard replica per tenant. The `org:`, `app:` and `handle:` locks are in-process; with several replicas, serialisation falls back to the database constraints (handles, the one-pending-transfer rule, `org_apps.app_did`), which do not cover membership caps, owner counts or proposals.
 - The `renown-oidc` subgraph must be registered on the same switchboard host: org-owned clients and the `orgs` scope/claim read its namespace.
 
 ## Order
 
 1. Merge into `staging`, release on the staging channel, deploy the staging tenant with the variables above.
 2. Run `node scripts/smoke/organisations.ts` against staging (it needs no secrets); it must end with `all checks passed`. Smoke orgs (`smoke-<random>`, unlisted) accumulate and stay.
+   After the first deploy, restart the switchboard once and re-run the smoke script: migrations run on every boot, and only a second boot proves they are idempotent on the tenant's real (hashed) namespaces.
 3. Give renown.id (B) and Vetra (C) the API contract (appendix of the A1 plan, `subgraphs/renown-orgs/tests/api-contract.test.ts`); they go to staging next.
 4. Only after B and C pass on staging: promote `staging` to `main`, release, deploy prod (`RENOWN_ORG_DID_HOST` unset), then run `BASE=<prod switchboard> node scripts/smoke/organisations.ts --allow-prod` (read-only).
+
+## Known limitations
+
+- A second publisher of the same organisation who re-registers an org app's workload identity gets `CONFLICT`: renown-workload's same-owner check compares the registering address only, not the owning organisation. The same applies to an app transferred into an organisation, which keeps its original person as the registered owner address. Sub-project C's create/re-register flow must expect this until the check also accepts a covered publisher of the owning org.
