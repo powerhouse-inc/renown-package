@@ -483,7 +483,7 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
         orgId: "o1",
         signer,
         signerRole: "PUBLISHER" as const,
-        issuedAt: createdAt,
+        issuedAt: createdAt.toISOString(),
         signature: "0xsig",
         createdAt,
       });

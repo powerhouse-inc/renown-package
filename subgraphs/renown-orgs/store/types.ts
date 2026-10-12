@@ -257,7 +257,8 @@ export interface OrgReleaseAttestationsTable {
   /** Lowercase. */
   signer: string;
   signer_role: OrgRole | null;
-  issued_at: Timestamp;
+  /** Exactly as signed (ISO-8601 text, never normalised). */
+  issued_at: string;
   signature: string;
   created_at: Timestamp;
 }
@@ -439,8 +440,8 @@ export interface AttestationRecord {
   signer: string;
   /** The signer's role when the attestation was accepted; null for person-owned apps. */
   signerRole: OrgRole | null;
-  /** As signed (the client's clock). */
-  issuedAt: Date;
+  /** Exactly as signed (the client's clock, ISO-8601 text): /verify re-checks the signature over it. */
+  issuedAt: string;
   signature: string;
   /** When renown-orgs accepted it. */
   createdAt: Date;

@@ -271,7 +271,7 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("org_id", "text", (col) => col.notNull())
     .addColumn("signer", "text", (col) => col.notNull())
     .addColumn("signer_role", "text")
-    .addColumn("issued_at", "timestamptz", (col) => col.notNull())
+    .addColumn("issued_at", "text", (col) => col.notNull())
     .addColumn("signature", "text", (col) => col.notNull())
     .addColumn("created_at", "timestamptz", (col) => col.notNull())
     .execute();

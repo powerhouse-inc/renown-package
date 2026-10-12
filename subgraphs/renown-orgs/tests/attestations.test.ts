@@ -1,5 +1,6 @@
+import { verifyTypedData } from "viem";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { RELEASE_DOMAIN, RELEASE_PRIMARY_TYPE, RELEASE_TYPES, type ReleaseMessage } from "../../../sdk/orgs.js";
+import { RELEASE_DOMAIN, RELEASE_PRIMARY_TYPE, RELEASE_TYPES, releaseTypedData, type ReleaseMessage } from "../../../sdk/orgs.js";
 import { ATTESTATION_MAX_AGE_MS, ATTESTATION_FUTURE_SKEW_MS } from "../areas/attestations.js";
 import {
   ALICE,
@@ -31,6 +32,9 @@ const DIGEST = `sha256:${"ab".repeat(32)}`;
 type Account = typeof ALICE;
 interface Attestation {
   id: string;
+  appDid: string;
+  artifactDigest: string;
+  signature: string;
   orgId: string;
   signer: string;
   signerRole: string | null;
@@ -83,6 +87,9 @@ describe("release attestations", () => {
     expect(stored).toMatchObject({ orgId: id, signer: lower(BOB), signerRole: "PUBLISHER", signerStillMember: true, version: "1.4.0" });
     expect(stored.issuedAt).toBe(T0.toISOString());
     expect((await attest(t, BOB, { orgId: id })).id).toBe(stored.id);
+    // The same signature in upper-case hex is the same submission.
+    const message = release(t, { orgId: id });
+    expect((await t.mutate<Attestation>("attestRelease", { ...message, signer: BOB.address, signature: `0x${stored.signature.slice(2).toUpperCase()}` })).id).toBe(stored.id);
     t.tick(1000);
     expect(await failure(attest(t, BOB, { orgId: id }))).toMatchObject({ code: "BAD_USER_INPUT", field: "version" });
     expect((await t.query<{ items: Attestation[] }>("releaseAttestations", { appDid: APP })).items.map((a) => a.id)).toEqual([stored.id]);
@@ -110,7 +117,9 @@ describe("release attestations", () => {
     expect(await failure(attest(t, BOB, { orgId: id, artifactDigest: `sha256:${"AB".repeat(32)}` }))).toMatchObject({ field: "artifactDigest" });
     expect(await failure(attest(t, BOB, { orgId: id, issuedAt: new Date(now + ATTESTATION_FUTURE_SKEW_MS + 60_000).toISOString() }))).toMatchObject({ field: "issuedAt" });
     expect(await failure(attest(t, BOB, { orgId: id, issuedAt: new Date(now - ATTESTATION_MAX_AGE_MS - 60_000).toISOString() }))).toMatchObject({ field: "issuedAt" });
-    expect(await failure(attest(t, BOB, { orgId: id, issuedAt: "2026-10-12" }))).toMatchObject({ field: "issuedAt" });
+    for (const issuedAt of ["2026-10-12", "2026-09-31T12:00:00Z", "2026-10-12T11:60:00Z", "2026-10-12T11:00:60Z", "2026-10-12T12:00:00+15:00", "2026-10-12T12:00:00+01:60"]) {
+      expect(await failure(attest(t, BOB, { orgId: id, issuedAt })), issuedAt).toMatchObject({ field: "issuedAt" });
+    }
     expect(await failure(attest(t, BOB, { orgId: id, version: "" }))).toMatchObject({ field: "version" });
     expect(await failure(t.mutate("attestRelease", { ...release(t, { orgId: id }), signer: "bob", signature: "0x00" }))).toMatchObject({ field: "signer" });
     expect(await failure(t.mutate("attestRelease", { ...release(t, { orgId: id }), signer: BOB.address, signature: "zz" }))).toMatchObject({ field: "signature" });
@@ -129,12 +138,14 @@ describe("release attestations", () => {
         orgId: id,
         signer: lower(ALICE),
         signerRole: "OWNER",
-        issuedAt: t.clock.now,
+        issuedAt: t.clock.now.toISOString(),
         signature: "0x",
         createdAt: t.clock.now,
       });
     }
     expect((await failure(attest(t, BOB, { orgId: id }))).code).toBe("LIMIT_REACHED");
+    // Authorisation comes first: an outsider is refused, not told the app is saturated.
+    expect((await failure(attest(t, CAROL, { orgId: id }))).code).toBe("FORBIDDEN");
     // The window is a rolling day.
     t.tick(86_400_001);
     expect(await attest(t, BOB, { orgId: id })).toMatchObject({ signerRole: "PUBLISHER" });
@@ -191,5 +202,23 @@ describe("release attestations", () => {
     const noId = Buffer.from(JSON.stringify({ c: T0.toISOString() })).toString("base64url");
     expect(await failure(t.query("releaseAttestations", { appDid: APP, after: noId }))).toMatchObject({ field: "after" });
     expect((await t.query<{ items: Attestation[] }>("releaseAttestations", { appDid: "did:key:zOther" })).items).toEqual([]);
+  });
+
+  it("keeps issuedAt exactly as signed, so the stored attestation verifies against its own signature", async () => {
+    const t = harnessResolvers(h);
+    await insertAppProfile(h, t, APP, lower(ALICE));
+    const issuedAt = "2026-10-12T14:00:00.123456+02:00";
+    const stored = await attest(t, ALICE, { issuedAt });
+    const read = await t.query<Attestation>("releaseAttestation", { id: stored.id });
+    expect(read.issuedAt).toBe(issuedAt);
+    const fields: ReleaseMessage = { appDid: read.appDid, version: read.version, artifactDigest: read.artifactDigest, orgId: read.orgId, issuedAt: read.issuedAt };
+    expect(await verifyTypedData({ ...releaseTypedData(fields), address: ALICE.address, signature: read.signature as `0x${string}` })).toBe(true);
+  });
+
+  it("throttles its public reads and writes per client", async () => {
+    const t = harnessResolvers(h, { readLimiter: { take: () => false } });
+    expect((await failure(t.query("releaseAttestations", { appDid: APP }))).code).toBe("RATE_LIMITED");
+    expect((await failure(t.query("releaseAttestation", { id: "x" }))).code).toBe("RATE_LIMITED");
+    expect((await failure(attest(t, ALICE))).code).toBe("RATE_LIMITED");
   });
 });

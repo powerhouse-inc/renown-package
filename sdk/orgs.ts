@@ -107,7 +107,7 @@ export type ReleaseMessage = {
   artifactDigest: string;
   /** The owning organisation's id; "" for person-owned apps. */
   orgId: string;
-  /** ISO-8601 with a zone (e.g. 2026-10-12T12:00:00.000Z). */
+  /** ISO-8601 with a zone (e.g. 2026-10-12T12:00:00.000Z); renown-orgs stores and returns it byte for byte. */
   issuedAt: string;
 };
 

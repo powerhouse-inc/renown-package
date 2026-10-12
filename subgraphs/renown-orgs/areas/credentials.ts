@@ -1,6 +1,7 @@
 import { actions as orgActions, type RenownOrganizationDocument } from "../../../document-models/renown-organization/index.js";
 import type { OrgArgs, OrgContext } from "../core/auth.js";
 import { requireOrg, requireRole } from "../core/authz.js";
+import { mapLimited } from "../core/concurrency.js";
 import { badInput, notFound, unavailable } from "../core/errors.js";
 import type { CredentialVerdict } from "../core/org-policy.js";
 import { iso, isoOrNull, memberStatus } from "../output.js";
@@ -14,13 +15,6 @@ const MAX_LISTED = 500;
 export const MAX_SUSPEND_IDS = 100;
 /** Concurrent status checks while listing. */
 const STATUS_CONCURRENCY = 10;
-
-/** `fn` over `items`, at most `limit` at a time, in order. */
-export async function mapLimited<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = [];
-  for (let i = 0; i < items.length; i += limit) out.push(...(await Promise.all(items.slice(i, i + limit).map(fn))));
-  return out;
-}
 
 /** A read of the credential read model or of organisation rules; a failure is SERVICE_UNAVAILABLE (never a verdict). */
 async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {

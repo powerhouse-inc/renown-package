@@ -175,7 +175,7 @@ function toAttestation(row: Selectable<OrgReleaseAttestationsTable>): Attestatio
     orgId: row.org_id,
     signer: row.signer,
     signerRole: row.signer_role,
-    issuedAt: toDate(row.issued_at),
+    issuedAt: row.issued_at,
     signature: row.signature,
     createdAt: toDate(row.created_at),
   };

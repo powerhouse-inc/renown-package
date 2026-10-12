@@ -1,5 +1,6 @@
 import { getAddress } from "viem";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { STATS_TTL_MS } from "../areas/insights.js";
 import { ALICE, BOB, addOwner, createOrg, failure, harnessResolvers, insertCredential, join, lower, openHarness, resetHarness, STATS_NS, T0, type Harness } from "./harness.js";
 
 vi.mock("../../renown-auth/core/smart-wallet.js", () => ({
@@ -49,16 +50,27 @@ describe("organizationStats", () => {
       orgId: id,
       signer: lower(ALICE),
       signerRole: "OWNER" as const,
-      issuedAt: createdAt,
+      issuedAt: createdAt.toISOString(),
       signature: "0x",
       createdAt,
     });
     await t.store.insertAttestation(attestation("a1", "1", T0));
     await t.store.insertAttestation(attestation("a0", "0", new Date(T0.getTime() - 31 * DAY)));
-    expect(await t.query("organizationStats", { orgId: id })).toEqual({ orgId: id, apps: 2, activeUsers30d: 2, activeDelegations: 2, attestations30d: 1 });
+    const fresh = harnessResolvers(h);
+    expect(await fresh.query("organizationStats", { orgId: id })).toEqual({ orgId: id, apps: 2, activeUsers30d: 2, activeDelegations: 2, attestations30d: 1 });
+    // Cached for a minute per organisation, then recomputed.
+    await t.store.insertAttestation({ ...attestation("a2", "2", T0), id: "a2" });
+    expect(await fresh.query("organizationStats", { orgId: id })).toMatchObject({ attestations30d: 1 });
+    fresh.tick(STATS_TTL_MS);
+    expect(await fresh.query("organizationStats", { orgId: id })).toMatchObject({ attestations30d: 2 });
     expect(await t.query("organizationStats", { orgId: "nope" })).toBeNull();
     await t.store.updateOrganization(id, { takenDown: true }, T0);
     expect(await t.query("organizationStats", { orgId: id })).toBeNull();
+  });
+
+  it("is throttled per client", async () => {
+    const t = harnessResolvers(h, { readLimiter: { take: () => false } });
+    expect((await failure(t.query("organizationStats", { orgId: "o1" }))).code).toBe("RATE_LIMITED");
   });
 
   it("is SERVICE_UNAVAILABLE when a read model cannot be read", async () => {
@@ -75,6 +87,9 @@ describe("organizationStats", () => {
     });
     const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
     expect((await failure(broken.query("organizationStats", { orgId: id }))).code).toBe("SERVICE_UNAVAILABLE");
+    // A failure is not cached.
+    expect((await failure(broken.query("organizationStats", { orgId: id }))).code).toBe("SERVICE_UNAVAILABLE");
+    expect(errors).toHaveBeenCalledTimes(2);
     expect(errors).toHaveBeenCalled();
     errors.mockRestore();
   });

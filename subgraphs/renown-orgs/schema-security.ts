@@ -242,7 +242,7 @@ export const ATTESTATIONS_SDL = `
     signerRole: OrgRole
     "Organization apps: the signer's membership of that time is still ACTIVE (never ended since). Person apps: the signer still publishes the app."
     signerStillMember: Boolean!
-    "As signed (ISO-8601)."
+    "Exactly as signed (ISO-8601 with a zone, never normalised): the stored fields verify against signature."
     issuedAt: String!
     signature: String!
     "When renown-orgs accepted it."
@@ -266,7 +266,7 @@ export const ATTESTATIONS_SDL = `
     Stores an EIP-712 ReleaseAttestation (domain Renown Release / 1 / chain 1; sdk RELEASE_DOMAIN and RELEASE_TYPES)
     signed by signer (EOA, or ERC-1271/6492 smart wallet): the signature is the authentication. The signer must publish
     the app at submit time: its personal publisher (orgId empty) or an ACTIVE PUBLISHER+ of the owning organization
-    whose scope covers it (orgId that organization). issuedAt: at most 5 minutes ahead, at most 30 days old. One per
+    whose scope covers it (orgId that organization). issuedAt: a real ISO-8601 time with a zone, at most 5 minutes ahead, at most 30 days old, kept exactly as sent. One per
     app, version and signer (resubmitting the same signature returns it); at most 100 per app per day (LIMIT_REACHED).
     Errors also APP_FROZEN.
     """
