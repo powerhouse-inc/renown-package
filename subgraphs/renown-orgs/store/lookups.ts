@@ -88,3 +88,61 @@ export async function orgAvatarRef(db: ReadModelDb, orgId: string): Promise<stri
     return null;
   }
 }
+
+/** One entry of the OIDC `orgs` claim. */
+export interface OrgClaim {
+  id: string;
+  did: string;
+  handle: string;
+  name: string;
+  role: OrgRole;
+  teams: string[];
+  verifiedDomains: string[];
+}
+
+/**
+ * The subject's ACTIVE memberships (hidden ones included: the subject
+ * consents by asking for the scope) in organizations that are neither
+ * archived nor taken down, ordered by handle. A missing namespace is [].
+ */
+export async function orgClaimsFor(db: ReadModelDb, address: string, didHost: string): Promise<OrgClaim[]> {
+  try {
+    const rows = await orgs(db)
+      .selectFrom("org_members")
+      .innerJoin("organizations", "organizations.id", "org_members.org_id")
+      .select(["org_members.id as member_id", "organizations.id as org_id", "organizations.handle", "organizations.name", "org_members.role"])
+      .where("org_members.address", "=", address.toLowerCase())
+      .where("org_members.status", "=", "ACTIVE")
+      .where("organizations.archived", "=", false)
+      .where("organizations.taken_down", "=", false)
+      .orderBy("organizations.handle")
+      .execute();
+    if (rows.length === 0) return [];
+    const teams = await orgs(db)
+      .selectFrom("org_team_members")
+      .innerJoin("org_teams", "org_teams.id", "org_team_members.team_id")
+      .select(["org_team_members.member_id", "org_teams.slug"])
+      .where("org_team_members.member_id", "in", rows.map((row) => row.member_id))
+      .orderBy("org_teams.slug")
+      .execute();
+    const domains = await orgs(db)
+      .selectFrom("org_domains")
+      .select(["org_id", "domain"])
+      .where("org_id", "in", rows.map((row) => row.org_id))
+      .where("status", "=", "VERIFIED")
+      .orderBy("domain")
+      .execute();
+    return rows.map((row) => ({
+      id: row.org_id,
+      did: `did:web:${didHost}:org:${row.org_id}`,
+      handle: row.handle,
+      name: row.name,
+      role: row.role,
+      teams: teams.filter((team) => team.member_id === row.member_id).map((team) => team.slug),
+      verifiedDomains: domains.filter((domain) => domain.org_id === row.org_id).map((domain) => domain.domain),
+    }));
+  } catch (error) {
+    if (isMissingNamespace(error)) return [];
+    throw error;
+  }
+}

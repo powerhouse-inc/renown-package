@@ -308,6 +308,7 @@ describe("RenownOidcSubgraph", () => {
       expect(updated).toEqual({
         clientId: "doc-1",
         name: "Speckle",
+        allowedOrgs: [],
         redirectUris: ["https://a.example/cb", "https://b.example/cb"],
         status: "DISABLED",
       });

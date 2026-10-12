@@ -1,5 +1,5 @@
 import type { Selectable } from "kysely";
-import type { AccessToken, AuthCode, LoginRequest, OidcClient } from "../core/types.js";
+import type { AccessToken, AuthCode, LoginRequest, OidcAllowedOrg, OidcClient } from "../core/types.js";
 import {
   AUTH_CODE_RETENTION_MS,
   type AccessTokenRow,
@@ -20,6 +20,22 @@ function parseStringArray(json: string): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function parseAllowedOrgs(json: string | undefined): OidcAllowedOrg[] {
+  const value: unknown = JSON.parse(json ?? "[]");
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry: unknown) => {
+    const org = entry as Partial<OidcAllowedOrg> | null;
+    return org && typeof org.orgId === "string" && typeof org.minRole === "string"
+      ? [{ orgId: org.orgId, minRole: org.minRole }]
+      : [];
+  });
+}
+
+/** allowedOrgs only when non-empty, so clients without it compare equal to their fixtures. */
+export function withAllowedOrgs(allowedOrgs: OidcAllowedOrg[] | undefined): { allowedOrgs?: OidcAllowedOrg[] } {
+  return allowedOrgs && allowedOrgs.length > 0 ? { allowedOrgs: allowedOrgs.map((org) => ({ ...org })) } : {};
+}
+
 function toClient(row: Selectable<OidcClientRow>): OidcClient {
   return {
     id: row.client_id,
@@ -29,6 +45,7 @@ function toClient(row: Selectable<OidcClientRow>): OidcClient {
     allowAnySubject: row.allow_any,
     clientSecretHash: row.secret_hash,
     status: row.status,
+    ...withAllowedOrgs(parseAllowedOrgs(row.allowed_orgs)),
   };
 }
 
@@ -88,6 +105,7 @@ export class KyselyOidcStore implements OidcStore {
         name: c.name,
         redirect_uris: JSON.stringify(c.redirectUris),
         allowed_subjects: JSON.stringify(c.allowedSubjects),
+        allowed_orgs: JSON.stringify(c.allowedOrgs ?? []),
         allow_any: c.allowAnySubject,
         secret_hash: c.clientSecretHash,
         status: c.status,
@@ -113,6 +131,7 @@ export class KyselyOidcStore implements OidcStore {
         ...(patch.name !== undefined && { name: patch.name }),
         ...(patch.redirectUris !== undefined && { redirect_uris: JSON.stringify(patch.redirectUris) }),
         ...(patch.allowedSubjects !== undefined && { allowed_subjects: JSON.stringify(patch.allowedSubjects) }),
+        ...(patch.allowedOrgs !== undefined && { allowed_orgs: JSON.stringify(patch.allowedOrgs) }),
         ...(patch.allowAnySubject !== undefined && { allow_any: patch.allowAnySubject }),
         ...(patch.clientSecretHash !== undefined && { secret_hash: patch.clientSecretHash }),
         ...(patch.status !== undefined && { status: patch.status }),

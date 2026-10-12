@@ -14,7 +14,8 @@ import { renownOidcClientDocumentType } from "../../document-models/renown-oidc-
 import type { RenownOidcClientDocument } from "../../document-models/renown-oidc-client/v1/gen/types.js";
 import { isValidRedirectUri, normalizeSubject } from "../../document-models/renown-oidc-client/v1/src/utils.js";
 import { hashSecret, randomToken } from "./core/crypto.js";
-import type { OidcClient } from "./core/types.js";
+import type { OidcAllowedOrg, OidcClient } from "./core/types.js";
+import { withAllowedOrgs } from "./store/kysely.js";
 import type { OidcClientPatch, OidcStore } from "./store/types.js";
 
 /**
@@ -43,10 +44,27 @@ export class ClientRegistryError extends Error {
   }
 }
 
+const ORG_ROLES = new Set(["OWNER", "ADMIN", "PUBLISHER", "MEMBER"]);
+
+function validAllowedOrgs(entries: readonly OidcAllowedOrg[]): OidcAllowedOrg[] {
+  const seen = new Map<string, OidcAllowedOrg>();
+  for (const entry of entries) {
+    const orgId = entry.orgId.trim();
+    const minRole = entry.minRole.trim().toUpperCase();
+    if (orgId === "") throw new ClientRegistryError("allowedOrgs: orgId must not be empty", "BAD_USER_INPUT");
+    if (!ORG_ROLES.has(minRole)) {
+      throw new ClientRegistryError(`allowedOrgs: minRole must be one of ${[...ORG_ROLES].join(", ")}`, "BAD_USER_INPUT");
+    }
+    seen.set(orgId, { orgId, minRole: minRole as OidcAllowedOrg["minRole"] });
+  }
+  return [...seen.values()];
+}
+
 export interface RegisterClientInput {
   name: string;
   redirectUris: string[];
   allowedSubjects: string[];
+  allowedOrgs?: OidcAllowedOrg[] | null;
   confidential: boolean;
 }
 
@@ -57,6 +75,8 @@ export interface UpdateClientInput {
   addAllowedSubjects?: string[] | null;
   removeAllowedSubjects?: string[] | null;
   allowAnySubject?: boolean | null;
+  /** Replaces the whole list. */
+  allowedOrgs?: OidcAllowedOrg[] | null;
   status?: "ACTIVE" | "DISABLED" | null;
 }
 
@@ -129,6 +149,7 @@ export async function registerClient(deps: ClientRegistryDeps, input: RegisterCl
   const name = validName(input.name);
   const redirectUris = validRedirectUris(input.redirectUris);
   const allowedSubjects = validSubjects(input.allowedSubjects);
+  const allowedOrgs = validAllowedOrgs(input.allowedOrgs ?? []);
   const { secret, hash } = await newSecret(input.confidential);
 
   const created = await deps.reactorClient.createEmpty<RenownOidcClientDocument>(
@@ -138,7 +159,7 @@ export async function registerClient(deps: ClientRegistryDeps, input: RegisterCl
   const clientId = created.header.id;
 
   await deps.store.createClient(
-    { id: clientId, name, redirectUris, allowedSubjects, allowAnySubject: false, clientSecretHash: hash, status: "ACTIVE" },
+    { id: clientId, name, redirectUris, allowedSubjects, allowAnySubject: false, clientSecretHash: hash, status: "ACTIVE", ...withAllowedOrgs(allowedOrgs) },
     deps.now(),
   );
 
@@ -191,6 +212,10 @@ export async function updateClient(
     for (const subject of next) {
       if (!current.allowedSubjects.includes(subject)) actions.push(addAllowedSubject({ subject }));
     }
+  }
+
+  if (input.allowedOrgs != null) {
+    patch.allowedOrgs = validAllowedOrgs(input.allowedOrgs);
   }
 
   if (input.allowAnySubject != null && input.allowAnySubject !== current.allowAnySubject) {

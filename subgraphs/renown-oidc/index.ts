@@ -3,7 +3,8 @@ import type { DocumentNode } from "graphql";
 import { loadConfig } from "./core/config.js";
 import { loadSigningKeys, type SigningKeys } from "./core/keys.js";
 import type { OidcConfig } from "./core/types.js";
-import { createClientDirectory, createProfileDirectory } from "./directories.js";
+import { loadOrgsConfig } from "../renown-orgs/core/config.js";
+import { createClientDirectory, createOrgDirectory, createProfileDirectory } from "./directories.js";
 import { createOidcHandlers } from "./http/handlers.js";
 import { createResolvers } from "./resolvers.js";
 import { schema } from "./schema.js";
@@ -88,6 +89,7 @@ export class RenownOidcSubgraph extends BaseSubgraph {
       store,
       clients: createClientDirectory(store),
       profiles: createProfileDirectory(this.relationalDb),
+      orgs: createOrgDirectory(this.relationalDb, loadOrgsConfig(process.env).didHost),
       now: () => new Date(),
     });
 

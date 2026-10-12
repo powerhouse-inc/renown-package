@@ -1,6 +1,7 @@
 import { getAddress } from "viem";
 
-import type { OidcClient, Profile } from "./types.js";
+import { roleAtLeast } from "../../../sdk/orgs.js";
+import type { OidcClient, OrgClaim, Profile } from "./types.js";
 
 /** An OIDC-provider-level error: `code` is the OAuth/OIDC error code, `status` the HTTP status a handler should respond with. */
 export class OidcError extends Error {
@@ -40,10 +41,18 @@ export function isSubjectAllowed(client: OidcClient, address: string): boolean {
   return client.allowedSubjects.some((subject) => normalizedSubjectAddress(subject) === target);
 }
 
+/** True when one of the subject's org claims satisfies one of the client's allowedOrgs. */
+export function isSubjectAllowedByOrgs(client: OidcClient, orgs: readonly OrgClaim[]): boolean {
+  return (client.allowedOrgs ?? []).some((allowed) =>
+    orgs.some((org) => org.id === allowed.orgId && roleAtLeast(org.role, allowed.minRole)),
+  );
+}
+
 export function buildClaims(
   address: string,
   profile: Profile | undefined,
   scope: string,
+  orgs: readonly OrgClaim[] = [],
 ): Record<string, unknown> {
   const scopes = new Set(scope.split(/\s+/).filter(Boolean));
   const claims: Record<string, unknown> = { sub: subjectFor(address) };
@@ -61,6 +70,10 @@ export function buildClaims(
   if (scopes.has("email")) {
     claims.email = `${address.toLowerCase()}@renown.vetra.io`;
     claims.email_verified = false;
+  }
+
+  if (scopes.has("orgs")) {
+    claims.orgs = orgs.map((org) => ({ ...org, teams: [...org.teams], verifiedDomains: [...org.verifiedDomains] }));
   }
 
   return claims;

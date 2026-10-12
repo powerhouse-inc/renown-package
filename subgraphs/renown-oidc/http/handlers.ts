@@ -1,8 +1,8 @@
-import { buildClaims, isSubjectAllowed, OidcError, subjectFor } from "../core/claims.js";
+import { buildClaims, isSubjectAllowed, isSubjectAllowedByOrgs, OidcError, subjectFor } from "../core/claims.js";
 import { constantTimeEqual, hashSecret, randomToken, sha256Hex } from "../core/crypto.js";
 import { verifyPkceS256 } from "../core/pkce.js";
 import { buildSiweTemplate, verifySiweLogin } from "../core/siwe.js";
-import type { LoginRequest, OidcClient } from "../core/types.js";
+import type { LoginRequest, OidcClient, OrgClaim } from "../core/types.js";
 import type { OidcDeps } from "./deps.js";
 import { appendQuery, htmlError, jsonError, redirectError } from "./errors.js";
 
@@ -11,7 +11,7 @@ const AUTH_CODE_TTL_MS = 60 * 1000;
 const ACCESS_TOKEN_TTL_SEC = 3600;
 const ID_TOKEN_TTL_SEC = 600;
 
-const SUPPORTED_SCOPES = ["openid", "profile", "email"];
+const SUPPORTED_SCOPES = ["openid", "profile", "email", "orgs"];
 
 const DISCOVERY_CACHE = "public, max-age=300";
 
@@ -110,6 +110,15 @@ function readClientCredentials(req: Request, form: URLSearchParams): ClientCrede
 export function createOidcHandlers(deps: OidcDeps) {
   const { config, keys, store, clients, profiles } = deps;
 
+  /** The subject's org claims; none when no directory is wired or it fails (sign-in falls back to the subject rules). */
+  async function orgsOf(address: string): Promise<OrgClaim[]> {
+    try {
+      return (await deps.orgs?.orgsOf(address)) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
   /** The login request and its (still active) client, or undefined when unusable. */
   async function activeLoginRequest(
     id: string,
@@ -149,6 +158,7 @@ export function createOidcHandlers(deps: OidcDeps) {
               "picture",
               "email",
               "email_verified",
+              "orgs",
               "nonce",
               "auth_time",
             ],
@@ -276,7 +286,7 @@ export function createOidcHandlers(deps: OidcDeps) {
         return jsonError(400, "invalid_request", "Malformed SIWE message");
       }
 
-      if (!isSubjectAllowed(client, address)) {
+      if (!isSubjectAllowed(client, address) && !isSubjectAllowedByOrgs(client, await orgsOf(address))) {
         return jsonError(403, "access_denied", `This account is not allowed to sign in to ${client.name}`);
       }
 
@@ -361,7 +371,7 @@ export function createOidcHandlers(deps: OidcDeps) {
 
       const profile = await profiles.getProfile(grant.address);
       const claims: Record<string, unknown> = {
-        ...buildClaims(grant.address, profile, grant.scope),
+        ...buildClaims(grant.address, profile, grant.scope, grant.scope.split(/\s+/).includes("orgs") ? await orgsOf(grant.address) : []),
         auth_time: Math.floor(grant.authTime.getTime() / 1000),
       };
       if (grant.nonce !== null) claims.nonce = grant.nonce;
@@ -402,7 +412,8 @@ export function createOidcHandlers(deps: OidcDeps) {
       if (!token || token.revoked || isExpired(token.expiresAt, deps.now())) return invalidToken();
 
       const profile = await profiles.getProfile(token.address);
-      return json(buildClaims(token.address, profile, token.scope), 200, { "cache-control": "no-store" });
+      const orgs = token.scope.split(/\s+/).includes("orgs") ? await orgsOf(token.address) : [];
+      return json(buildClaims(token.address, profile, token.scope, orgs), 200, { "cache-control": "no-store" });
     },
   };
 }

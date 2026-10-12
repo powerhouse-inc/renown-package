@@ -16,6 +16,23 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("updated_at", "timestamptz", (col) => col.notNull())
     .execute();
 
+  // Probe first: ADD COLUMN takes an ACCESS EXCLUSIVE lock even when the column exists.
+  const hasAllowedOrgs = await db
+    .selectFrom("oidc_clients")
+    .select("allowed_orgs")
+    .limit(0)
+    .execute()
+    .then(
+      () => true,
+      () => false,
+    );
+  if (!hasAllowedOrgs) {
+    await db.schema
+      .alterTable("oidc_clients")
+      .addColumn("allowed_orgs", "text", (col) => col.notNull().defaultTo("[]"))
+      .execute();
+  }
+
   await db.schema
     .createTable("login_requests")
     .ifNotExists()

@@ -1,7 +1,7 @@
 import type { IReactorClient } from "@powerhousedao/reactor";
 import { GraphQLError } from "graphql";
 import { constantTimeEqual } from "./core/crypto.js";
-import type { OidcClient, OidcConfig } from "./core/types.js";
+import type { OidcAllowedOrg, OidcClient, OidcConfig } from "./core/types.js";
 import {
   ClientRegistryError,
   registerClient,
@@ -28,6 +28,7 @@ interface OidcClientInfo {
   clientId: string;
   name: string | null;
   redirectUris: string[];
+  allowedOrgs: OidcAllowedOrg[];
   status: string;
 }
 
@@ -55,6 +56,7 @@ function publicInfo(client: OidcClient): OidcClientInfo {
     clientId: client.id,
     name: client.name.length > 0 ? client.name : null,
     redirectUris: client.redirectUris,
+    allowedOrgs: client.allowedOrgs ?? [],
     status: client.status,
   };
 }

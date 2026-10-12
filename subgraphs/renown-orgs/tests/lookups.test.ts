@@ -4,7 +4,7 @@ import { Kysely, sql } from "kysely";
 import { PGliteDialect } from "kysely-pglite-dialect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { KyselyOrgStore } from "../store/kysely.js";
-import { isMissingNamespace, orgAvatarRef, orgHandleStatus, publicMembershipsOf } from "../store/lookups.js";
+import { isMissingNamespace, orgAvatarRef, orgClaimsFor, orgHandleStatus, publicMembershipsOf } from "../store/lookups.js";
 import { migrate } from "../store/migrations.js";
 import { ORGS_NAMESPACE, type OrgsDB } from "../store/types.js";
 import { memberRecord, org } from "./store-contract.js";
@@ -71,5 +71,22 @@ describe("renown-orgs lookups for other subgraphs", () => {
     await expect(orgHandleStatus(broken, "acme", NOW)).rejects.toThrow("pool exhausted");
     expect(isMissingNamespace({ code: "42P01" })).toBe(true);
     expect(isMissingNamespace(new Error("x"))).toBe(false);
+  });
+});
+
+describe("orgClaimsFor (the OIDC orgs claim)", () => {
+  it("lists every ACTIVE membership, hidden ones included, of live organizations, with teams and verified domains", async () => {
+    const store = new KyselyOrgStore(root.withSchema(ORGS_NAMESPACE));
+    await store.insertTeam({ id: "t1", orgId: "o5", slug: "core", name: "Core", appDids: [], memberIds: ["m5"], createdAt: NOW });
+    await store.db
+      .insertInto("org_domains")
+      .values({ id: "d1", org_id: "o5", domain: "zeta.example", token: "t", status: "VERIFIED", verified_at: NOW, last_checked_at: NOW, failures: 0, created_at: NOW })
+      .execute();
+    expect(await orgClaimsFor(db, ALICE, "renown.test")).toEqual([
+      { id: "o1", did: "did:web:renown.test:org:o1", handle: "acme", name: "Acme", role: "ADMIN", teams: [], verifiedDomains: [] },
+      { id: "o2", did: "did:web:renown.test:org:o2", handle: "quiet", name: "QUIET", role: "MEMBER", teams: [], verifiedDomains: [] },
+      { id: "o5", did: "did:web:renown.test:org:o5", handle: "zeta", name: "Zeta", role: "MEMBER", teams: ["core"], verifiedDomains: ["zeta.example"] },
+    ]);
+    expect(await orgClaimsFor(db, "0xb0b0000000000000000000000000000000000002", "renown.test")).toEqual([]);
   });
 });

@@ -1,7 +1,9 @@
 import type { BaseSubgraph } from "@powerhousedao/reactor-api";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
-import type { ClientDirectory, ProfileDirectory } from "./http/deps.js";
+import type { ReadModelDb } from "../renown-auth/lookups.js";
+import { orgClaimsFor } from "../renown-orgs/store/lookups.js";
+import type { ClientDirectory, OrgDirectory, ProfileDirectory } from "./http/deps.js";
 import type { OidcStore } from "./store/types.js";
 
 /**
@@ -36,6 +38,19 @@ export function createProfileDirectory(relationalDb: BaseSubgraph["relationalDb"
         return row ? { username: row.username, userImage: row.user_image } : undefined;
       } catch {
         return undefined;
+      }
+    },
+  };
+}
+
+/** Organization memberships from the renown-orgs namespace (read-only); [] on any failure. */
+export function createOrgDirectory(relationalDb: BaseSubgraph["relationalDb"], didHost: string): OrgDirectory {
+  return {
+    async orgsOf(address) {
+      try {
+        return await orgClaimsFor(relationalDb as unknown as ReadModelDb, address, didHost);
+      } catch {
+        return [];
       }
     },
   };

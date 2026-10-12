@@ -142,5 +142,12 @@ export function describeOidcStoreContract(name: string, makeStore: () => Promise
       // …one past the retention window is gone.
       expect(await s.consumeAuthCode("ancient", now)).toBeUndefined();
     });
+    it("round-trips allowedOrgs and omits it when empty", async () => {
+      const s = await makeStore();
+      await s.createClient({ ...client, id: "c-orgs", allowedOrgs: [{ orgId: "o1", minRole: "ADMIN" }] }, now);
+      expect((await s.getClient("c-orgs"))?.allowedOrgs).toEqual([{ orgId: "o1", minRole: "ADMIN" }]);
+      await s.updateClient("c-orgs", { allowedOrgs: [] }, now);
+      expect(await s.getClient("c-orgs")).not.toHaveProperty("allowedOrgs");
+    });
   });
 }
