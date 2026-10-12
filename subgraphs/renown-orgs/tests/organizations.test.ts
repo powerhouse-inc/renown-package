@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createRateLimiter } from "../../renown-auth/core/rate-limit.js";
 import type { RenownOrganizationState } from "../../../document-models/renown-organization/index.js";
 import type { OrganizationOutput } from "../output.js";
 import {
@@ -7,6 +8,7 @@ import {
   CAROL,
   createOrg,
   failure,
+  fakeReactor,
   harnessResolvers,
   insertUser,
   lower,
@@ -268,6 +270,11 @@ describe("signed writes", () => {
     // Same signature, different case: still the same signature.
     const upper = { ...auth, signature: `0x${auth.signature.slice(2).toUpperCase()}` };
     expect(await failure(t.mutate("setOrgListed", { ...args, auth: upper }))).toMatchObject({ code: "FORBIDDEN", message: "signature already used" });
+    // A malleated encoding (v 27/28 -> 0/1) authorises the same message: still used.
+    const v = parseInt(auth.signature.slice(-2), 16);
+    const malleated = { ...auth, signature: `${auth.signature.slice(0, -2)}${(v - 27).toString(16).padStart(2, "0")}` };
+    expect(malleated.signature).not.toBe(auth.signature);
+    expect(await failure(t.mutate("setOrgListed", { ...args, auth: malleated }))).toMatchObject({ code: "FORBIDDEN", message: "signature already used" });
     const rows = await h.root.withSchema("renown-orgs").selectFrom("org_used_signatures").selectAll().execute();
     expect(rows).toHaveLength(1);
     expect(new Date(rows[0].expires_at as string).getTime()).toBe(T0.getTime() + 600_000);
@@ -283,5 +290,74 @@ describe("signed writes", () => {
     expect(org.viewerMembership?.appScope).toEqual({ all: true, appDids: [] });
     expect((await t.store.openMember(org.id, lower(ALICE)))?.appScopeAll).toBe(false);
     expect(t.reactor.state<RenownOrganizationState>(org.id).members[0].appScope.all).toBe(false);
+  });
+});
+
+describe("createOrganization failures", () => {
+  it("leaves no organization, owner or handle behind when the document cannot be written", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const reactor = fakeReactor();
+    reactor.execute.mockImplementation(() => Promise.reject(new Error("reactor down")));
+    const t = harnessResolvers(h, { reactorClient: reactor as never });
+    expect((await failure(createOrg(t, ALICE, "acme"))).code).toBe("SERVICE_UNAVAILABLE");
+    expect(await t.store.organizationByHandle("acme")).toBeUndefined();
+    expect(await t.store.membershipsOf(lower(ALICE), ["ACTIVE", "INVITED"])).toEqual([]);
+    expect(await t.store.countOrganizationsCreatedBy(lower(ALICE))).toBe(0);
+    const failingCreate = fakeReactor();
+    failingCreate.createEmpty.mockImplementation(() => Promise.reject(new Error("reactor down")));
+    expect((await failure(createOrg(harnessResolvers(h, { reactorClient: failingCreate as never }), ALICE, "acme"))).code).toBe("SERVICE_UNAVAILABLE");
+    // The handle is still free.
+    expect((await createOrg(harnessResolvers(h), ALICE, "acme")).handle).toBe("acme");
+    vi.restoreAllMocks();
+  });
+
+  it("enforces the per-creator limit across concurrent creates", async () => {
+    const t = harnessResolvers(h);
+    for (let i = 0; i < 19; i++) await t.store.insertOrganization(orgRecord(`o${i}`, `made-${i}`, { createdBy: lower(ALICE) }));
+    const results = await Promise.allSettled([createOrg(t, ALICE, "acme"), createOrg(t, ALICE, "beta")]);
+    expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect(await t.store.countOrganizationsCreatedBy(lower(ALICE))).toBe(20);
+  });
+});
+
+describe("authorisation order and read limits", () => {
+  it("checks the caller's role before probing the avatar", async () => {
+    const media = pngMedia(false);
+    const inspect = vi.spyOn(media, "inspect");
+    const t = harnessResolvers(h, { media: () => media });
+    const { id } = await createOrg(t, ALICE, "acme");
+    expect((await failure(t.mutate("updateOrganization", { orgId: id, avatar: AVATAR }, BOB))).code).toBe("FORBIDDEN");
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it("rate limits handle availability and search per caller or client IP", async () => {
+    const limited = harnessResolvers(h, { readLimiter: { take: () => false } });
+    expect((await failure(limited.query("orgHandleAvailability", { handle: "acme" }))).code).toBe("RATE_LIMITED");
+    expect((await failure(limited.query("organizationSearch", {}))).code).toBe("RATE_LIMITED");
+    const t = harnessResolvers(h, { readLimiter: createRateLimiter(2, 60_000) });
+    const ip = (address: string) => ({ headers: { "x-forwarded-for": `${address}, 10.0.0.1` } });
+    const call = (ctx: unknown) => t.resolvers.Query.orgHandleAvailability(null, { handle: "fresh" }, ctx);
+    await call(ip("1.1.1.1"));
+    await call(ip("1.1.1.1"));
+    expect((await failure(call(ip("1.1.1.1")))).code).toBe("RATE_LIMITED");
+    await call(ip("2.2.2.2"));
+    await call({ user: { address: ALICE.address } });
+    await call({ user: { address: ALICE.address } });
+    expect((await failure(call({ user: { address: ALICE.address } }))).code).toBe("RATE_LIMITED");
+    await call({ user: { address: BOB.address } });
+  });
+});
+
+describe("organizationSearch visibility", () => {
+  it("excludes archived and taken-down organizations even when listed", async () => {
+    const t = harnessResolvers(h);
+    const archived = await createOrg(t, ALICE, "acme", { listed: true });
+    const down = await createOrg(t, ALICE, "acorn", { listed: true });
+    await createOrg(t, ALICE, "acid", { listed: true });
+    await t.store.updateOrganization(archived.id, { archived: true }, T0);
+    await t.store.updateOrganization(down.id, { takenDown: true }, T0);
+    const page = await t.query<{ items: OrganizationOutput[] }>("organizationSearch", { query: "ac" });
+    expect(page.items.map((o) => o.handle)).toEqual(["acid"]);
+    expect((await t.query<{ items: OrganizationOutput[] }>("organizationSearch", {})).items.map((o) => o.handle)).toEqual(["acid"]);
   });
 });

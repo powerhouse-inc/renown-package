@@ -204,6 +204,32 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect(await store.pruneUsedSignatures(at(20))).toBe(0);
     });
 
+    it("keeps a used signature hash through its expiry instant (strict prune boundary)", async () => {
+      const { store } = await open();
+      expect(await store.useSignature("s1", at(10))).toBe(true);
+      expect(await store.pruneUsedSignatures(at(10))).toBe(0);
+      expect(await store.useSignature("s1", at(10))).toBe(false);
+      expect(await store.pruneUsedSignatures(new Date(at(10).getTime() + 1))).toBe(1);
+    });
+
+    it("inserts an organization with its owner atomically, and deletes both", async () => {
+      const { store } = await open();
+      const owner = memberRecord("m1", "o1", "0x00000000000000000000000000000000000000a1", { role: "OWNER", status: "ACTIVE" });
+      expect(await store.insertOrganizationWithOwner(org("o1", "acme"), owner)).toBe(true);
+      expect((await store.openMember("o1", owner.address))?.role).toBe("OWNER");
+      // A taken handle inserts neither row.
+      const other = memberRecord("m2", "o2", "0x00000000000000000000000000000000000000b2", { role: "OWNER", status: "ACTIVE" });
+      expect(await store.insertOrganizationWithOwner(org("o2", "acme"), other)).toBe(false);
+      expect(await store.member("m2")).toBeUndefined();
+      // A failing member insert rolls the organization back.
+      expect(await store.insertOrganizationWithOwner(org("o3", "beta"), { ...owner, orgId: "o3" }).catch(() => "threw")).toBe("threw");
+      expect(await store.organization("o3")).toBeUndefined();
+      expect(await store.organizationByHandle("beta")).toBeUndefined();
+      await store.deleteOrganization("o1");
+      expect(await store.organization("o1")).toBeUndefined();
+      expect(await store.member("m1")).toBeUndefined();
+    });
+
     it("normalises addresses and handles to lowercase on write", async () => {
       const { store } = await open();
       const MIXED = "0xABC0000000000000000000000000000000000001";

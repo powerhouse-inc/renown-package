@@ -178,6 +178,97 @@ async function assertAvatar(rt: OrgRuntime, ref: string): Promise<void> {
   if (problem) throw badInput("avatar", `Invalid avatar: ${problem}`);
 }
 
+/**
+ * The rows first (organization + owner in one transaction, so the handle is
+ * never held by an ownerless organization), then the document; when the
+ * document cannot be written the rows are deleted again and the caller gets
+ * SERVICE_UNAVAILABLE. A created-but-unwritten document is left empty and
+ * logged: no row points at it.
+ */
+async function createLocked(
+  rt: OrgRuntime,
+  caller: string,
+  handle: string,
+  name: string,
+  profile: ProfilePatch,
+  args: CreateArgs,
+): Promise<OrganizationOutput> {
+  const store = rt.store();
+  const now = rt.now();
+  const problem = await orgHandleProblem({ store, relationalDb: rt.deps.relationalDb, now }, handle);
+  if (problem) throw handleError(problem, handle);
+  let orgId: string;
+  try {
+    orgId = await rt.createDocument(renownOrganizationDocumentType);
+  } catch (error) {
+    console.error(`[renown-orgs] createOrganization: document create failed: ${reason(error)}`);
+    throw unavailable();
+  }
+  const memberId = rt.newId();
+  const org: OrgRecord = {
+    id: orgId,
+    handle,
+    name,
+    bio: profile.bio ?? null,
+    website: profile.website ?? null,
+    avatarRef: null,
+    links: profile.links ?? [],
+    listed: args.listed === true,
+    membersPublic: args.membersPublic === true,
+    archived: false,
+    takenDown: false,
+    createdBy: caller,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const inserted = await store.insertOrganizationWithOwner(org, {
+    id: memberId,
+    orgId,
+    address: caller,
+    role: "OWNER",
+    status: "ACTIVE",
+    // Stored scope is never role-derived; ownScope gives owners every app.
+    appScopeAll: false,
+    appDids: [],
+    hidden: false,
+    invitedBy: caller,
+    invitedAt: now,
+    joinedAt: now,
+    endedAt: null,
+    updatedAt: now,
+  });
+  if (!inserted) {
+    console.error(`[renown-orgs] createOrganization: handle ${handle} taken concurrently; document ${orgId} left empty`);
+    throw handleError("TAKEN", handle);
+  }
+  const at = iso(now);
+  const setProfile = profileAction(profile);
+  try {
+    await rt.execute(orgId, [
+      orgActions.initOrganization({ handle, name, createdBy: caller }),
+      ...(setProfile ? [setProfile] : []),
+      ...(args.listed ? [orgActions.setOrgListed({ listed: true })] : []),
+      ...(args.membersPublic ? [orgActions.setMembersPublic({ membersPublic: true })] : []),
+      orgActions.inviteMember({ id: memberId, address: caller, role: "OWNER", invitedAt: at }),
+      orgActions.setMemberStatus({ id: memberId, status: "ACTIVE", at }),
+    ]);
+  } catch (error) {
+    console.error(`[renown-orgs] createOrganization: document ${orgId} write failed (${reason(error)}); rolling back`);
+    try {
+      await store.deleteOrganization(orgId);
+    } catch (cleanup) {
+      console.error(`[renown-orgs] createOrganization: rollback of ${orgId} failed: ${reason(cleanup)}`);
+    }
+    throw unavailable();
+  }
+  await rt.record({ orgId, actor: caller, action: "createOrganization", at: now, details: { handle, name } });
+  return organizationOutput(rt, org, caller);
+}
+
+function reason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export const organizationResolvers: Area = (rt) => ({
   Query: {
     organization: async (_: unknown, args: OrgArgs & { id?: string | null; handle?: string | null }, ctx: OrgContext) => {
@@ -187,7 +278,12 @@ export const organizationResolvers: Area = (rt) => ({
       const org = args.id != null ? await store.organization(args.id) : await store.organizationByHandle(normalizeHandle(args.handle ?? ""));
       return org ? organizationOutput(rt, org, viewer) : null;
     },
-    organizationSearch: async (_: unknown, args: { query?: string | null; limit?: number | null; after?: string | null }) => {
+    organizationSearch: async (
+      _: unknown,
+      args: { query?: string | null; limit?: number | null; after?: string | null },
+      ctx: OrgContext,
+    ) => {
+      rt.throttleRead(ctx);
       const search = parseSearch(args);
       const rows = await rt.store().searchOrganizations(search);
       const page = rows.slice(0, search.limit);
@@ -198,7 +294,8 @@ export const organizationResolvers: Area = (rt) => ({
           : null;
       return { items: await Promise.all(page.map((org) => organizationOutput(rt, org, null))), next };
     },
-    orgHandleAvailability: async (_: unknown, args: { handle: string }) => {
+    orgHandleAvailability: async (_: unknown, args: { handle: string }, ctx: OrgContext) => {
+      rt.throttleRead(ctx);
       const handle = normalizeHandle(args.handle);
       const reason = await orgHandleProblem({ store: rt.store(), relationalDb: rt.deps.relationalDb, now: rt.now() }, handle);
       return { handle, available: reason === null, reason };
@@ -231,73 +328,26 @@ export const organizationResolvers: Area = (rt) => ({
       const handle = normalizeHandle(args.handle);
       const { name, ...profile } = validateProfile({ name: args.name, bio: args.bio, website: args.website, links: args.links });
       if (name === undefined) throw badInput("name", NAME_RULE);
-      if ((await store.countOrganizationsCreatedBy(caller)) >= MAX_ORGS_PER_CREATOR) {
-        throw limitReached(`A wallet creates at most ${MAX_ORGS_PER_CREATOR} organizations`);
-      }
-      if ((await openMemberships(store, caller, rt.now())).length >= MAX_MEMBERSHIPS_PER_WALLET) {
-        throw limitReached(`A wallet holds at most ${MAX_MEMBERSHIPS_PER_WALLET} memberships`);
-      }
-      return rt.lock(`handle:${handle}`, async () => {
-        const now = rt.now();
-        const problem = await orgHandleProblem({ store, relationalDb: rt.deps.relationalDb, now }, handle);
-        if (problem) throw handleError(problem, handle);
-        const orgId = await rt.createDocument(renownOrganizationDocumentType);
-        const memberId = rt.newId();
-        const at = iso(now);
-        const setProfile = profileAction(profile);
-        await rt.execute(orgId, [
-          orgActions.initOrganization({ handle, name, createdBy: caller }),
-          ...(setProfile ? [setProfile] : []),
-          ...(args.listed ? [orgActions.setOrgListed({ listed: true })] : []),
-          ...(args.membersPublic ? [orgActions.setMembersPublic({ membersPublic: true })] : []),
-          orgActions.inviteMember({ id: memberId, address: caller, role: "OWNER", invitedAt: at }),
-          orgActions.setMemberStatus({ id: memberId, status: "ACTIVE", at }),
-        ]);
-        const org: OrgRecord = {
-          id: orgId,
-          handle,
-          name,
-          bio: profile.bio ?? null,
-          website: profile.website ?? null,
-          avatarRef: null,
-          links: profile.links ?? [],
-          listed: args.listed === true,
-          membersPublic: args.membersPublic === true,
-          archived: false,
-          takenDown: false,
-          createdBy: caller,
-          createdAt: now,
-          updatedAt: now,
-        };
-        if (!(await store.insertOrganization(org))) throw handleError("TAKEN", handle);
-        await store.insertMember({
-          id: memberId,
-          orgId,
-          address: caller,
-          role: "OWNER",
-          status: "ACTIVE",
-          // Stored scope is never role-derived; ownScope gives owners every app.
-          appScopeAll: false,
-          appDids: [],
-          hidden: false,
-          invitedBy: caller,
-          invitedAt: now,
-          joinedAt: now,
-          endedAt: null,
-          updatedAt: now,
-        });
-        await rt.record({ orgId, actor: caller, action: "createOrganization", at: now, details: { handle, name } });
-        return organizationOutput(rt, org, caller);
+      // Creator lock: concurrent creates cannot overshoot the per-wallet limits. Handle lock inside it.
+      return rt.lock(`creator:${caller}`, async () => {
+        if ((await store.countOrganizationsCreatedBy(caller)) >= MAX_ORGS_PER_CREATOR) {
+          throw limitReached(`A wallet creates at most ${MAX_ORGS_PER_CREATOR} organizations`);
+        }
+        if ((await openMemberships(store, caller, rt.now())).length >= MAX_MEMBERSHIPS_PER_WALLET) {
+          throw limitReached(`A wallet holds at most ${MAX_MEMBERSHIPS_PER_WALLET} memberships`);
+        }
+        return rt.lock(`handle:${handle}`, () => createLocked(rt, caller, handle, name, profile, args));
       });
     },
     updateOrganization: async (_: unknown, args: UpdateArgs, ctx: OrgContext): Promise<OrganizationOutput> => {
       const caller = await rt.writer(ctx, "updateOrganization", args);
       const patch = validateProfile(args);
-      if (patch.avatar) await assertAvatar(rt, patch.avatar);
       return rt.lock(`org:${args.orgId}`, async () => {
         const store = rt.store();
         await requireOrg(store, args.orgId);
         await requireRole(store, args.orgId, caller, "ADMIN");
+        // Only after authorisation: the check reveals whether a media object exists.
+        if (patch.avatar) await assertAvatar(rt, patch.avatar);
         const now = rt.now();
         const setProfile = profileAction(patch);
         const membersPublic = args.membersPublic ?? undefined;

@@ -255,6 +255,14 @@ export interface OrgSearch {
 
 export interface OrgStore {
   insertOrganization(org: OrgRecord): Promise<boolean>;
+  /**
+   * The organization and its first owner in one transaction: false (nothing
+   * written) when the id or handle is taken; a failed member insert rolls the
+   * organization back.
+   */
+  insertOrganizationWithOwner(org: OrgRecord, owner: MemberRecord): Promise<boolean>;
+  /** Deletes an organization with its members and teams (compensation for a failed create). */
+  deleteOrganization(id: string): Promise<void>;
   organization(id: string): Promise<OrgRecord | undefined>;
   organizationByHandle(handle: string): Promise<OrgRecord | undefined>;
   organizationsByIds(ids: readonly string[]): Promise<OrgRecord[]>;
@@ -290,6 +298,6 @@ export interface OrgStore {
   reservedHandle(handle: string, now: Date): Promise<ReservedHandleRecord | undefined>;
   /** Replay guard: true iff the signature hash was not seen before. */
   useSignature(hash: string, expiresAt: Date): Promise<boolean>;
-  /** Deletes expired signature hashes; returns how many. */
+  /** Deletes signature hashes that expired strictly before `now`; returns how many. */
   pruneUsedSignatures(now: Date): Promise<number>;
 }

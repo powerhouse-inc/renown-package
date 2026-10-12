@@ -150,6 +150,25 @@ export class KyselyOrgStore implements OrgStore {
     return inserted !== undefined;
   }
 
+  async insertOrganizationWithOwner(org: OrgRecord, owner: MemberRecord): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const store = new KyselyOrgStore(trx);
+      if (!(await store.insertOrganization(org))) return false;
+      await store.insertMember(owner);
+      return true;
+    });
+  }
+
+  async deleteOrganization(id: string): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      const teams = trx.selectFrom("org_teams").select("id").where("org_id", "=", id);
+      await trx.deleteFrom("org_team_members").where("team_id", "in", teams).execute();
+      await trx.deleteFrom("org_teams").where("org_id", "=", id).execute();
+      await trx.deleteFrom("org_members").where("org_id", "=", id).execute();
+      await trx.deleteFrom("organizations").where("id", "=", id).execute();
+    });
+  }
+
   async organization(id: string): Promise<OrgRecord | undefined> {
     const row = await this.db.selectFrom("organizations").selectAll().where("id", "=", id).executeTakeFirst();
     return row && toOrg(row);
@@ -564,7 +583,7 @@ export class KyselyOrgStore implements OrgStore {
   }
 
   async pruneUsedSignatures(now: Date): Promise<number> {
-    const result = await this.db.deleteFrom("org_used_signatures").where("expires_at", "<=", now).executeTakeFirst();
+    const result = await this.db.deleteFrom("org_used_signatures").where("expires_at", "<", now).executeTakeFirst();
     return Number(result.numDeletedRows);
   }
 }
