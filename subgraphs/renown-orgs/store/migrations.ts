@@ -221,4 +221,14 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("at", "timestamptz", (col) => col.notNull())
     .addPrimaryKeyConstraint("org_credential_suspensions_pk", ["org_id", "credential_id"])
     .execute();
+  // A2: member-level suspensions, kept apart from credential ids (which issuers choose).
+  await db.schema
+    .createTable("org_member_suspensions")
+    .ifNotExists()
+    .addColumn("org_id", "text", (col) => col.notNull())
+    .addColumn("address", "text", (col) => col.notNull())
+    .addColumn("suspended_at", "timestamptz", (col) => col.notNull())
+    .addColumn("reason", "text", (col) => col.notNull())
+    .addPrimaryKeyConstraint("org_member_suspensions_pk", ["org_id", "address"])
+    .execute();
 }

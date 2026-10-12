@@ -3,7 +3,7 @@ import type { RenownOrganizationState } from "../../../document-models/renown-or
 import { sql } from "kysely";
 import { migrate } from "../store/migrations.js";
 import { ORGS_NAMESPACE } from "../store/types.js";
-import { ALICE, BOB, CAROL, DAVE, createOrg, failure, harnessResolvers, insertCredential, join, lower, openHarness, resetHarness, T0, type Harness, type TestResolvers } from "./harness.js";
+import { ALICE, BOB, CAROL, DAVE, EVE, createOrg, failure, harnessResolvers, insertCredential, join, lower, openHarness, resetHarness, T0, type Harness, type TestResolvers } from "./harness.js";
 
 vi.mock("../../renown-auth/core/smart-wallet.js", () => ({
   verifyMessageOnChain: () => Promise.resolve(false),
@@ -145,7 +145,7 @@ describe("credential status under organisation rules", () => {
     expect(await status(t, "c-bob")).toMatchObject({ counts: true });
   });
 
-  it("suspends the whole member when an exit cannot list their delegations, until an admin unsuspends one", async () => {
+  it("suspends the whole member when an exit cannot list their delegations, until an admin lifts it", async () => {
     let credentialsDown = false;
     const t = harnessResolvers(h, {
       relationalDb: {
@@ -161,17 +161,55 @@ describe("credential status under organisation rules", () => {
     credentialsDown = true;
     await t.mutate("removeOrgMember", { orgId: id, address: BOB.address }, ALICE);
     credentialsDown = false;
-    expect(await t.store.suspendedCredentialIds(id)).toEqual([`member:${lower(BOB)}`]);
+    expect(await t.store.suspendedCredentialIds(id)).toEqual([]);
+    expect(await t.store.memberSuspension(id, lower(BOB))).toEqual({ orgId: id, address: lower(BOB), reason: "MEMBER_REMOVED", at: T0 });
+    const audit = await t.store.auditPage(id, 20);
+    expect(audit.find((entry) => entry.action === "memberCredentialsSuspended")).toMatchObject({
+      actor: "system",
+      details: { memberAddress: lower(BOB), reason: "MEMBER_REMOVED", memberLevel: true, credentialIds: [], endedBy: lower(ALICE) },
+    });
+
+    // Re-joined: old delegations stay suspended, one issued after the suspension counts.
+    // (A day later: the read model's issuance_date is a timestamp without time zone.)
+    t.tick(86_400_000);
     await join(t, id, BOB, "PUBLISHER");
     await t.mutate("setOrgMemberAppScope", { orgId: id, address: BOB.address, appScope: { all: true, appDids: [] } }, ALICE);
+    await insertCredential(h, { credentialId: "c-bob-new", issuer: lower(BOB), appDid: APP, issuedAt: t.clock.now });
     expect(await status(t, "c-bob")).toMatchObject({ counts: false, reason: "SUSPENDED" });
     expect(await status(t, "c-bob-2")).toMatchObject({ counts: false, reason: "SUSPENDED" });
-    // Lifting one credential turns the member suspension into per-credential rows.
+    expect(await status(t, "c-bob-new")).toMatchObject({ counts: true, reason: null });
+    const listed = await t.query<{ credentialId: string; status: Status }[]>("orgCredentials", { orgId: id }, ALICE);
+    expect(listed.find((r) => r.credentialId === "c-bob")?.status.reason).toBe("SUSPENDED");
+
+    // Lifting it through one of the covered credentials: the others become individual suspensions.
     expect(await t.mutate("unsuspendOrgCredential", { orgId: id, credentialId: "c-bob" }, ALICE)).toBe(true);
+    expect(await t.store.memberSuspension(id, lower(BOB))).toBeUndefined();
     expect(await status(t, "c-bob")).toMatchObject({ counts: true, reason: null });
     expect(await status(t, "c-bob-2")).toMatchObject({ counts: false, reason: "SUSPENDED" });
+    expect(await status(t, "c-bob-new")).toMatchObject({ counts: true });
     expect(await t.store.suspendedCredentialIds(id)).toEqual(["c-bob-2"]);
     expect(t.reactor.state<RenownOrganizationState>(id).suspendedCredentialIds).toEqual(["c-bob-2"]);
+    const actions = (await t.store.auditPage(id, 30)).map((entry) => entry.action);
+    expect(actions).toEqual(expect.arrayContaining(["convertMemberSuspension", "liftMemberSuspension", "unsuspendOrgCredential"]));
+    expect((await t.store.auditPage(id, 30)).find((entry) => entry.action === "liftMemberSuspension")).toMatchObject({
+      actor: lower(ALICE),
+      details: { memberAddress: lower(BOB), reason: "MEMBER_REMOVED", credentialId: "c-bob" },
+    });
+  });
+
+  it("never lets a forged credential id suspend another member", async () => {
+    const { t, id } = await setup();
+    await join(t, id, EVE, "PUBLISHER");
+    await t.mutate("setOrgMemberAppScope", { orgId: id, address: EVE.address, appScope: { all: true, appDids: [] } }, ALICE);
+    await insertCredential(h, { credentialId: "c-alice", issuer: lower(ALICE), appDid: APP });
+    await insertCredential(h, { credentialId: `member:${lower(ALICE)}`, issuer: lower(EVE), appDid: APP });
+    await t.mutate("leaveOrganization", { orgId: id }, EVE);
+    expect(await t.store.suspendedCredentialIds(id)).toEqual([`member:${lower(ALICE)}`]);
+    expect(await status(t, "c-alice")).toMatchObject({ counts: true, reason: null });
+    expect(await status(t, "c-bob")).toMatchObject({ counts: true, reason: null });
+    // Lifting the forged id lifts only that credential's own suspension.
+    expect(await t.mutate("unsuspendOrgCredential", { orgId: id, credentialId: `member:${lower(ALICE)}` }, ALICE)).toBe(true);
+    expect(await status(t, "c-alice")).toMatchObject({ counts: true });
   });
 
   it("fails closed once the app is an org app, even when a later table is missing", async () => {

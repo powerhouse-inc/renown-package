@@ -6,7 +6,7 @@ import type { ReadModelDb } from "../../renown-auth/lookups.js";
 import { memoizedNamespace } from "../store/foreign.js";
 import { jsonValue } from "../store/kysely.js";
 import { isMissingNamespace } from "../store/lookups.js";
-import { memberSuspensionId, ORGS_NAMESPACE, type OrgRole, type OrgsDB } from "../store/types.js";
+import { ORGS_NAMESPACE, type OrgRole, type OrgsDB } from "../store/types.js";
 import { orgDid } from "./config.js";
 
 const ORG_DID_RE = /^did:web:[^:]+:org:([A-Za-z0-9_-]{1,128})$/;
@@ -51,11 +51,11 @@ export interface OrgPolicy {
    * rules (spec 3.7). Person apps always do. For an org app (org_apps) the
    * reasons, in precedence order: APP_FROZEN, SUSPENDED (by that org),
    * ISSUER_NOT_MEMBER (no ACTIVE membership in a live org), ISSUER_NOT_PUBLISHER
-   * (coversApp fails). SUSPENDED covers per-credential rows and the issuer's
-   * member-level suspension. Only a missing namespace on the org_apps read
+   * (coversApp fails). SUSPENDED covers per-credential rows and an issuer's
+   * member-level suspension for delegations issued at or before it. Only a missing namespace on the org_apps read
    * means "person app"; any other failure throws: callers fail closed.
    */
-  credentialStatus(input: { credentialId: string; appDid: string; issuer: string }): Promise<CredentialVerdict>;
+  credentialStatus(input: { credentialId: string; appDid: string; issuer: string; issuedAt: Date }): Promise<CredentialVerdict>;
   /** Public card of a live organisation, null when unknown or taken down. */
   orgSummary(orgId: string): Promise<OrgPublisherSummary | null>;
   /** orgOfApp for many apps in one query; apps without an organisation are absent. */
@@ -170,7 +170,7 @@ export function createOrgPolicy(db: ReadModelDb, didHost: string): OrgPolicy {
       }),
     activeRole: (orgId, address) => orEmpty(null, async () => (await activeMember(orgId, address))?.role ?? null),
     coversApp: (orgId, address, appDid) => orEmpty(false, () => covers(orgId, address, appDid)),
-    credentialStatus: async ({ credentialId, appDid, issuer }) => {
+    credentialStatus: async ({ credentialId, appDid, issuer, issuedAt }) => {
       // Only "no organisations at all" makes an app a person app; once it is
       // known to be an org app every later read must succeed (fail closed).
       const app = await orEmpty(undefined, () =>
@@ -183,9 +183,17 @@ export function createOrgPolicy(db: ReadModelDb, didHost: string): OrgPolicy {
         .selectFrom("org_credential_suspensions")
         .select("credential_id")
         .where("org_id", "=", app.org_id)
-        .where("credential_id", "in", [credentialId, memberSuspensionId(issuer)])
+        .where("credential_id", "=", credentialId)
         .executeTakeFirst();
       if (suspended) return verdict("SUSPENDED");
+      const memberSuspended = await orgs()
+        .selectFrom("org_member_suspensions")
+        .select("address")
+        .where("org_id", "=", app.org_id)
+        .where("address", "=", issuer.toLowerCase())
+        .where("suspended_at", ">=", issuedAt)
+        .executeTakeFirst();
+      if (memberSuspended) return verdict("SUSPENDED");
       if (!(await activeMember(app.org_id, issuer))) return verdict("ISSUER_NOT_MEMBER");
       return verdict((await covers(app.org_id, issuer, appDid)) ? null : "ISSUER_NOT_PUBLISHER");
     },

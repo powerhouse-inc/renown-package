@@ -168,16 +168,22 @@ export async function credentialsForApps(db: ReadModelDb, appDids: readonly stri
   return rows.map(toCredential);
 }
 
-/** Unrevoked, unexpired delegations by `issuer` to any of `appDids`. */
-export async function liveCredentialsOf(db: ReadModelDb, issuer: string, appDids: readonly string[], now: Date): Promise<CredentialRow[]> {
+/** Unrevoked, unexpired delegations by `issuer` to any of `appDids`; with `issuedBy`, only those issued at or before it. */
+export async function liveCredentialsOf(
+  db: ReadModelDb,
+  issuer: string,
+  appDids: readonly string[],
+  now: Date,
+  issuedBy?: Date,
+): Promise<CredentialRow[]> {
   if (appDids.length === 0) return [];
-  const rows = await credentials(db)
+  let query = credentials(db)
     .select([...CREDENTIAL_COLUMNS])
     .where((eb) => eb(eb.fn("LOWER", ["issuer_ethereum_address"]), "=", issuer.toLowerCase()))
     .where("credential_subject_id", "in", [...appDids])
     .where("revoked", "=", false)
-    .where((eb) => eb.or([eb("expiration_date", "is", null), eb("expiration_date", ">", now)]))
-    .orderBy("credential_id")
-    .execute();
+    .where((eb) => eb.or([eb("expiration_date", "is", null), eb("expiration_date", ">", now)]));
+  if (issuedBy) query = query.where("issuance_date", "<=", issuedBy);
+  const rows = await query.orderBy("credential_id").execute();
   return rows.map(toCredential);
 }

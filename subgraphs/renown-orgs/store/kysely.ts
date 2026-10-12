@@ -9,6 +9,7 @@ import type {
   MemberRecord,
   OrgAppRecord,
   SuspensionRecord,
+  MemberSuspensionRecord,
   OrganizationsTable,
   OrgInviteLinksTable,
   OrgLink,
@@ -584,6 +585,38 @@ export class KyselyOrgStore implements OrgStore {
     return (
       row && { orgId: row.org_id, credentialId: row.credential_id, reason: row.reason, memberAddress: row.member_address, at: toDate(row.at) }
     );
+  }
+
+  async suspendMember(record: MemberSuspensionRecord): Promise<void> {
+    await this.db
+      .insertInto("org_member_suspensions")
+      .values({ org_id: record.orgId, address: record.address.toLowerCase(), suspended_at: record.at, reason: record.reason })
+      .onConflict((oc) =>
+        oc.columns(["org_id", "address"]).doUpdateSet({
+          suspended_at: sql`greatest(org_member_suspensions.suspended_at, excluded.suspended_at)`,
+          reason: (eb) => eb.ref("excluded.reason"),
+        }),
+      )
+      .execute();
+  }
+
+  async memberSuspension(orgId: string, address: string): Promise<MemberSuspensionRecord | undefined> {
+    const row = await this.db
+      .selectFrom("org_member_suspensions")
+      .selectAll()
+      .where("org_id", "=", orgId)
+      .where("address", "=", address.toLowerCase())
+      .executeTakeFirst();
+    return row && { orgId: row.org_id, address: row.address, reason: row.reason, at: toDate(row.suspended_at) };
+  }
+
+  async liftMemberSuspension(orgId: string, address: string): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom("org_member_suspensions")
+      .where("org_id", "=", orgId)
+      .where("address", "=", address.toLowerCase())
+      .executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
   }
 
   async suspendedCredentialIds(orgId: string): Promise<string[]> {

@@ -417,5 +417,19 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect(await store.unsuspendCredential("o1", "c2")).toBe(false);
       expect(await store.suspendedCredentialIds("o1")).toEqual(["c1", "c3"]);
     });
+
+    it("keeps member-level suspensions per organisation and address, never moving them earlier", async () => {
+      const { store } = await open();
+      await store.suspendMember({ orgId: "o1", address: "0xABC", reason: "MEMBER_LEFT", at: at(10) });
+      expect(await store.memberSuspension("o1", "0xabc")).toEqual({ orgId: "o1", address: "0xabc", reason: "MEMBER_LEFT", at: at(10) });
+      await store.suspendMember({ orgId: "o1", address: "0xabc", reason: "MEMBER_REMOVED", at: at(5) });
+      expect(await store.memberSuspension("o1", "0xabc")).toEqual({ orgId: "o1", address: "0xabc", reason: "MEMBER_REMOVED", at: at(10) });
+      await store.suspendMember({ orgId: "o1", address: "0xabc", reason: "MEMBER_LEFT", at: at(20) });
+      expect((await store.memberSuspension("o1", "0xabc"))?.at).toEqual(at(20));
+      expect(await store.memberSuspension("o2", "0xabc")).toBeUndefined();
+      expect(await store.liftMemberSuspension("o1", "0xabc")).toBe(true);
+      expect(await store.liftMemberSuspension("o1", "0xabc")).toBe(false);
+      expect(await store.memberSuspension("o1", "0xabc")).toBeUndefined();
+    });
   });
 }

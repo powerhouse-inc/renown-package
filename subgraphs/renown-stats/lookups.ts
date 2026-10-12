@@ -27,7 +27,7 @@ export async function hasDelegation(
     db,
   )
     .selectFrom("renown_credential")
-    .select("credential_id")
+    .select(["credential_id", "issuance_date"])
     .where((eb) =>
       eb(eb.fn("LOWER", ["issuer_ethereum_address"]), "=", issuer),
     )
@@ -42,8 +42,9 @@ export async function hasDelegation(
     .execute();
   if (rows.length === 0) return false;
   if (!policy) return true;
-  for (const credentialId of new Set(rows.map((row) => row.credential_id))) {
-    if ((await policy.credentialStatus({ credentialId, appDid, issuer })).counts) return true;
+  for (const row of rows) {
+    const issuedAt = new Date(row.issuance_date);
+    if ((await policy.credentialStatus({ credentialId: row.credential_id, appDid, issuer, issuedAt })).counts) return true;
   }
   return false;
 }

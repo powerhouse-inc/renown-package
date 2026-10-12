@@ -96,6 +96,17 @@ export interface OrgCredentialSuspensionsTable {
   at: Timestamp;
 }
 
+/** A2: member-level suspensions (an exit whose delegations could not be listed). */
+export interface OrgMemberSuspensionsTable {
+  org_id: string;
+  /** Lowercase. */
+  address: string;
+  /** Delegations issued at or before this instant are suspended. */
+  suspended_at: Timestamp;
+  /** MEMBER_LEFT or MEMBER_REMOVED. */
+  reason: string;
+}
+
 export interface OrgDomainsTable {
   id: string;
   org_id: string;
@@ -209,6 +220,7 @@ export interface OrgsDB {
   org_proposals: OrgProposalsTable;
   org_jobs: OrgJobsTable;
   org_credential_suspensions: OrgCredentialSuspensionsTable;
+  org_member_suspensions: OrgMemberSuspensionsTable;
 }
 
 export type OrgsKysely = Kysely<OrgsDB>;
@@ -292,13 +304,17 @@ export interface OrgAppRecord {
 }
 
 /**
- * The credential_id of a member-level suspension: written when a member's
- * exit could not list their delegations, it suspends every delegation the
- * address issued for the organisation's apps until an admin unsuspends one
- * of them (which turns it into per-credential rows).
+ * A member-level suspension: written when a member's exit could not list
+ * their delegations. Every delegation the address issued for the
+ * organisation's apps at or before `at` is suspended until an admin lifts it.
  */
-export function memberSuspensionId(address: string): string {
-  return `member:${address.toLowerCase()}`;
+export interface MemberSuspensionRecord {
+  orgId: string;
+  /** Lowercase. */
+  address: string;
+  /** MEMBER_LEFT or MEMBER_REMOVED. */
+  reason: string;
+  at: Date;
 }
 
 export interface SuspensionRecord {
@@ -403,6 +419,14 @@ export interface OrgStore {
   /** Lifts a suspension; false when there was none. */
   unsuspendCredential(orgId: string, credentialId: string): Promise<boolean>;
   credentialSuspension(orgId: string, credentialId: string): Promise<SuspensionRecord | undefined>;
+  /**
+   * Records a member-level suspension; an existing one for the address moves
+   * to the later `at` (it never shrinks).
+   */
+  suspendMember(record: MemberSuspensionRecord): Promise<void>;
+  memberSuspension(orgId: string, address: string): Promise<MemberSuspensionRecord | undefined>;
+  /** Lifts a member-level suspension; false when there was none. */
+  liftMemberSuspension(orgId: string, address: string): Promise<boolean>;
   /** Suspended credential ids of `orgId`, sorted. */
   suspendedCredentialIds(orgId: string): Promise<string[]>;
   verifiedDomains(orgIds: readonly string[]): Promise<Map<string, string[]>>;
