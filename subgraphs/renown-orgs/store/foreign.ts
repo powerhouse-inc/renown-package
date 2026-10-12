@@ -310,15 +310,38 @@ export async function activeUsersOfApps(db: ReadModelDb, appDids: readonly strin
   return rows.reduce((sum, row) => sum + Number(row.users), 0);
 }
 
-/** Credentials created in (from, to], oldest first, at most `limit`. */
-export async function credentialsCreatedBetween(db: ReadModelDb, from: Date, to: Date, limit: number): Promise<CredentialRow[]> {
-  const rows = await credentials(db)
-    .select([...CREDENTIAL_COLUMNS, issuedAtUtc().as("issuance_date")])
-    .where("created_at", ">", from)
-    .where("created_at", "<=", to)
-    .orderBy("created_at")
-    .orderBy("credential_id")
-    .limit(limit)
-    .execute();
-  return rows.map(toCredential);
+export interface CreatedCredential extends CredentialRow {
+  /**
+   * created_at to the millisecond, as the database's own text: the keyset
+   * with credentialId. Kept as text because created_at has no time zone and
+   * a Date round trip through the driver may shift it.
+   */
+  createdKey: string;
+}
+
+/**
+ * Credentials to any of `appDids` stored in (from, to], oldest first, at most
+ * `limit`, strictly after the `after` keyset.
+ */
+export async function credentialsCreatedBetween(
+  db: ReadModelDb,
+  appDids: readonly string[],
+  window: { from: Date; to: Date },
+  limit: number,
+  after?: { createdKey: string; credentialId: string },
+): Promise<CreatedCredential[]> {
+  if (appDids.length === 0) return [];
+  const createdMs = sql<Date>`date_trunc('milliseconds', created_at)`;
+  let query = credentials(db)
+    .select([
+      ...CREDENTIAL_COLUMNS,
+      issuedAtUtc().as("issuance_date"),
+      sql<string>`to_char(date_trunc('milliseconds', created_at), 'YYYY-MM-DD"T"HH24:MI:SS.MS')`.as("created_key"),
+    ])
+    .where("credential_subject_id", "in", [...appDids])
+    .where(createdMs, ">", window.from)
+    .where(createdMs, "<=", window.to);
+  if (after) query = query.where(sql<boolean>`(${createdMs}, credential_id) > (${after.createdKey}::timestamp, ${after.credentialId})`);
+  const rows = await query.orderBy(createdMs).orderBy("credential_id").limit(limit).execute();
+  return rows.map((row) => ({ ...toCredential(row), createdKey: row.created_key }));
 }

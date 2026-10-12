@@ -203,6 +203,15 @@ export type TransferPatch = Partial<Pick<TransferRecord, "status" | "decidedAt" 
 export interface OrgJobsTable {
   name: string;
   last_run_at: Timestamp;
+  /** How far a windowed job (delegations) has processed; advanced only after a successful run. */
+  watermark: ColumnType<Timestamp | null, Timestamp | null | undefined, Timestamp | null>;
+}
+
+/** One DELEGATION_ADDED alert per credential, whatever re-reads its window. */
+export interface OrgDelegationAlertsTable {
+  credential_id: string;
+  org_id: string;
+  created_at: Timestamp;
 }
 
 export interface OrgProposalsTable {
@@ -302,6 +311,7 @@ export interface OrgsDB {
   org_app_transfers: OrgAppTransfersTable;
   org_release_attestations: OrgReleaseAttestationsTable;
   org_notifications: OrgNotificationsTable;
+  org_delegation_alerts: OrgDelegationAlertsTable;
 }
 
 export type OrgsKysely = Kysely<OrgsDB>;
@@ -612,4 +622,14 @@ export interface OrgStore {
   markNotificationsRead(recipient: string, ids: readonly string[] | "ALL", now: Date): Promise<number>;
   /** Deletes notifications created before `before`; returns how many. */
   pruneNotifications(before: Date): Promise<number>;
+  /** Every app any organisation owns. */
+  allOrgApps(): Promise<OrgAppRecord[]>;
+  /** How far the windowed job `name` has processed, if ever. */
+  jobWatermark(name: string): Promise<Date | undefined>;
+  /** Records how far the job `name` has processed (creating its row when needed). */
+  setJobWatermark(name: string, at: Date): Promise<void>;
+  /** True the first time only: the DELEGATION_ADDED alert of `credentialId` is now taken. */
+  claimDelegationAlert(credentialId: string, orgId: string, now: Date): Promise<boolean>;
+  /** Forgets delegation alerts taken before `before`; returns how many. */
+  pruneDelegationAlerts(before: Date): Promise<number>;
 }

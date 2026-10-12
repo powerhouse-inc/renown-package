@@ -68,8 +68,19 @@ function cursorFor(note: NotificationRecord): string {
   return Buffer.from(JSON.stringify({ c: iso(note.createdAt), i: note.id })).toString("base64url");
 }
 
-/** Runtimes whose notification sink is registered: resolvers built twice on one runtime must not notify twice. */
+/** Runtimes whose notification sink is registered. */
 const registered = new WeakSet<OrgRuntime>();
+
+/**
+ * Adds the notification sink to `rt` once. Both the resolvers and the sweep
+ * jobs call it, so neither depends on the other being built first, and
+ * building either twice never notifies twice.
+ */
+export function registerNotificationSink(rt: OrgRuntime): void {
+  if (registered.has(rt)) return;
+  registered.add(rt);
+  rt.sinks.push(notificationSink(rt));
+}
 
 /**
  * The caller's own inbox. Every field reads or changes only the proven
@@ -77,10 +88,7 @@ const registered = new WeakSet<OrgRuntime>();
  * there is no recipient argument.
  */
 export const notificationResolvers: Area = (rt) => {
-  if (!registered.has(rt)) {
-    registered.add(rt);
-    rt.sinks.push(notificationSink(rt));
-  }
+  registerNotificationSink(rt);
   return {
     Query: {
       myNotifications: async (

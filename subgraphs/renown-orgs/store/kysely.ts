@@ -1213,4 +1213,37 @@ export class KyselyOrgStore implements OrgStore {
     const result = await this.db.deleteFrom("org_notifications").where("created_at", "<", before).executeTakeFirst();
     return Number(result.numDeletedRows);
   }
+
+  async allOrgApps(): Promise<OrgAppRecord[]> {
+    const rows = await this.db.selectFrom("org_apps").selectAll().orderBy("app_did").execute();
+    return rows.map(toOrgApp);
+  }
+
+  async jobWatermark(name: string): Promise<Date | undefined> {
+    const row = await this.db.selectFrom("org_jobs").select("watermark").where("name", "=", name).executeTakeFirst();
+    return row?.watermark ? toDate(row.watermark) : undefined;
+  }
+
+  async setJobWatermark(name: string, at: Date): Promise<void> {
+    await this.db
+      .insertInto("org_jobs")
+      .values({ name, last_run_at: at, watermark: at })
+      .onConflict((oc) => oc.column("name").doUpdateSet({ watermark: at }))
+      .execute();
+  }
+
+  async claimDelegationAlert(credentialId: string, orgId: string, now: Date): Promise<boolean> {
+    const inserted = await this.db
+      .insertInto("org_delegation_alerts")
+      .values({ credential_id: credentialId, org_id: orgId, created_at: now })
+      .onConflict((oc) => oc.column("credential_id").doNothing())
+      .returning("credential_id")
+      .executeTakeFirst();
+    return inserted !== undefined;
+  }
+
+  async pruneDelegationAlerts(before: Date): Promise<number> {
+    const result = await this.db.deleteFrom("org_delegation_alerts").where("created_at", "<", before).executeTakeFirst();
+    return Number(result.numDeletedRows);
+  }
 }

@@ -517,5 +517,20 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect(await store.pruneNotifications(at(2))).toBe(2);
       expect((await store.notificationsPage(ALICE, { unreadOnly: false, limit: 5 })).map((n) => n.id)).toEqual(["n3"]);
     });
+    it("keeps a job watermark, lists every org app, and claims each delegation alert once", async () => {
+      const { store } = await open();
+      expect(await store.jobWatermark("delegations")).toBeUndefined();
+      await store.setJobWatermark("delegations", T0);
+      await store.setJobWatermark("delegations", at(5));
+      expect(await store.jobWatermark("delegations")).toEqual(at(5));
+      await store.insertOrgApp({ appDid: "did:key:zb", orgId: "o2", frozen: false, addedAt: T0 });
+      await store.insertOrgApp({ appDid: "did:key:za", orgId: "o1", frozen: false, addedAt: T0 });
+      expect((await store.allOrgApps()).map((a) => [a.appDid, a.orgId])).toEqual([["did:key:za", "o1"], ["did:key:zb", "o2"]]);
+      expect(await store.claimDelegationAlert("c1", "o1", T0)).toBe(true);
+      expect(await store.claimDelegationAlert("c1", "o1", at(1))).toBe(false);
+      expect(await store.claimDelegationAlert("c2", "o1", at(2))).toBe(true);
+      expect(await store.pruneDelegationAlerts(at(1))).toBe(1);
+      expect(await store.claimDelegationAlert("c1", "o1", at(3))).toBe(true);
+    });
   });
 }

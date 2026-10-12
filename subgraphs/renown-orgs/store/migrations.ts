@@ -298,4 +298,14 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .execute();
   await db.schema.createIndex("org_notifications_recipient").ifNotExists().on("org_notifications").columns(["recipient", "created_at", "id"]).execute();
   await db.schema.createIndex("org_notifications_created").ifNotExists().on("org_notifications").column("created_at").execute();
+  // A3: delegation alerts: a processed-up-to mark per windowed job, and one alert per credential.
+  await db.schema.alterTable("org_jobs").addColumn("watermark", "timestamptz", (col) => col.ifNotExists()).execute();
+  await db.schema
+    .createTable("org_delegation_alerts")
+    .ifNotExists()
+    .addColumn("credential_id", "text", (col) => col.primaryKey())
+    .addColumn("org_id", "text", (col) => col.notNull())
+    .addColumn("created_at", "timestamptz", (col) => col.notNull())
+    .execute();
+  await db.schema.createIndex("org_delegation_alerts_created").ifNotExists().on("org_delegation_alerts").column("created_at").execute();
 }

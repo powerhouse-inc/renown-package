@@ -1,6 +1,6 @@
 import { actions as orgActions } from "../../document-models/renown-organization/index.js";
 import { domainRestoreOf } from "./areas/domains.js";
-import { NOTIFICATION_RETENTION_DAYS } from "./areas/notifications.js";
+import { NOTIFICATION_RETENTION_DAYS, registerNotificationSink } from "./areas/notifications.js";
 import { writeDocument } from "./areas/members.js";
 import { expireProposal, rearmProposal, runProposal } from "./areas/proposals.js";
 import { expireTransfer } from "./areas/transfers.js";
@@ -175,37 +175,85 @@ const DAY_MS = 24 * HOUR_MS;
 /** Delegations per run of delegationsJob. */
 const DELEGATION_BATCH = 500;
 
-/** Daily: deletes notifications older than the retention period. */
+/** Daily: deletes notifications (and delegation-alert claims) older than the retention period. */
 export function notificationsPruneJob(rt: OrgRuntime): SweepJob {
   return {
     name: "notifications-prune",
     everyMs: DAY_MS,
     async run(now) {
-      await rt.store().pruneNotifications(new Date(now.getTime() - NOTIFICATION_RETENTION_DAYS * DAY_MS));
+      const before = new Date(now.getTime() - NOTIFICATION_RETENTION_DAYS * DAY_MS);
+      await rt.store().pruneNotifications(before);
+      await rt.store().pruneDelegationAlerts(before);
     },
   };
 }
 
+/** How far behind the clock delegationsJob reads: covers commit latency and clock skew between replicas. */
+export const DELEGATION_LAG_MS = 60_000;
+/** Org app DIDs per credentials query. */
+const APP_CHUNK = 500;
+
+interface DelegationAlert {
+  credentialId: string;
+  appDid: string;
+  issuer: string;
+  orgId: string;
+}
+
 /**
  * Every 5 minutes: tells an organisation's admins (DELEGATION_ADDED) about
- * delegations created for its apps since the job last started. The first
- * run only sets the mark (no backlog). A failed read fails the run, so the
- * sweeper gives the claim back and the next run covers the same window.
+ * delegations an ACTIVE member created for one of its apps. It reads the
+ * contiguous window (watermark, now - DELEGATION_LAG_MS] of the read model,
+ * only for org apps, page by page until exhausted; the first run only sets
+ * the watermark (no backlog). Everything is resolved before anything is
+ * recorded, each credential is alerted at most once (claimDelegationAlert),
+ * and the watermark advances only after a successful run, so a failed or
+ * crashed run is repeated without duplicates.
  */
-export function delegationsJob(rt: OrgRuntime): SweepJob {
+export function delegationsJob(rt: OrgRuntime, options: { pageSize?: number } = {}): SweepJob {
+  const pageSize = options.pageSize ?? DELEGATION_BATCH;
+  const name = "delegations";
   return {
-    name: "delegations",
+    name,
     everyMs: 5 * MINUTE_MS,
-    async run(now, previous) {
-      if (!previous) return;
+    async run(now) {
       const store = rt.store();
-      for (const row of await credentialsCreatedBetween(rt.deps.relationalDb, previous, now, DELEGATION_BATCH)) {
-        const app = await store.orgOfApp(row.appDid);
-        if (!app) continue;
-        const payload = { credentialId: row.credentialId, appDid: row.appDid, issuer: row.issuer };
+      const to = new Date(now.getTime() - DELEGATION_LAG_MS);
+      const from = await store.jobWatermark(name);
+      if (!from) return store.setJobWatermark(name, to);
+      if (to.getTime() <= from.getTime()) return;
+      const orgOf = new Map((await store.allOrgApps()).map((app) => [app.appDid, app.orgId]));
+      const appDids = [...orgOf.keys()];
+      const membership = new Map<string, boolean>();
+      const alerts: DelegationAlert[] = [];
+      for (let i = 0; i < appDids.length; i += APP_CHUNK) {
+        const chunk = appDids.slice(i, i + APP_CHUNK);
+        let after: { createdKey: string; credentialId: string } | undefined;
+        for (;;) {
+          const page = await credentialsCreatedBetween(rt.deps.relationalDb, chunk, { from, to }, pageSize, after);
+          for (const row of page) {
+            const orgId = orgOf.get(row.appDid);
+            if (!orgId) continue;
+            const key = `${orgId}\u0000${row.issuer}`;
+            let active = membership.get(key);
+            if (active === undefined) {
+              active = (await store.openMember(orgId, row.issuer))?.status === "ACTIVE";
+              membership.set(key, active);
+            }
+            if (active) alerts.push({ credentialId: row.credentialId, appDid: row.appDid, issuer: row.issuer, orgId });
+          }
+          const last = page.at(-1);
+          if (page.length < pageSize || !last) break;
+          if (after && last.createdKey === after.createdKey && last.credentialId === after.credentialId) throw new Error("delegations: the credentials cursor did not advance");
+          after = { createdKey: last.createdKey, credentialId: last.credentialId };
+        }
+      }
+      for (const alert of alerts) {
+        if (!(await store.claimDelegationAlert(alert.credentialId, alert.orgId, now))) continue;
+        const payload = { credentialId: alert.credentialId, appDid: alert.appDid, issuer: alert.issuer };
         // record never throws: an audit or notification write that fails is logged.
         await rt.record({
-          orgId: app.orgId,
+          orgId: alert.orgId,
           actor: "system",
           action: "system.delegationAdded",
           at: now,
@@ -213,11 +261,14 @@ export function delegationsJob(rt: OrgRuntime): SweepJob {
           notify: [{ to: "ADMINS", kind: "DELEGATION_ADDED", payload }],
         });
       }
+      await store.setJobWatermark(name, to);
     },
   };
 }
 
 /** Every sweep job of renown-orgs; later tasks append theirs. */
 export function sweepJobs(rt: OrgRuntime): SweepJob[] {
+  // The jobs record notifications: the sink must exist even if no resolvers were built on this runtime.
+  registerNotificationSink(rt);
   return [proposalsJob(rt), signaturesJob(rt), domainsJob(rt), transfersJob(rt), notificationsPruneJob(rt), delegationsJob(rt)];
 }

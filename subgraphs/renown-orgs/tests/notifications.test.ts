@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSweeper } from "../core/sweeper.js";
-import { sweepJobs } from "../jobs.js";
-import { ALICE, BOB, CAROL, addOwner, createOrg, failure, harnessResolvers, insertCredential, join, lower, openHarness, resetHarness, T0, type Harness, type TestResolvers } from "./harness.js";
+import { delegationsJob, sweepJobs } from "../jobs.js";
+import { resolversFor } from "../resolvers.js";
+import { createRuntime } from "../runtime.js";
+import { ALICE, BOB, CAROL, DAVE, addOwner, createOrg, failure, harnessResolvers, insertCredential, join, lower, openHarness, resetHarness, T0, type Harness, type TestResolvers } from "./harness.js";
 
 vi.mock("../../renown-auth/core/smart-wallet.js", () => ({
   verifyMessageOnChain: () => Promise.resolve(false),
@@ -141,5 +143,48 @@ describe("notifications", () => {
     t.tick(91 * DAY);
     await sweeper.tick();
     expect((await inbox(t, BOB)).items).toEqual([]);
+  });
+  it("alerts each delegation once, only from active members, page by page over a lagged window, and repeats a failed run", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    await join(t, id, BOB, "PUBLISHER");
+    await t.store.insertOrgApp({ appDid: APP, orgId: id, frozen: false, addedAt: T0 });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const sweeper = createSweeper({ jobs: [delegationsJob(t.rt, { pageSize: 2 })], store: () => t.store, now: () => t.clock.now });
+    await sweeper.tick();
+    const later = (ms: number) => new Date(T0.getTime() + ms);
+    for (const credentialId of ["c1", "c2", "c3"]) await insertCredential(h, { credentialId, issuer: lower(BOB), appDid: APP, createdAt: later(MINUTE) });
+    await insertCredential(h, { credentialId: "c4", issuer: lower(DAVE), appDid: APP, createdAt: later(MINUTE) });
+    await insertCredential(h, { credentialId: "c5", issuer: lower(BOB), appDid: "did:key:zDnaerDaTF5BXEavCrfRZEk316dpbLsfPDZ3WJ5hRTPFU2169", createdAt: later(MINUTE) });
+    // Inside the lag at the next run: left for the run after.
+    await insertCredential(h, { credentialId: "c6", issuer: lower(BOB), appDid: APP, createdAt: later(5 * MINUTE - 30_000) });
+    const alerted = async () =>
+      (await inbox(t, ALICE)).items.filter((n) => n.kind === "DELEGATION_ADDED").map((n) => String(payloadOf(n).credentialId)).sort();
+    t.tick(5 * MINUTE);
+    // A read failing midway records nothing; the claim is given back and the same window is read again.
+    vi.spyOn(t.store, "openMember").mockRejectedValueOnce(new Error("store down"));
+    expect(await sweeper.tick()).toEqual([]);
+    expect(await alerted()).toEqual([]);
+    expect(await sweeper.tick()).toEqual(["delegations"]);
+    expect(await alerted()).toEqual(["c1", "c2", "c3"]);
+    t.tick(5 * MINUTE);
+    await sweeper.tick();
+    expect(await alerted()).toEqual(["c1", "c2", "c3", "c6"]);
+    // A window read again (a crash before the watermark moved) alerts nothing twice.
+    await t.store.setJobWatermark("delegations", new Date(T0.getTime() - MINUTE));
+    t.tick(5 * MINUTE);
+    await sweeper.tick();
+    expect(await alerted()).toEqual(["c1", "c2", "c3", "c6"]);
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining("store down"));
+    vi.restoreAllMocks();
+  });
+
+  it("registers the notification sink once, from the sweep jobs or the resolvers, whichever comes first", () => {
+    const t = harnessResolvers(h);
+    const rt = createRuntime({ ...t.rt.deps, sinks: [] });
+    sweepJobs(rt);
+    sweepJobs(rt);
+    resolversFor(rt);
+    expect(rt.sinks).toHaveLength(1);
   });
 });

@@ -14,6 +14,7 @@ export const NOTIFICATIONS_SDL = `
     APP_TRANSFER_DONE
     APP_FROZEN
     DOMAIN_LAPSED
+    "An active member delegated a key for one of the organisation's apps (sent to admins)."
     DELEGATION_ADDED
   }
 
