@@ -130,3 +130,25 @@ with the offending `extensions.field`. The server also answers `BAD_USER_INPUT`
 40 code points after trimming, and for an empty or oversize cursor; the script does not send
 those. Against a switchboard without these reads it fails on the first query
 (`credentialId` is not defined). Exits 1 on any failure.
+
+## organisations.ts
+
+Checks the renown-orgs subgraph on a switchboard. The switchboard URL is the `BASE` env var (default: Renown staging):
+
+```sh
+node scripts/smoke/organisations.ts                       # staging: anonymous checks + signed writes
+BASE=http://localhost:4001 node scripts/smoke/organisations.ts
+BASE=https://<prod switchboard> node scripts/smoke/organisations.ts --allow-prod   # read-only
+node scripts/smoke/organisations.ts --read-only           # anonymous checks only
+node scripts/smoke/organisations.ts --dry-run             # no network: wallet + signing wiring only
+```
+
+One line per check (`ok` / `FAIL`); exit 1 if any failed. Anonymous checks: reserved and fresh handles, the
+directory (only listed, live orgs; limit 51 refused), unknown credential and invite link, anonymous writes and
+inbox refused, the OIDC `orgs` scope and claim.
+
+Signed checks use a throwaway wallet generated per run (the key is never printed or stored) and create the
+**unlisted** org `@smoke-<random>`, then create, preview and revoke an invite link, create and delete a team and read
+the audit log back. Archiving an org is timelocked, so smoke orgs accumulate on staging; they are all unlisted and
+prefixed `smoke-`. Invite tokens and keys are redacted from all output. Non-staging hosts are refused without
+`--allow-prod`, and then only the anonymous checks run.
