@@ -35,6 +35,10 @@ type RenownAppProfileState {
   logoRef: AttachmentRef
   "Uploaded 3:1 cover image"
   coverRef: AttachmentRef
+  "Support contact: an email address or an https URL, at most 200 characters"
+  supportContact: String
+  "Security contact (vulnerability reports): an email address or an https URL, at most 200 characters"
+  securityContact: String
   "At most 8 links, in display order"
   links: [RenownAppLink!]!
   "Publisher-defined metrics, at most 16, in display order"
@@ -92,6 +96,10 @@ input SetProfileInput {
   logoRef: String
   "attachment://v1:<sha256>; empty clears"
   coverRef: String
+  "An email address or an https URL, at most 200 characters; empty clears"
+  supportContact: String
+  "An email address or an https URL, at most 200 characters; empty clears"
+  securityContact: String
 }
 
 input AddLinkInput {

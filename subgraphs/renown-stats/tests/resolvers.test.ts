@@ -600,6 +600,8 @@ describe("upsertAppProfile", () => {
       category: null,
       logoRef: null,
       coverRef: null,
+      supportContact: null,
+      securityContact: null,
       links: [],
       metrics: [],
       publisherOrg: null,

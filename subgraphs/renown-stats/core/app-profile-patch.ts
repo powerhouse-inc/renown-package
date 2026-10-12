@@ -2,6 +2,7 @@ import type { Action } from "document-model";
 import {
   actions as appActions,
   isAppImageRef,
+  isContact,
   isValidLinkLabel,
   isValidLinkUrl,
   MAX_CATEGORY_LENGTH,
@@ -24,6 +25,8 @@ export interface RichProfileFields {
   category?: string | null;
   logoRef?: string | null;
   coverRef?: string | null;
+  supportContact?: string | null;
+  securityContact?: string | null;
   links?: readonly AppProfileLink[] | null;
 }
 
@@ -36,6 +39,8 @@ export interface RichProfilePatch {
   category?: string;
   logoRef?: string;
   coverRef?: string;
+  supportContact?: string;
+  securityContact?: string;
   links?: AppProfileLink[];
 }
 
@@ -85,6 +90,16 @@ export function toRichProfilePatch(input: RichProfileFields): RichProfilePatch {
       throw new AppProfileInputError(field, `${field} must be an attachment://v1:<sha256> reference`);
     }
     patch[field] = ref;
+  }
+
+  for (const field of ["supportContact", "securityContact"] as const) {
+    const raw = input[field];
+    if (raw == null) continue;
+    const contact = raw.trim();
+    if (contact !== "" && !isContact(contact)) {
+      throw new AppProfileInputError(field, `${field} must be an email address or an https URL of at most 200 characters`);
+    }
+    patch[field] = contact;
   }
 
   if (input.links != null) {

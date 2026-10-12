@@ -27,6 +27,8 @@ export function defaultGlobalState(): RenownAppProfileGlobalState {
     coverRef: null,
     links: [],
     metrics: [],
+    supportContact: null,
+    securityContact: null,
   };
 }
 

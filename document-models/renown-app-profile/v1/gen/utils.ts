@@ -37,6 +37,8 @@ export const initialGlobalState: RenownAppProfileGlobalState = {
   coverRef: null,
   links: [],
   metrics: [],
+  supportContact: null,
+  securityContact: null,
 };
 export const initialLocalState: RenownAppProfileLocalState = {};
 

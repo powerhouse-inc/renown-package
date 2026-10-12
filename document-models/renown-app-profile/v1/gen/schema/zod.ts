@@ -124,6 +124,8 @@ export function RenownAppProfileStateSchema(): z.ZodObject<
     metrics: z.array(z.lazy(() => RenownAppMetricSchema())),
     name: z.string().nullish(),
     publisherDid: z.string().nullish(),
+    securityContact: z.string().nullish(),
+    supportContact: z.string().nullish(),
     tagline: z.string().nullish(),
     website: z.string().nullish(),
   });
@@ -163,6 +165,8 @@ export function SetProfileInputSchema(): z.ZodObject<
     logo: z.string().nullish(),
     logoRef: z.string().nullish(),
     name: z.string().nullish(),
+    securityContact: z.string().nullish(),
+    supportContact: z.string().nullish(),
     tagline: z.string().nullish(),
     website: z.string().nullish(),
   });

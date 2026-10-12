@@ -110,6 +110,10 @@ export const schema: DocumentNode = gql`
     category: String
     logoRef: String
     coverRef: String
+    "An email address or an https URL; render emails as mailto: links."
+    supportContact: String
+    "Where to report vulnerabilities: an email address or an https URL."
+    securityContact: String
     links: [AppProfileLink!]!
     metrics: [AppMetric!]!
     "Set for org-owned apps (publisherDid is then the org's did:web)."
@@ -216,6 +220,10 @@ export const schema: DocumentNode = gql`
       category: String
       logoRef: String
       coverRef: String
+      "Support contact: at most 200 characters, an email address or an https URL; empty clears."
+      supportContact: String
+      "Security contact: at most 200 characters, an email address or an https URL; empty clears."
+      securityContact: String
       links: [AppProfileLinkInput!]
       "The whole metric list (at most 16); [] clears."
       metrics: [AppMetricInput!]

@@ -8,6 +8,7 @@ export type ErrorCode =
   | "DescriptionTooLongError"
   | "CategoryTooLongError"
   | "InvalidImageRefError"
+  | "InvalidContactError"
   | "TooManyLinksError"
   | "DuplicateLinkIdError"
   | "InvalidLinkError"
@@ -80,6 +81,13 @@ export class InvalidImageRefError extends Error implements ReducerError {
   }
 }
 
+export class InvalidContactError extends Error implements ReducerError {
+  errorCode = "InvalidContactError" as ErrorCode;
+  constructor(message = "InvalidContactError") {
+    super(message);
+  }
+}
+
 export class TooManyLinksError extends Error implements ReducerError {
   errorCode = "TooManyLinksError" as ErrorCode;
   constructor(message = "TooManyLinksError") {
@@ -120,6 +128,7 @@ export const errors = {
     DescriptionTooLongError,
     CategoryTooLongError,
     InvalidImageRefError,
+    InvalidContactError,
   },
 
   AddLink: { TooManyLinksError, DuplicateLinkIdError, InvalidLinkError },

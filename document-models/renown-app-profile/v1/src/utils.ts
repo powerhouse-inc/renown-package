@@ -98,3 +98,13 @@ export function metricProblem(metric: {
   }
   return null;
 }
+
+export const MAX_CONTACT_LENGTH = 200;
+const EMAIL_RE =
+  /^[^\s@<>()"',;:]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/;
+
+/** An email address (stored without mailto:) or an https URL, at most 200 characters. */
+export function isContact(value: string): boolean {
+  if (value.length === 0 || value.length > MAX_CONTACT_LENGTH) return false;
+  return EMAIL_RE.test(value) || protocolOf(value) === "https:";
+}

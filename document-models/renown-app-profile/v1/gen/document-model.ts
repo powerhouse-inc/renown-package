@@ -20,10 +20,10 @@ export const documentModel: DocumentModelGlobalState = {
         },
         global: {
           schema:
-            'type RenownAppProfileState {\n  appDid: String\n  publisherDid: String\n  name: String\n  tagline: String\n  "Legacy logo: an https URL or a raster data URL; logoRef wins when set"\n  logo: String\n  website: String\n  "Markdown subset, at most 2000 characters; rendered sanitized"\n  description: String\n  "At most 40 characters"\n  category: String\n  "Uploaded square logo"\n  logoRef: AttachmentRef\n  "Uploaded 3:1 cover image"\n  coverRef: AttachmentRef\n  "At most 8 links, in display order"\n  links: [RenownAppLink!]!\n  "Publisher-defined metrics, at most 16, in display order"\n  metrics: [RenownAppMetric!]!\n}\n\ntype RenownAppLink {\n  id: OID!\n  label: String!\n  url: URL!\n}\n\nenum RenownMetricAggregation {\n  SUM\n  MAX\n  AVG\n  COUNT_USERS\n}\n\ntype RenownAppMetric {\n  id: OID!\n  "The metric name the app reports: ^[A-Za-z][A-Za-z0-9_.:-]{0,63}$"\n  key: String!\n  "1-40 characters"\n  label: String!\n  "At most 16 characters, e.g. notes"\n  unit: String\n  "At most 200 characters"\n  description: String\n  aggregation: RenownMetricAggregation!\n  "Shown on the app page and on user profiles"\n  public: Boolean!\n}',
+            'type RenownAppProfileState {\n  appDid: String\n  publisherDid: String\n  name: String\n  tagline: String\n  "Legacy logo: an https URL or a raster data URL; logoRef wins when set"\n  logo: String\n  website: String\n  "Markdown subset, at most 2000 characters; rendered sanitized"\n  description: String\n  "At most 40 characters"\n  category: String\n  "Uploaded square logo"\n  logoRef: AttachmentRef\n  "Uploaded 3:1 cover image"\n  coverRef: AttachmentRef\n  "Support contact: an email address or an https URL, at most 200 characters"\n  supportContact: String\n  "Security contact (vulnerability reports): an email address or an https URL, at most 200 characters"\n  securityContact: String\n  "At most 8 links, in display order"\n  links: [RenownAppLink!]!\n  "Publisher-defined metrics, at most 16, in display order"\n  metrics: [RenownAppMetric!]!\n}\n\ntype RenownAppLink {\n  id: OID!\n  label: String!\n  url: URL!\n}\n\nenum RenownMetricAggregation {\n  SUM\n  MAX\n  AVG\n  COUNT_USERS\n}\n\ntype RenownAppMetric {\n  id: OID!\n  "The metric name the app reports: ^[A-Za-z][A-Za-z0-9_.:-]{0,63}$"\n  key: String!\n  "1-40 characters"\n  label: String!\n  "At most 16 characters, e.g. notes"\n  unit: String\n  "At most 200 characters"\n  description: String\n  aggregation: RenownMetricAggregation!\n  "Shown on the app page and on user profiles"\n  public: Boolean!\n}',
           examples: [],
           initialValue:
-            '{\n  "appDid": null,\n  "publisherDid": null,\n  "name": null,\n  "tagline": null,\n  "logo": null,\n  "website": null,\n  "description": null,\n  "category": null,\n  "logoRef": null,\n  "coverRef": null,\n  "links": [],\n  "metrics": []\n}',
+            '{\n  "appDid": null,\n  "publisherDid": null,\n  "name": null,\n  "tagline": null,\n  "logo": null,\n  "website": null,\n  "description": null,\n  "category": null,\n  "logoRef": null,\n  "coverRef": null,\n  "links": [],\n  "metrics": [],\n  "supportContact": null,\n  "securityContact": null\n}',
         },
       },
       modules: [
@@ -86,7 +86,7 @@ export const documentModel: DocumentModelGlobalState = {
               description:
                 "Patches the public fields. A null or absent field is unchanged; an empty string clears it.",
               schema:
-                'input SetProfileInput {\n  name: String\n  tagline: String\n  logo: String\n  website: String\n  "Markdown subset, at most 2000 characters; empty clears"\n  description: String\n  "At most 40 characters; empty clears"\n  category: String\n  "attachment://v1:<sha256>; empty clears"\n  logoRef: String\n  "attachment://v1:<sha256>; empty clears"\n  coverRef: String\n}',
+                'input SetProfileInput {\n  name: String\n  tagline: String\n  logo: String\n  website: String\n  "Markdown subset, at most 2000 characters; empty clears"\n  description: String\n  "At most 40 characters; empty clears"\n  category: String\n  "attachment://v1:<sha256>; empty clears"\n  logoRef: String\n  "attachment://v1:<sha256>; empty clears"\n  coverRef: String\n  "An email address or an https URL, at most 200 characters; empty clears"\n  supportContact: String\n  "An email address or an https URL, at most 200 characters; empty clears"\n  securityContact: String\n}',
               template: "",
               reducer: "",
               errors: [
@@ -133,6 +133,14 @@ export const documentModel: DocumentModelGlobalState = {
                   code: "INVALID_IMAGE_REF",
                   description:
                     "logoRef or coverRef is not an attachment://v1:<64 lowercase hex> reference",
+                  template: "",
+                },
+                {
+                  id: "invalid-contact-error",
+                  name: "InvalidContactError",
+                  code: "INVALID_CONTACT",
+                  description:
+                    "A contact is neither an email address nor an https URL, or longer than 200 characters",
                   template: "",
                 },
               ],

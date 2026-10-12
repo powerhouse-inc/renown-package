@@ -238,6 +238,8 @@ interface AppProfileOutput {
   category: string | null;
   logoRef: string | null;
   coverRef: string | null;
+  supportContact: string | null;
+  securityContact: string | null;
   links: AppProfileLink[];
   metrics: AppMetric[];
   publisherOrg: OrgPublisherSummary | null;
@@ -594,6 +596,8 @@ export function createResolvers(
       category: patch.category,
       logoRef: patch.logoRef,
       coverRef: patch.coverRef,
+      supportContact: patch.supportContact,
+      securityContact: patch.securityContact,
     };
     const actions: Action[] = [];
     if (Object.values(scalars).some((value) => value != null)) {
@@ -656,6 +660,8 @@ export function createResolvers(
       category: state.category ?? null,
       logoRef: state.logoRef ?? null,
       coverRef: state.coverRef ?? null,
+      supportContact: state.supportContact ?? null,
+      securityContact: state.securityContact ?? null,
       links: (state.links ?? []).map(({ id, label, url }) => ({
         id,
         label,
