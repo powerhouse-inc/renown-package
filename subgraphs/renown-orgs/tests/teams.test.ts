@@ -72,15 +72,71 @@ describe("teams", () => {
   });
 });
 
+describe("team authorization and edges", () => {
+  it("refuses non-admins and admins of another org on every team write", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    const other = await createOrg(t, DAVE, "other");
+    await join(t, id, BOB, "PUBLISHER");
+    await join(t, id, CAROL, "MEMBER");
+    const team = await t.mutate<OrgTeamOutput>("createOrgTeam", { orgId: id, slug: "core", name: "Core" }, ALICE);
+    const calls = (orgId: string) => [
+      ["updateOrgTeam", { orgId, teamId: team.id, name: "X" }],
+      ["deleteOrgTeam", { orgId, teamId: team.id }],
+      ["setOrgTeamMembers", { orgId, teamId: team.id, addresses: [] }],
+    ] as const;
+    for (const who of [BOB, CAROL]) {
+      for (const [field, args] of calls(id)) expect((await failure(t.mutate(field, args, who))).code, `${field} ${lower(who)}`).toBe("FORBIDDEN");
+    }
+    for (const [field, args] of calls(other.id)) expect((await failure(t.mutate(field, args, DAVE))).code, field).toBe("NOT_FOUND");
+    expect((await t.store.team(team.id))?.name).toBe("Core");
+  });
+
+  it("rejects slug collisions, ignores empty patches, caps app lists, and takes only active members of this org", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    const other = await createOrg(t, DAVE, "other");
+    await join(t, id, BOB, "MEMBER");
+    await join(t, id, CAROL, "MEMBER");
+    await t.mutate("removeOrgMember", { orgId: id, address: CAROL.address }, ALICE);
+    const a = await t.mutate<OrgTeamOutput>("createOrgTeam", { orgId: id, slug: "a", name: "A" }, ALICE);
+    await t.mutate("createOrgTeam", { orgId: id, slug: "b", name: "B" }, ALICE);
+    expect(await failure(t.mutate("updateOrgTeam", { orgId: id, teamId: a.id, slug: "b" }, ALICE))).toMatchObject({ field: "slug" });
+    expect(await t.mutate("updateOrgTeam", { orgId: id, teamId: a.id }, ALICE)).toMatchObject({ slug: "a", name: "A" });
+    const many = Array.from({ length: 51 }, (_, i) => `did:key:z${i}`);
+    expect(await failure(t.mutate("updateOrgTeam", { orgId: id, teamId: a.id, appDids: many }, ALICE))).toMatchObject({ field: "appDids" });
+    const setMembers = (address: string) => t.mutate("setOrgTeamMembers", { orgId: id, teamId: a.id, addresses: [address] }, ALICE);
+    expect(await failure(setMembers(CAROL.address))).toMatchObject({ field: "addresses" });
+    expect(await failure(setMembers(DAVE.address))).toMatchObject({ field: "addresses" });
+    expect(other.id).not.toBe(id);
+  });
+
+  it("drops a member from every team, in the store and the document, when the membership ends", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    await join(t, id, BOB, "MEMBER");
+    await join(t, id, CAROL, "MEMBER");
+    const team = await t.mutate<OrgTeamOutput>("createOrgTeam", { orgId: id, slug: "core", name: "Core" }, ALICE);
+    await t.mutate("setOrgTeamMembers", { orgId: id, teamId: team.id, addresses: [BOB.address, CAROL.address] }, ALICE);
+    await t.mutate("removeOrgMember", { orgId: id, address: BOB.address }, ALICE);
+    await t.mutate("leaveOrganization", { orgId: id }, CAROL);
+    expect((await t.store.team(team.id))?.memberIds).toEqual([]);
+    expect(t.reactor.state<RenownOrganizationState>(id).teams[0].memberIds).toEqual([]);
+    expect((await t.query<OrganizationOutput>("organization", { id }, ALICE)).teams[0].memberAddresses).toEqual([]);
+  });
+});
+
 describe("team compensation", () => {
   it("undoes the store when the document write fails", async () => {
     const t = harnessResolvers(h);
     const { id } = await createOrg(t, ALICE, "acme");
     await join(t, id, BOB, "MEMBER");
+    const audits = async () => (await t.store.auditPage(id, 50)).map((e) => e.action).filter((a) => a.endsWith("Team") || a === "setOrgTeamMembers");
     const fail = () => t.reactor.execute.mockImplementationOnce(() => Promise.reject(new Error("reactor down")));
     fail();
     expect((await failure(t.mutate("createOrgTeam", { orgId: id, slug: "core", name: "Core" }, ALICE))).code).toBe("SERVICE_UNAVAILABLE");
     expect(await t.store.teams(id)).toEqual([]);
+    expect(await audits()).toEqual([]);
     const team = await t.mutate<OrgTeamOutput>("createOrgTeam", { orgId: id, slug: "core", name: "Core" }, ALICE);
     fail();
     expect((await failure(t.mutate("setOrgTeamMembers", { orgId: id, teamId: team.id, addresses: [BOB.address] }, ALICE))).code).toBe("SERVICE_UNAVAILABLE");
@@ -92,6 +148,7 @@ describe("team compensation", () => {
     fail();
     expect((await failure(t.mutate("deleteOrgTeam", { orgId: id, teamId: team.id }, ALICE))).code).toBe("SERVICE_UNAVAILABLE");
     expect(await t.store.team(team.id)).toMatchObject({ slug: "core", memberIds: [expect.any(String)] });
+    expect(await audits()).toEqual(["setOrgTeamMembers", "createOrgTeam"]);
   });
 });
 
