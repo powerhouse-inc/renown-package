@@ -1,4 +1,5 @@
 import type { Selectable } from "kysely";
+import { ORG_ROLES as SDK_ORG_ROLES } from "../../../sdk/orgs.js";
 import type { AccessToken, AuthCode, LoginRequest, OidcAllowedOrg, OidcClient } from "../core/types.js";
 import {
   AUTH_CODE_RETENTION_MS,
@@ -20,7 +21,7 @@ function parseStringArray(json: string): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-export const ORG_ROLES: ReadonlySet<string> = new Set(["OWNER", "ADMIN", "PUBLISHER", "MEMBER"]);
+export const ORG_ROLES: ReadonlySet<string> = new Set(SDK_ORG_ROLES);
 
 function parseAllowedOrgs(json: string | undefined): OidcAllowedOrg[] {
   const value: unknown = JSON.parse(json ?? "[]");
