@@ -203,5 +203,30 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect(await store.useSignature("s2", at(40))).toBe(false);
       expect(await store.pruneUsedSignatures(at(20))).toBe(0);
     });
+
+    it("normalises addresses and handles to lowercase on write", async () => {
+      const { store } = await open();
+      const MIXED = "0xABC0000000000000000000000000000000000001";
+      await store.insertOrganization(org("o1", "acme", { createdBy: MIXED }));
+      expect(await store.countOrganizationsCreatedBy(MIXED)).toBe(1);
+      expect((await store.organization("o1"))?.createdBy).toBe(MIXED.toLowerCase());
+      await store.reserveHandle({ handle: "MixedCase", until: at(10), reason: "ARCHIVED", orgId: null });
+      expect((await store.reservedHandle("mixedcase", at(5)))?.handle).toBe("mixedcase");
+      expect((await store.reservedHandle("MIXEDCASE", at(5)))?.reason).toBe("ARCHIVED");
+    });
+
+    it("enforces domain uniqueness in the database", async () => {
+      const { store, db } = await open();
+      await store.insertOrganization(org("o1", "acme"));
+      await store.insertOrganization(org("o2", "beta"));
+      const row = (id: string, orgId: string, domain: string, status: "PENDING" | "VERIFIED") => ({
+        id, org_id: orgId, domain, token: "t", status, verified_at: null, last_checked_at: null, failures: 0, created_at: T0,
+      });
+      await db.insertInto("org_domains").values(row("d1", "o1", "x.example", "PENDING")).execute();
+      await expect(db.insertInto("org_domains").values(row("d2", "o1", "X.example", "PENDING")).execute()).rejects.toThrow();
+      await db.insertInto("org_domains").values(row("d3", "o1", "y.example", "VERIFIED")).execute();
+      await db.insertInto("org_domains").values(row("d4", "o2", "y.example", "PENDING")).execute();
+      await expect(db.updateTable("org_domains").set({ status: "VERIFIED" }).where("id", "=", "d4").execute()).rejects.toThrow();
+    });
   });
 }

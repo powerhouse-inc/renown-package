@@ -111,6 +111,16 @@ function toLink(row: Selectable<OrgInviteLinksTable>): InviteLinkRecord {
   };
 }
 
+async function replaceTeamMembers(db: OrgsKysely, teamId: string, memberIds: readonly string[]): Promise<void> {
+  await db.deleteFrom("org_team_members").where("team_id", "=", teamId).execute();
+  const unique = [...new Set(memberIds)];
+  if (unique.length === 0) return;
+  await db
+    .insertInto("org_team_members")
+    .values(unique.map((memberId) => ({ team_id: teamId, member_id: memberId })))
+    .execute();
+}
+
 /** Kysely-backed `OrgStore`. The `db` passed in is already namespace-scoped. */
 export class KyselyOrgStore implements OrgStore {
   constructor(readonly db: OrgsKysely) {}
@@ -130,7 +140,7 @@ export class KyselyOrgStore implements OrgStore {
         members_public: org.membersPublic,
         archived: org.archived,
         taken_down: org.takenDown,
-        created_by: org.createdBy,
+        created_by: org.createdBy.toLowerCase(),
         created_at: org.createdAt,
         updated_at: org.updatedAt,
       })
@@ -231,7 +241,7 @@ export class KyselyOrgStore implements OrgStore {
         app_scope_all: member.appScopeAll,
         app_dids: JSON.stringify(member.appDids),
         hidden: member.hidden,
-        invited_by: member.invitedBy,
+        invited_by: member.invitedBy?.toLowerCase() ?? null,
         invited_at: member.invitedAt,
         joined_at: member.joinedAt,
         ended_at: member.endedAt,
@@ -318,18 +328,20 @@ export class KyselyOrgStore implements OrgStore {
   }
 
   async insertTeam(team: TeamRecord): Promise<void> {
-    await this.db
-      .insertInto("org_teams")
-      .values({
-        id: team.id,
-        org_id: team.orgId,
-        slug: team.slug,
-        name: team.name,
-        app_dids: JSON.stringify(team.appDids),
-        created_at: team.createdAt,
-      })
-      .execute();
-    await this.setTeamMembers(team.id, team.memberIds);
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto("org_teams")
+        .values({
+          id: team.id,
+          org_id: team.orgId,
+          slug: team.slug,
+          name: team.name,
+          app_dids: JSON.stringify(team.appDids),
+          created_at: team.createdAt,
+        })
+        .execute();
+      await replaceTeamMembers(trx, team.id, team.memberIds);
+    });
   }
 
   async team(id: string): Promise<TeamRecord | undefined> {
@@ -363,19 +375,15 @@ export class KyselyOrgStore implements OrgStore {
   }
 
   async deleteTeam(id: string): Promise<boolean> {
-    await this.db.deleteFrom("org_team_members").where("team_id", "=", id).execute();
-    const result = await this.db.deleteFrom("org_teams").where("id", "=", id).executeTakeFirst();
-    return Number(result.numDeletedRows) > 0;
+    return this.db.transaction().execute(async (trx) => {
+      await trx.deleteFrom("org_team_members").where("team_id", "=", id).execute();
+      const result = await trx.deleteFrom("org_teams").where("id", "=", id).executeTakeFirst();
+      return Number(result.numDeletedRows) > 0;
+    });
   }
 
   async setTeamMembers(teamId: string, memberIds: readonly string[]): Promise<void> {
-    await this.db.deleteFrom("org_team_members").where("team_id", "=", teamId).execute();
-    const unique = [...new Set(memberIds)];
-    if (unique.length === 0) return;
-    await this.db
-      .insertInto("org_team_members")
-      .values(unique.map((memberId) => ({ team_id: teamId, member_id: memberId })))
-      .execute();
+    await this.db.transaction().execute((trx) => replaceTeamMembers(trx, teamId, memberIds));
   }
 
   async removeMemberFromTeams(memberId: string): Promise<void> {
@@ -394,7 +402,7 @@ export class KyselyOrgStore implements OrgStore {
         uses: link.uses,
         expires_at: link.expiresAt,
         revoked: link.revoked,
-        created_by: link.createdBy,
+        created_by: link.createdBy.toLowerCase(),
         created_at: link.createdAt,
       })
       .execute();
@@ -500,7 +508,7 @@ export class KyselyOrgStore implements OrgStore {
         id: entry.id,
         org_id: entry.orgId,
         at: entry.at,
-        actor: entry.actor,
+        actor: entry.actor.toLowerCase(),
         action: entry.action,
         details: JSON.stringify(entry.details),
       })
@@ -528,7 +536,7 @@ export class KyselyOrgStore implements OrgStore {
   async reserveHandle(record: ReservedHandleRecord): Promise<void> {
     await this.db
       .insertInto("reserved_handles")
-      .values({ handle: record.handle, until: record.until, reason: record.reason, org_id: record.orgId })
+      .values({ handle: record.handle.toLowerCase(), until: record.until, reason: record.reason, org_id: record.orgId })
       .onConflict((oc) =>
         oc.column("handle").doUpdateSet({ until: record.until, reason: record.reason, org_id: record.orgId }),
       )

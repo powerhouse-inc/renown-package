@@ -136,6 +136,13 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("created_at", "timestamptz", (col) => col.notNull())
     .execute();
   await db.schema.createIndex("org_domains_org").ifNotExists().on("org_domains").column("org_id").execute();
+  await db.schema
+    .createIndex("org_domains_org_domain")
+    .ifNotExists()
+    .unique()
+    .on("org_domains")
+    .expression(sql`org_id, lower(domain)`)
+    .execute();
   // A domain is verified for at most one organization: the first verification wins.
   await db.schema
     .createIndex("org_domains_verified_once")
