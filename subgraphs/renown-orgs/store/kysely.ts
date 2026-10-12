@@ -11,11 +11,16 @@ import type {
   OrgLink,
   OrgMembersTable,
   OrgPatch,
+  OrgProposalsTable,
   OrgRecord,
   OrgSearch,
   OrgsKysely,
   OrgStore,
   OrgTeamsTable,
+  ProposalPatch,
+  ProposalPayload,
+  ProposalRecord,
+  ProposalStatus,
   ReservedHandleRecord,
   StoredMemberStatus,
   TeamPatch,
@@ -108,6 +113,24 @@ function toLink(row: Selectable<OrgInviteLinksTable>): InviteLinkRecord {
     revoked: row.revoked,
     createdBy: row.created_by,
     createdAt: toDate(row.created_at),
+  };
+}
+
+function toProposal(row: Selectable<OrgProposalsTable>): ProposalRecord {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    kind: row.kind,
+    payload: jsonValue<ProposalPayload>(row.payload, {}),
+    proposer: row.proposer,
+    approvals: stringList(row.approvals),
+    status: row.status,
+    threshold: row.threshold,
+    createdAt: toDate(row.created_at),
+    executableAt: toDateOrNull(row.executable_at),
+    expiresAt: toDate(row.expires_at),
+    executedAt: toDateOrNull(row.executed_at),
+    reason: row.reason,
   };
 }
 
@@ -610,5 +633,68 @@ export class KyselyOrgStore implements OrgStore {
   async pruneUsedSignatures(now: Date): Promise<number> {
     const result = await this.db.deleteFrom("org_used_signatures").where("expires_at", "<", now).executeTakeFirst();
     return Number(result.numDeletedRows);
+  }
+
+  async insertProposal(p: ProposalRecord): Promise<void> {
+    await this.db
+      .insertInto("org_proposals")
+      .values({
+        id: p.id,
+        org_id: p.orgId,
+        kind: p.kind,
+        payload: JSON.stringify(p.payload),
+        proposer: p.proposer.toLowerCase(),
+        approvals: JSON.stringify(p.approvals.map((a) => a.toLowerCase())),
+        status: p.status,
+        threshold: p.threshold,
+        created_at: p.createdAt,
+        executable_at: p.executableAt,
+        expires_at: p.expiresAt,
+        executed_at: p.executedAt,
+        reason: p.reason,
+      })
+      .execute();
+  }
+
+  async proposal(id: string): Promise<ProposalRecord | undefined> {
+    const row = await this.db.selectFrom("org_proposals").selectAll().where("id", "=", id).executeTakeFirst();
+    return row && toProposal(row);
+  }
+
+  async proposals(orgId: string, status?: ProposalStatus): Promise<ProposalRecord[]> {
+    let query = this.db.selectFrom("org_proposals").selectAll().where("org_id", "=", orgId);
+    if (status) query = query.where("status", "=", status);
+    const rows = await query.orderBy("created_at", "desc").orderBy("id", "desc").execute();
+    return rows.map(toProposal);
+  }
+
+  async updateProposal(id: string, patch: ProposalPatch, expected: ProposalStatus): Promise<ProposalRecord | undefined> {
+    const row = await this.db
+      .updateTable("org_proposals")
+      .set({
+        ...(patch.approvals !== undefined && { approvals: JSON.stringify(patch.approvals.map((a) => a.toLowerCase())) }),
+        ...(patch.status !== undefined && { status: patch.status }),
+        ...(patch.executableAt !== undefined && { executable_at: patch.executableAt }),
+        ...(patch.executedAt !== undefined && { executed_at: patch.executedAt }),
+        ...(patch.reason !== undefined && { reason: patch.reason }),
+      })
+      .where("id", "=", id)
+      .where("status", "=", expected)
+      .returningAll()
+      .executeTakeFirst();
+    return row && toProposal(row);
+  }
+
+  async dueProposals(now: Date, limit: number): Promise<ProposalRecord[]> {
+    const rows = await this.db
+      .selectFrom("org_proposals")
+      .selectAll()
+      .where("status", "=", "PENDING")
+      .where((eb) => eb.or([eb("executable_at", "<=", now), eb("expires_at", "<=", now)]))
+      .orderBy("created_at")
+      .orderBy("id")
+      .limit(limit)
+      .execute();
+    return rows.map(toProposal);
   }
 }

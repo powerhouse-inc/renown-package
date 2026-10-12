@@ -295,5 +295,40 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       await db.insertInto("org_domains").values(row("d4", "o2", "y.example", "PENDING")).execute();
       await expect(db.updateTable("org_domains").set({ status: "VERIFIED" }).where("id", "=", "d4").execute()).rejects.toThrow();
     });
+
+    it("keeps proposals and moves them only from the expected status", async () => {
+      const { store } = await open();
+      const base = {
+        orgId: "o1",
+        kind: "ADD_OWNER" as const,
+        payload: { address: BOB },
+        proposer: ALICE,
+        approvals: [ALICE],
+        status: "PENDING" as const,
+        threshold: 2,
+        executableAt: null,
+        expiresAt: at(60),
+        executedAt: null,
+        reason: null,
+      };
+      await store.insertProposal({ ...base, id: "p1", createdAt: T0 });
+      await store.insertProposal({ ...base, id: "p2", createdAt: at(1), executableAt: at(5) });
+      expect(await store.proposal("p1")).toEqual({ ...base, id: "p1", createdAt: T0 });
+      expect((await store.proposals("o1")).map((p) => p.id)).toEqual(["p2", "p1"]);
+      expect(await store.dueProposals(at(4), 10)).toEqual([]);
+      expect((await store.dueProposals(at(5), 10)).map((p) => p.id)).toEqual(["p2"]);
+      expect((await store.dueProposals(at(60), 10)).map((p) => p.id)).toEqual(["p1", "p2"]);
+      const claimed = await Promise.all([
+        store.updateProposal("p2", { status: "EXECUTED", executedAt: at(6) }, "PENDING"),
+        store.updateProposal("p2", { status: "EXECUTED", executedAt: at(6) }, "PENDING"),
+      ]);
+      expect(claimed.filter(Boolean)).toHaveLength(1);
+      expect(await store.updateProposal("p2", { status: "FAILED", executedAt: null, reason: "x" }, "EXECUTED")).toMatchObject({
+        status: "FAILED",
+        executedAt: null,
+        reason: "x",
+      });
+      expect((await store.proposals("o1", "PENDING")).map((p) => p.id)).toEqual(["p1"]);
+    });
   });
 }

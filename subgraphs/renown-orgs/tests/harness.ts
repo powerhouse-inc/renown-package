@@ -214,3 +214,18 @@ export async function join(t: TestResolvers, orgId: string, who: Account, role: 
   await t.mutate("respondToOrgInvite", { orgId, inviteId: invite.id, accept: true }, who);
   return invite.id;
 }
+
+/** Makes `who` an owner the way production does: ADMIN, then a single-owner ADD_OWNER proposal past the timelock. */
+export async function addOwner(t: TestResolvers, orgId: string, who: Account): Promise<void> {
+  const owners = (await t.store.members(orgId, ["ACTIVE"])).filter((m) => m.role === "OWNER");
+  const proposer = owners.at(0);
+  if (!proposer) throw new Error("addOwner needs an owner");
+  if (!(await t.store.openMember(orgId, who.address.toLowerCase()))) await join(t, orgId, who, "ADMIN");
+  const proposerCtx = { user: { address: proposer.address } };
+  const p = (await t.resolvers.Mutation.proposeOrgChange(null, { orgId, kind: "ADD_OWNER", payload: { address: who.address } }, proposerCtx)) as { id: string };
+  for (const owner of owners.slice(1, 2)) {
+    await t.resolvers.Mutation.approveOrgProposal(null, { orgId, proposalId: p.id }, { user: { address: owner.address } });
+  }
+  t.tick(TEST_CONFIG.timelockSeconds * 1000);
+  await t.resolvers.Mutation.executeOrgProposal(null, { orgId, proposalId: p.id }, proposerCtx);
+}

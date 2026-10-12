@@ -115,6 +115,64 @@ export interface ReservedHandlesTable {
   org_id: string | null;
 }
 
+export type ProposalKind =
+  | "ADD_OWNER"
+  | "REMOVE_OWNER"
+  | "TRANSFER_APP_OUT"
+  | "CHANGE_HANDLE"
+  | "DELETE_ORG"
+  | "RECOVER"
+  | "FREEZE_APP"
+  | "UNFREEZE_APP";
+export type ProposalStatus = "PENDING" | "EXECUTED" | "CANCELLED" | "EXPIRED" | "FAILED";
+export type PartyKind = "PERSON" | "ORG";
+
+/** Normalized proposal payload; each kind uses its own fields. */
+export interface ProposalPayload {
+  address?: string;
+  demoteToAdmin?: boolean;
+  appDid?: string;
+  toKind?: PartyKind;
+  toId?: string;
+  handle?: string;
+  domain?: string;
+}
+
+export interface OrgProposalsTable {
+  id: string;
+  org_id: string;
+  kind: ProposalKind;
+  payload: JsonColumn;
+  proposer: string;
+  approvals: JsonColumn;
+  status: ProposalStatus;
+  threshold: number;
+  created_at: Timestamp;
+  executable_at: Timestamp | null;
+  expires_at: Timestamp;
+  executed_at: Timestamp | null;
+  reason: string | null;
+}
+
+export interface ProposalRecord {
+  id: string;
+  orgId: string;
+  kind: ProposalKind;
+  payload: ProposalPayload;
+  proposer: string;
+  /** Lowercase owner addresses, in approval order. */
+  approvals: string[];
+  status: ProposalStatus;
+  threshold: number;
+  createdAt: Date;
+  executableAt: Date | null;
+  expiresAt: Date;
+  executedAt: Date | null;
+  reason: string | null;
+}
+
+export type ProposalPatch = Partial<Pick<ProposalRecord, "approvals" | "status" | "executableAt" | "executedAt" | "reason">>;
+
 export interface OrgUsedSignaturesTable {
   hash: string;
   expires_at: Timestamp;
@@ -131,6 +189,7 @@ export interface OrgsDB {
   org_audit: OrgAuditTable;
   reserved_handles: ReservedHandlesTable;
   org_used_signatures: OrgUsedSignaturesTable;
+  org_proposals: OrgProposalsTable;
 }
 
 export type OrgsKysely = Kysely<OrgsDB>;
@@ -309,4 +368,12 @@ export interface OrgStore {
   useSignature(hash: string, expiresAt: Date): Promise<boolean>;
   /** Deletes signature hashes that expired strictly before `now`; returns how many. */
   pruneUsedSignatures(now: Date): Promise<number>;
+  insertProposal(proposal: ProposalRecord): Promise<void>;
+  proposal(id: string): Promise<ProposalRecord | undefined>;
+  /** Newest first; only `status` when given. */
+  proposals(orgId: string, status?: ProposalStatus): Promise<ProposalRecord[]>;
+  /** Applies `patch` only while the proposal still has the `expected` status; undefined otherwise. */
+  updateProposal(id: string, patch: ProposalPatch, expected: ProposalStatus): Promise<ProposalRecord | undefined>;
+  /** PENDING proposals executable or expired at `now`, oldest first. */
+  dueProposals(now: Date, limit: number): Promise<ProposalRecord[]>;
 }

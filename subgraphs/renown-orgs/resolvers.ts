@@ -1,10 +1,11 @@
 import { memberResolvers } from "./areas/members.js";
 import { organizationResolvers } from "./areas/organizations.js";
+import { proposalResolvers } from "./areas/proposals.js";
 import { teamResolvers } from "./areas/teams.js";
 import { createRuntime, type Area, type OrgsResolverDeps, type Resolver } from "./runtime.js";
 
 /** The resolver areas of renown-orgs; each later task appends its own. */
-const AREAS: readonly Area[] = [organizationResolvers, memberResolvers, teamResolvers];
+const AREAS: readonly Area[] = [organizationResolvers, memberResolvers, teamResolvers, proposalResolvers];
 
 /** All renown-orgs resolvers over one runtime (one lock map, one set of rate limiters). */
 export function createResolvers(deps: OrgsResolverDeps): Record<string, unknown> {

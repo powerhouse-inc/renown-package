@@ -106,7 +106,7 @@ export async function writeDocument(rt: OrgRuntime, field: string, orgId: string
 }
 
 /** The fields a member update may have changed, as they were (for an undo). */
-function restoreOf(member: MemberRecord) {
+export function restoreOf(member: MemberRecord) {
   return {
     role: member.role,
     status: member.status,
@@ -151,16 +151,19 @@ export async function endMembership(
       for (const team of places) await tx.setTeamMembers(team.id, team.memberIds);
     }),
   );
-  if (status === "LEFT" || status === "REMOVED") {
-    for (const hook of rt.hooks.membershipEnded) {
-      try {
-        await hook({ orgId: member.orgId, memberId: member.id, address: member.address, reason: status, actor, at: now });
-      } catch (error) {
-        console.error(`[renown-orgs] membership-ended hook failed: ${error instanceof Error ? error.message : String(error)}`);
-      }
+  if (status === "LEFT" || status === "REMOVED") await membershipEnded(rt, member, status, actor, now);
+  return ended;
+}
+
+/** Runs the membership-ended hooks for a membership that just ended; hook failures are logged. */
+export async function membershipEnded(rt: OrgRuntime, member: MemberRecord, reason: "LEFT" | "REMOVED", actor: string, now: Date): Promise<void> {
+  for (const hook of rt.hooks.membershipEnded) {
+    try {
+      await hook({ orgId: member.orgId, memberId: member.id, address: member.address, reason, actor, at: now });
+    } catch (error) {
+      console.error(`[renown-orgs] membership-ended hook failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  return ended;
 }
 
 export const memberResolvers: Area = (rt) => ({

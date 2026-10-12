@@ -35,6 +35,6 @@ describeOrgStoreContract("Kysely org store in the renown-orgs namespace", async 
   // Every table and index lands in the namespace, none in public.
   expect(await publicTables()).toEqual(before);
   const inNamespace = await sql<{ n: number }>`select count(*)::int as n from information_schema.tables where table_schema = ${ORGS_NAMESPACE}`.execute(root);
-  expect(inNamespace.rows[0]?.n).toBe(10);
+  expect(inNamespace.rows[0]?.n).toBe(11);
   return { store: new KyselyOrgStore(db), db };
 });

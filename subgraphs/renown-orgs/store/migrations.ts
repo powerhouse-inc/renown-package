@@ -180,4 +180,25 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("hash", "text", (col) => col.primaryKey())
     .addColumn("expires_at", "timestamptz", (col) => col.notNull())
     .execute();
+
+  // A2: proposals and timelocks.
+  await db.schema
+    .createTable("org_proposals")
+    .ifNotExists()
+    .addColumn("id", "text", (col) => col.primaryKey())
+    .addColumn("org_id", "text", (col) => col.notNull())
+    .addColumn("kind", "text", (col) => col.notNull())
+    .addColumn("payload", "jsonb", (col) => col.notNull().defaultTo(sql`'{}'::jsonb`))
+    .addColumn("proposer", "text", (col) => col.notNull())
+    .addColumn("approvals", "jsonb", (col) => col.notNull().defaultTo(sql`'[]'::jsonb`))
+    .addColumn("status", "text", (col) => col.notNull())
+    .addColumn("threshold", "integer", (col) => col.notNull())
+    .addColumn("created_at", "timestamptz", (col) => col.notNull())
+    .addColumn("executable_at", "timestamptz")
+    .addColumn("expires_at", "timestamptz", (col) => col.notNull())
+    .addColumn("executed_at", "timestamptz")
+    .addColumn("reason", "text")
+    .execute();
+  await db.schema.createIndex("org_proposals_org").ifNotExists().on("org_proposals").columns(["org_id", "created_at"]).execute();
+  await db.schema.createIndex("org_proposals_status").ifNotExists().on("org_proposals").columns(["status", "executable_at"]).execute();
 }
