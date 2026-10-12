@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { buildASTSchema, execute, parse, GraphQLError } from "graphql";
 import { expect, it, vi } from "vitest";
 import { schema } from "../schema.js";
@@ -9,6 +10,9 @@ vi.mock("../../renown-auth/core/smart-wallet.js", () => ({
   verifyMessageOnChain: () => Promise.resolve(false),
   verifyTypedDataOnChain: () => Promise.resolve(false),
 }));
+
+const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+const SCRIPT = fileURLToPath(new URL("../../../scripts/smoke/organisations.ts", import.meta.url));
 
 /** Runs scripts/smoke/organisations.ts (a real node process) against these resolvers behind a local HTTP server. */
 it("the staging smoke script passes against the in-process subgraph", async () => {
@@ -67,20 +71,24 @@ it("the staging smoke script passes against the in-process subgraph", async () =
         })(),
     );
   });
-  await new Promise<void>((r) => server.listen(0, r));
-  const port = (server.address() as { port: number }).port;
-  const output = await new Promise<string>((resolve) =>
-    execFile(
-      "node",
-      ["scripts/smoke/organisations.ts"],
-      { env: { ...process.env, BASE: `http://localhost:${port}` } },
-      (e, so, se) =>
-        resolve(`${so}${se}exit=${e ? (e as { code: number }).code : 0}`),
-    ),
-  );
-  expect(output).toContain("all checks passed");
-  expect(output).not.toContain("FAIL");
-  expect(output).toContain("exit=0");
-  server.close();
-  await h.root.destroy();
+  try {
+    await new Promise<void>((r) => server.listen(0, r));
+    const port = (server.address() as { port: number }).port;
+    const output = await new Promise<string>((resolve) =>
+      execFile(
+        "node",
+        [SCRIPT],
+        // Independent of the test runner's cwd; killed rather than hanging the suite.
+        { cwd: REPO_ROOT, timeout: 50_000, env: { ...process.env, BASE: `http://localhost:${port}` } },
+        (e, so, se) =>
+          resolve(`${so}${se}exit=${e ? ((e as { code?: number | null }).code ?? `killed (${String(e.signal)})`) : 0}`),
+      ),
+    );
+    expect(output).toContain("all checks passed");
+    expect(output).not.toContain("FAIL");
+    expect(output).toContain("exit=0");
+  } finally {
+    server.close();
+    await h.root.destroy();
+  }
 }, 60000);

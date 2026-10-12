@@ -8,13 +8,13 @@
  * Anonymous checks:
  *   handle availability (reserved words, a fresh handle), a missing organization is null, the directory only lists
  *   listed live organizations and refuses limit 51, unknown credential and invite link are null, anonymous writes
- *   and the inbox are FORBIDDEN, OIDC discovery (when served) advertises the orgs scope and claim.
+ *   and the inbox are FORBIDDEN, OIDC discovery advertises the orgs scope and claim (an unserved discovery fails, except on localhost).
  * Signed checks (a throwaway wallet generated per run, never printed or stored):
  *   creates the UNLISTED org @smoke-<random>, creates/previews/revokes an invite link, creates and deletes a team,
  *   reads the audit log back. Archiving an org is timelocked, so smoke orgs accumulate on staging (all prefixed
  *   `smoke-`, all unlisted). Secrets (invite token, keys) are never printed.
  *
- * Non-staging hosts are refused without --allow-prod, and then only the anonymous checks run.
+ * Staging hosts: loopback, or an anchored `staging` label (scripts/smoke/hosts.ts). Others are refused without --allow-prod, and then only the anonymous checks run.
  * --dry-run: no network; generates the wallet, signs a sample message and lists the checks.
  */
 import {
@@ -24,8 +24,10 @@ import {
 } from "viem/accounts";
 import { randomBytes } from "node:crypto";
 import type * as OrgsSdk from "../../sdk/orgs.js";
+import type * as Hosts from "./hosts.js";
 
 const ORGS_SDK = new URL("../../sdk/orgs.ts", import.meta.url).href;
+const HOSTS = new URL("./hosts.ts", import.meta.url).href;
 const STAGING_SWITCHBOARD = "https://switchboard.renown-staging.vetra.io";
 const PACKAGE = "/api/@powerhousedao/renown-package";
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -209,7 +211,9 @@ async function readOnly(
         `${base}${PACKAGE}/oidc/.well-known/openid-configuration`,
         { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
       );
-      if (!res.ok) return `not served (${res.status}); skipped`;
+      const problem = discoveryProblem(res.status, new URL(base).hostname);
+      if (problem && "skip" in problem) return problem.skip;
+      if (problem) throw new SmokeFailure(problem.fail);
       const d = (await res.json()) as {
         scopes_supported?: string[];
         claims_supported?: string[];
@@ -355,7 +359,11 @@ async function writeFlow(
   });
 }
 
+let discoveryProblem: typeof Hosts.discoveryProblem;
+let isStagingHost: typeof Hosts.isStagingHost;
+
 async function main(): Promise<void> {
+  ({ discoveryProblem, isStagingHost } = (await import(HOSTS)) as typeof Hosts);
   const argv = process.argv.slice(2);
   const known = new Set([
     "--read-only",
@@ -380,7 +388,7 @@ async function main(): Promise<void> {
     .replace(/\/+$/, "")
     .replace(/\/graphql$/, "");
   const host = new URL(base).hostname;
-  const staging = /staging|^localhost$|^127\.0\.0\.1$/.test(host);
+  const staging = isStagingHost(host);
   if (!staging && !argv.includes("--allow-prod"))
     throw new SmokeFailure(
       `${host} is not a staging host; pass --allow-prod to run read-only checks against it`,
