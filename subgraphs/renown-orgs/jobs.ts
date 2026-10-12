@@ -2,6 +2,7 @@ import { actions as orgActions } from "../../document-models/renown-organization
 import { domainRestoreOf } from "./areas/domains.js";
 import { writeDocument } from "./areas/members.js";
 import { expireProposal, rearmProposal, runProposal } from "./areas/proposals.js";
+import { expireTransfer } from "./areas/transfers.js";
 import { proveDomain } from "./core/domain-proof.js";
 import type { SweepJob } from "./core/sweeper.js";
 import type { OrgRuntime } from "./runtime.js";
@@ -147,7 +148,28 @@ export function domainsJob(rt: OrgRuntime): SweepJob {
   };
 }
 
+/**
+ * Expires PENDING app transfers 14 days after they were made, each under its
+ * app lock. Each transfer is isolated: one that throws is logged and the
+ * run goes on.
+ */
+export function transfersJob(rt: OrgRuntime): SweepJob {
+  return {
+    name: "transfers",
+    everyMs: MINUTE_MS,
+    async run(now) {
+      for (const due of await rt.store().dueTransfers(now, BATCH)) {
+        try {
+          await rt.lock(`app:${due.appDid}`, () => expireTransfer(rt, due, now));
+        } catch (error) {
+          console.error(`[renown-orgs] transfer ${due.id} could not be expired: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    },
+  };
+}
+
 /** Every sweep job of renown-orgs; later tasks append theirs. */
 export function sweepJobs(rt: OrgRuntime): SweepJob[] {
-  return [proposalsJob(rt), signaturesJob(rt), domainsJob(rt)];
+  return [proposalsJob(rt), signaturesJob(rt), domainsJob(rt), transfersJob(rt)];
 }

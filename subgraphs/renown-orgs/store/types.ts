@@ -159,6 +159,43 @@ export interface ProposalPayload {
   domain?: string;
 }
 
+export type TransferStatus = "PENDING" | "ACCEPTED" | "DECLINED" | "CANCELLED" | "EXPIRED";
+
+/** A2: app transfers between people and organisations; at most one PENDING per app. */
+export interface OrgAppTransfersTable {
+  id: string;
+  app_did: string;
+  from_kind: PartyKind;
+  from_id: string;
+  to_kind: PartyKind;
+  to_id: string;
+  status: TransferStatus;
+  created_at: Timestamp;
+  expires_at: Timestamp;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  proposal_id: string | null;
+}
+
+export interface TransferRecord {
+  id: string;
+  appDid: string;
+  fromKind: PartyKind;
+  /** Lowercase address (PERSON) or organisation id (ORG). */
+  fromId: string;
+  toKind: PartyKind;
+  toId: string;
+  status: TransferStatus;
+  createdAt: Date;
+  expiresAt: Date;
+  decidedAt: Date | null;
+  decidedBy: string | null;
+  /** The TRANSFER_APP_OUT proposal that made it; null for a person's offer. */
+  proposalId: string | null;
+}
+
+export type TransferPatch = Partial<Pick<TransferRecord, "status" | "decidedAt" | "decidedBy">>;
+
 export interface OrgJobsTable {
   name: string;
   last_run_at: Timestamp;
@@ -221,6 +258,7 @@ export interface OrgsDB {
   org_jobs: OrgJobsTable;
   org_credential_suspensions: OrgCredentialSuspensionsTable;
   org_member_suspensions: OrgMemberSuspensionsTable;
+  org_app_transfers: OrgAppTransfersTable;
 }
 
 export type OrgsKysely = Kysely<OrgsDB>;
@@ -414,6 +452,21 @@ export interface OrgStore {
   revokeInviteLink(id: string): Promise<void>;
   orgApps(orgId: string): Promise<OrgAppRecord[]>;
   orgOfApp(appDid: string): Promise<OrgAppRecord | undefined>;
+  /** False (nothing written) when the app already belongs to an organisation. */
+  insertOrgApp(app: OrgAppRecord): Promise<boolean>;
+  /** Removes the app from `orgId`; the removed record, or undefined when it was not that organisation's. */
+  deleteOrgApp(appDid: string, orgId: string): Promise<OrgAppRecord | undefined>;
+  setAppFrozen(appDid: string, frozen: boolean): Promise<void>;
+  /** Throws when the app already has a PENDING transfer (org_app_transfers_one_pending). */
+  insertTransfer(transfer: TransferRecord): Promise<void>;
+  transfer(id: string): Promise<TransferRecord | undefined>;
+  /** Newest first; `party` matches either side. */
+  transfers(filter: { appDid?: string; party?: { kind: PartyKind; id: string } }): Promise<TransferRecord[]>;
+  pendingTransferOf(appDid: string): Promise<TransferRecord | undefined>;
+  /** Applies `patch` only while the transfer still has the `expected` status; undefined otherwise. */
+  updateTransfer(id: string, patch: TransferPatch, expected: TransferStatus): Promise<TransferRecord | undefined>;
+  /** PENDING transfers whose expiry passed, oldest expiry first. */
+  dueTransfers(now: Date, limit: number): Promise<TransferRecord[]>;
   /** Inserts suspensions not present yet; returns the newly suspended credential ids, in input order. */
   suspendCredentials(rows: readonly SuspensionRecord[]): Promise<string[]>;
   /** Lifts a suspension; false when there was none. */

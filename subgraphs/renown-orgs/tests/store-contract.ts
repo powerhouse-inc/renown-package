@@ -431,5 +431,44 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect(await store.liftMemberSuspension("o1", "0xabc")).toBe(false);
       expect(await store.memberSuspension("o1", "0xabc")).toBeUndefined();
     });
+
+    it("keeps one pending transfer per app and moves transfers only from the expected status", async () => {
+      const { store } = await open();
+      const transfer = (id: string, appDid: string, createdAt = T0) => ({
+        id,
+        appDid,
+        fromKind: "PERSON" as const,
+        fromId: ALICE,
+        toKind: "ORG" as const,
+        toId: "o1",
+        status: "PENDING" as const,
+        createdAt,
+        expiresAt: at(60),
+        decidedAt: null,
+        decidedBy: null,
+        proposalId: null,
+      });
+      await store.insertTransfer(transfer("t1", "did:key:za"));
+      await expect(store.insertTransfer(transfer("t2", "did:key:za"))).rejects.toThrow();
+      await store.insertTransfer(transfer("t3", "did:key:zb", at(1)));
+      expect((await store.pendingTransferOf("did:key:za"))?.id).toBe("t1");
+      expect((await store.transfers({ party: { kind: "ORG", id: "o1" } })).map((t) => t.id)).toEqual(["t3", "t1"]);
+      expect((await store.transfers({ appDid: "did:key:zb", party: { kind: "PERSON", id: ALICE } })).map((t) => t.id)).toEqual(["t3"]);
+      expect(await store.transfers({ party: { kind: "PERSON", id: BOB } })).toEqual([]);
+      expect(await store.updateTransfer("t1", { status: "ACCEPTED", decidedAt: at(2), decidedBy: BOB }, "PENDING")).toMatchObject({ status: "ACCEPTED", decidedBy: BOB });
+      expect(await store.updateTransfer("t1", { status: "DECLINED" }, "PENDING")).toBeUndefined();
+      // Back to PENDING (a failed acceptance): the decision is cleared.
+      expect(await store.updateTransfer("t1", { status: "PENDING", decidedAt: null, decidedBy: null }, "ACCEPTED")).toMatchObject({ status: "PENDING", decidedBy: null, decidedAt: null });
+      expect(await store.updateTransfer("t1", { status: "ACCEPTED", decidedAt: at(3), decidedBy: BOB }, "PENDING")).toBeDefined();
+      expect((await store.dueTransfers(at(60), 10)).map((t) => t.id)).toEqual(["t3"]);
+      expect(await store.dueTransfers(at(59), 10)).toEqual([]);
+      expect(await store.insertOrgApp({ appDid: "did:key:za", orgId: "o1", frozen: false, addedAt: T0 })).toBe(true);
+      expect(await store.insertOrgApp({ appDid: "did:key:za", orgId: "o2", frozen: false, addedAt: T0 })).toBe(false);
+      await store.setAppFrozen("did:key:za", true);
+      expect((await store.orgOfApp("did:key:za"))?.frozen).toBe(true);
+      expect(await store.deleteOrgApp("did:key:za", "o2")).toBeUndefined();
+      expect(await store.deleteOrgApp("did:key:za", "o1")).toMatchObject({ orgId: "o1", frozen: true, addedAt: T0 });
+      expect(await store.orgOfApp("did:key:za")).toBeUndefined();
+    });
   });
 }

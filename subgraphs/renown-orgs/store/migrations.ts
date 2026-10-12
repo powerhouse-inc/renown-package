@@ -231,4 +231,32 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("reason", "text", (col) => col.notNull())
     .addPrimaryKeyConstraint("org_member_suspensions_pk", ["org_id", "address"])
     .execute();
+  // A2: app transfers; at most one PENDING per app.
+  await db.schema
+    .createTable("org_app_transfers")
+    .ifNotExists()
+    .addColumn("id", "text", (col) => col.primaryKey())
+    .addColumn("app_did", "text", (col) => col.notNull())
+    .addColumn("from_kind", "text", (col) => col.notNull())
+    .addColumn("from_id", "text", (col) => col.notNull())
+    .addColumn("to_kind", "text", (col) => col.notNull())
+    .addColumn("to_id", "text", (col) => col.notNull())
+    .addColumn("status", "text", (col) => col.notNull())
+    .addColumn("created_at", "timestamptz", (col) => col.notNull())
+    .addColumn("expires_at", "timestamptz", (col) => col.notNull())
+    .addColumn("decided_at", "timestamptz")
+    .addColumn("decided_by", "text")
+    .addColumn("proposal_id", "text")
+    .execute();
+  await db.schema
+    .createIndex("org_app_transfers_one_pending")
+    .ifNotExists()
+    .unique()
+    .on("org_app_transfers")
+    .column("app_did")
+    .where(sql.ref("status"), "=", "PENDING")
+    .execute();
+  await db.schema.createIndex("org_app_transfers_from").ifNotExists().on("org_app_transfers").columns(["from_kind", "from_id"]).execute();
+  await db.schema.createIndex("org_app_transfers_to").ifNotExists().on("org_app_transfers").columns(["to_kind", "to_id"]).execute();
+  await db.schema.createIndex("org_app_transfers_due").ifNotExists().on("org_app_transfers").columns(["status", "expires_at"]).execute();
 }

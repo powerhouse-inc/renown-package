@@ -7,6 +7,7 @@ import { PGliteDialect } from "kysely-pglite-dialect";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { expect, vi } from "vitest";
 import {
+  actions as profileActions,
   reducer as profileReducer,
   renownAppProfileDocumentType,
   utils as profileUtils,
@@ -21,6 +22,8 @@ import { RenownCredentialProcessor } from "../../../processors/renown-credential
 import { up as upCredential } from "../../../processors/renown-credential/migrations.js";
 import { RenownUserProcessor } from "../../../processors/renown-user/index.js";
 import { up as upUser } from "../../../processors/renown-user/migrations.js";
+import { pkhDidFor } from "../../renown-stats/core/dids.js";
+import { migrate as migrateStats } from "../../renown-stats/store/migrations.js";
 import { migrate as migrateWorkload } from "../../renown-workload/store/migrations.js";
 import { orgMessage } from "../../../sdk/orgs.js";
 import type { OrgAuthInput } from "../core/auth.js";
@@ -45,6 +48,7 @@ export const T0 = new Date("2026-10-12T12:00:00.000Z");
 export const USER_NS = RenownUserProcessor.getNamespace("renown-user");
 export const CRED_NS = RenownCredentialProcessor.getNamespace("renown-credential");
 export const WORKLOAD_NS = "renown-workload";
+export const STATS_NS = "renown-stats";
 export const TEST_CONFIG: OrgsConfig = {
   didHost: "renown.test",
   timelockSeconds: 3600,
@@ -68,6 +72,8 @@ export async function openHarness(): Promise<Harness> {
   await upCredential(root.withSchema(CRED_NS) as never);
   await sql`create schema ${sql.id(WORKLOAD_NS)}`.execute(root);
   await migrateWorkload(root.withSchema(WORKLOAD_NS));
+  await sql`create schema ${sql.id(STATS_NS)}`.execute(root);
+  await migrateStats(root.withSchema(STATS_NS));
   // Like the host: queryNamespace reads, createNamespace hands out a writable handle.
   const relationalDb = {
     queryNamespace: (namespace: string) => root.withSchema(namespace),
@@ -78,7 +84,7 @@ export async function openHarness(): Promise<Harness> {
 
 /** Empties every table of every namespace the harness created (later phases add tables; this follows). */
 export async function resetHarness(h: Harness): Promise<void> {
-  for (const schema of [ORGS_NAMESPACE, USER_NS, CRED_NS, WORKLOAD_NS]) {
+  for (const schema of [ORGS_NAMESPACE, USER_NS, CRED_NS, WORKLOAD_NS, STATS_NS]) {
     const { rows } = await sql<{ table_name: string }>`
       select table_name from information_schema.tables where table_schema = ${schema}`.execute(h.root);
     for (const { table_name } of rows) await h.root.withSchema(schema).deleteFrom(table_name).execute();
@@ -302,4 +308,19 @@ export async function insertCredential(
       revocation_reason: null,
     })
     .execute();
+}
+
+/** A person-owned app profile, as renown-stats' upsertAppProfile creates it. Returns its document id. */
+export async function insertAppProfile(h: Harness, t: TestResolvers, appDid: string, publisher: string): Promise<string> {
+  const doc = await t.reactor.createEmpty(renownAppProfileDocumentType);
+  await t.reactor.execute(doc.header.id, "main", [
+    profileActions.setAppDid({ appDid }),
+    profileActions.setPublisherDid({ publisherDid: pkhDidFor(publisher) }),
+  ]);
+  await h.root
+    .withSchema(STATS_NS)
+    .insertInto("app_profile_documents")
+    .values({ app_did: appDid, document_id: doc.header.id, publisher_address: publisher.toLowerCase(), created_at: T0 })
+    .execute();
+  return doc.header.id;
 }

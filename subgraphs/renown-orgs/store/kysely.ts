@@ -8,6 +8,9 @@ import type {
   MemberPatch,
   MemberRecord,
   OrgAppRecord,
+  OrgAppsTable,
+  OrgAppTransfersTable,
+  PartyKind,
   SuspensionRecord,
   MemberSuspensionRecord,
   OrganizationsTable,
@@ -30,6 +33,9 @@ import type {
   StoredMemberStatus,
   TeamPatch,
   TeamRecord,
+  TransferPatch,
+  TransferRecord,
+  TransferStatus,
 } from "./types.js";
 
 export function toDate(value: Date | string): Date {
@@ -132,6 +138,27 @@ function toDomain(row: Selectable<OrgDomainsTable>): DomainRecord {
     lastCheckedAt: toDateOrNull(row.last_checked_at),
     failures: row.failures,
     createdAt: toDate(row.created_at),
+  };
+}
+
+function toOrgApp(row: Selectable<OrgAppsTable>): OrgAppRecord {
+  return { appDid: row.app_did, orgId: row.org_id, frozen: row.frozen, addedAt: toDate(row.added_at) };
+}
+
+function toTransfer(row: Selectable<OrgAppTransfersTable>): TransferRecord {
+  return {
+    id: row.id,
+    appDid: row.app_did,
+    fromKind: row.from_kind,
+    fromId: row.from_id,
+    toKind: row.to_kind,
+    toId: row.to_id,
+    status: row.status,
+    createdAt: toDate(row.created_at),
+    expiresAt: toDate(row.expires_at),
+    decidedAt: toDateOrNull(row.decided_at),
+    decidedBy: row.decided_by,
+    proposalId: row.proposal_id,
   };
 }
 
@@ -544,12 +571,110 @@ export class KyselyOrgStore implements OrgStore {
       .orderBy("added_at")
       .orderBy("app_did")
       .execute();
-    return rows.map((row) => ({ appDid: row.app_did, orgId: row.org_id, frozen: row.frozen, addedAt: toDate(row.added_at) }));
+    return rows.map(toOrgApp);
   }
 
   async orgOfApp(appDid: string): Promise<OrgAppRecord | undefined> {
     const row = await this.db.selectFrom("org_apps").selectAll().where("app_did", "=", appDid).executeTakeFirst();
-    return row && { appDid: row.app_did, orgId: row.org_id, frozen: row.frozen, addedAt: toDate(row.added_at) };
+    return row && toOrgApp(row);
+  }
+
+  async insertOrgApp(app: OrgAppRecord): Promise<boolean> {
+    const inserted = await this.db
+      .insertInto("org_apps")
+      .values({ app_did: app.appDid, org_id: app.orgId, frozen: app.frozen, added_at: app.addedAt })
+      .onConflict((oc) => oc.column("app_did").doNothing())
+      .returning("app_did")
+      .executeTakeFirst();
+    return inserted !== undefined;
+  }
+
+  async deleteOrgApp(appDid: string, orgId: string): Promise<OrgAppRecord | undefined> {
+    const row = await this.db.deleteFrom("org_apps").where("app_did", "=", appDid).where("org_id", "=", orgId).returningAll().executeTakeFirst();
+    return row && toOrgApp(row);
+  }
+
+  async setAppFrozen(appDid: string, frozen: boolean): Promise<void> {
+    await this.db.updateTable("org_apps").set({ frozen }).where("app_did", "=", appDid).execute();
+  }
+
+  async insertTransfer(t: TransferRecord): Promise<void> {
+    await this.db
+      .insertInto("org_app_transfers")
+      .values({
+        id: t.id,
+        app_did: t.appDid,
+        from_kind: t.fromKind,
+        from_id: t.fromId,
+        to_kind: t.toKind,
+        to_id: t.toId,
+        status: t.status,
+        created_at: t.createdAt,
+        expires_at: t.expiresAt,
+        decided_at: t.decidedAt,
+        decided_by: t.decidedBy,
+        proposal_id: t.proposalId,
+      })
+      .execute();
+  }
+
+  async transfer(id: string): Promise<TransferRecord | undefined> {
+    const row = await this.db.selectFrom("org_app_transfers").selectAll().where("id", "=", id).executeTakeFirst();
+    return row && toTransfer(row);
+  }
+
+  async transfers(filter: { appDid?: string; party?: { kind: PartyKind; id: string } }): Promise<TransferRecord[]> {
+    let query = this.db.selectFrom("org_app_transfers").selectAll();
+    if (filter.appDid) query = query.where("app_did", "=", filter.appDid);
+    const party = filter.party;
+    if (party) {
+      query = query.where((eb) =>
+        eb.or([
+          eb.and([eb("from_kind", "=", party.kind), eb("from_id", "=", party.id)]),
+          eb.and([eb("to_kind", "=", party.kind), eb("to_id", "=", party.id)]),
+        ]),
+      );
+    }
+    const rows = await query.orderBy("created_at", "desc").orderBy("id", "desc").execute();
+    return rows.map(toTransfer);
+  }
+
+  async pendingTransferOf(appDid: string): Promise<TransferRecord | undefined> {
+    const row = await this.db
+      .selectFrom("org_app_transfers")
+      .selectAll()
+      .where("app_did", "=", appDid)
+      .where("status", "=", "PENDING")
+      .executeTakeFirst();
+    return row && toTransfer(row);
+  }
+
+  async updateTransfer(id: string, patch: TransferPatch, expected: TransferStatus): Promise<TransferRecord | undefined> {
+    const row = await this.db
+      .updateTable("org_app_transfers")
+      .set({
+        ...(patch.status !== undefined && { status: patch.status }),
+        ...(patch.decidedAt !== undefined && { decided_at: patch.decidedAt }),
+        ...(patch.decidedBy !== undefined && { decided_by: patch.decidedBy }),
+      })
+      .where("id", "=", id)
+      .where("status", "=", expected)
+      .returningAll()
+      .executeTakeFirst();
+    return row && toTransfer(row);
+  }
+
+  async dueTransfers(now: Date, limit: number): Promise<TransferRecord[]> {
+    const rows = await this.db
+      .selectFrom("org_app_transfers")
+      .selectAll()
+      .where("status", "=", "PENDING")
+      .where("expires_at", "<=", now)
+      .orderBy("expires_at")
+      .orderBy("id")
+      .limit(limit)
+      .execute();
+    return rows.map(toTransfer);
   }
 
   async suspendCredentials(rows: readonly SuspensionRecord[]): Promise<string[]> {

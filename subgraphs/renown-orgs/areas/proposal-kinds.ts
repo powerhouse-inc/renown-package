@@ -1,4 +1,6 @@
 import { actions as orgActions } from "../../../document-models/renown-organization/index.js";
+import { currentOwner, sameOwner, type AppOwner } from "../core/app-ownership.js";
+import { requireOrg } from "../core/authz.js";
 import { RECOVERY_MIN_VERIFIED_DAYS } from "../core/domain-proof.js";
 import { badInput, orgError, unavailable } from "../core/errors.js";
 import { handleError, normalizeHandle, orgHandleProblem } from "../core/handles.js";
@@ -7,6 +9,7 @@ import { iso } from "../output.js";
 import type { OrgRuntime } from "../runtime.js";
 import type { MemberRecord, ProposalKind } from "../store/types.js";
 import { addressArg, endMembership, membershipEnded, restoreOf, writeDocument } from "./members.js";
+import { createTransfer } from "./transfers.js";
 
 const DAY_MS = 86_400_000;
 export const HANDLE_CHANGE_RESERVATION_DAYS = 30;
@@ -336,11 +339,115 @@ async function cancelPending(rt: OrgRuntime, orgId: string, exceptId: string, ow
   }
 }
 
-/** The executable kinds; Task 7 adds TRANSFER_APP_OUT, FREEZE_APP and UNFREEZE_APP. */
+/** The organisation's app named in the payload (BAD_USER_INPUT on field "payload" otherwise). */
+async function orgAppOf(rt: OrgRuntime, orgId: string, appDid: string | null | undefined) {
+  const app = appDid ? await rt.store().orgOfApp(appDid.trim()) : undefined;
+  if (!app || app.orgId !== orgId) throw badInput("payload", "payload.appDid must be an app of this organization");
+  return app;
+}
+
+/**
+ * TRANSFER_APP_OUT: on execution, a PENDING transfer to a person (address)
+ * or another organisation, which the recipient accepts (acceptAppTransfer).
+ * Lock order: org (held by runProposal's caller), then app.
+ */
+const transferOut: ProposalHandler = {
+  proposable: true,
+  async validate(rt, org, input) {
+    const app = await orgAppOf(rt, org.id, input.appDid);
+    if (app.frozen) throw orgError("APP_FROZEN", "A frozen app cannot be transferred");
+    let toId: string;
+    if (input.toKind === "PERSON") {
+      toId = payloadAddress(input.toId);
+    } else if (input.toKind === "ORG") {
+      toId = (input.toId ?? "").trim();
+      if (toId === org.id) throw badInput("payload", "The app already belongs to this organization");
+      try {
+        await requireOrg(rt.store(), toId);
+      } catch {
+        throw badInput("payload", "payload.toId must be a live organization");
+      }
+    } else {
+      throw badInput("payload", "payload.toKind must be PERSON or ORG");
+    }
+    if (await rt.store().pendingTransferOf(app.appDid)) throw badInput("payload", "A transfer of this app is pending");
+    return { appDid: app.appDid, toKind: input.toKind, toId };
+  },
+  async execute({ rt, org, proposal, actor, now }) {
+    const appDid = proposal.payload.appDid ?? "";
+    return rt.lock(`app:${appDid}`, async () => {
+      const store = rt.store();
+      const app = await store.orgOfApp(appDid);
+      if (!app || app.orgId !== org.id) return "The app no longer belongs to the organization";
+      if (app.frozen) return "APP_FROZEN: the app is frozen";
+      const from: AppOwner = { kind: "ORG", orgId: org.id };
+      if (!sameOwner(await currentOwner(rt, appDid), from)) return "The app profile no longer names the organization";
+      if (await store.pendingTransferOf(appDid)) return "A transfer of this app is pending";
+      const toId = proposal.payload.toId ?? "";
+      const to: AppOwner = proposal.payload.toKind === "ORG" ? { kind: "ORG", orgId: toId } : { kind: "PERSON", address: toId };
+      if (to.kind === "ORG") {
+        const target = await store.organization(toId);
+        if (!target || target.archived || target.takenDown) return "The receiving organization is archived or taken down";
+      }
+      await createTransfer(rt, { appDid, from, to, actor, proposalId: proposal.id, now });
+      return null;
+    });
+  },
+};
+
+/** FREEZE_APP / UNFREEZE_APP: threshold min(2, owners), no delay (delayMs); store first, then the document. */
+function freezeHandler(frozen: boolean): ProposalHandler {
+  const kind = frozen ? "FREEZE_APP" : "UNFREEZE_APP";
+  return {
+    proposable: true,
+    async validate(rt, org, input) {
+      const app = await orgAppOf(rt, org.id, input.appDid);
+      if (app.frozen === frozen) throw badInput("payload", frozen ? "The app is already frozen" : "The app is not frozen");
+      return { appDid: app.appDid };
+    },
+    async execute({ rt, org, proposal, actor, now }) {
+      const appDid = proposal.payload.appDid ?? "";
+      // Under the app lock too, so a transfer acceptance never interleaves with it.
+      return rt.lock(`app:${appDid}`, async () => {
+        const store = rt.store();
+        const app = await store.orgOfApp(appDid);
+        if (!app || app.orgId !== org.id) return "The app no longer belongs to the organization";
+        if (app.frozen === frozen) return null;
+        await store.setAppFrozen(appDid, frozen);
+        // An organisation document that lost its mirror of the app gets it back first.
+        const doc = (await rt.deps.reactorClient.get(org.id)).state as unknown as { global: { apps?: { appDid: string }[] } };
+        const mirrored = (doc.global.apps ?? []).some((a) => a.appDid === appDid);
+        await writeDocument(
+          rt,
+          `proposal.${kind}`,
+          org.id,
+          [...(mirrored ? [] : [orgActions.addOrgApp({ appDid, addedAt: iso(app.addedAt) })]), orgActions.setAppFrozen({ appDid, frozen })],
+          () => store.setAppFrozen(appDid, app.frozen),
+        );
+        const data = { appDid };
+        await rt.record({
+          orgId: org.id,
+          actor,
+          action: `proposal.${kind}`,
+          at: now,
+          details: { ...data, proposalId: proposal.id },
+          event: { type: frozen ? "app.frozen" : "app.unfrozen", data },
+          notify: frozen ? [{ to: "ADMINS", kind: "APP_FROZEN", payload: data }] : [],
+        });
+        return null;
+      });
+    },
+  };
+}
+
+/** The executable kinds. */
 export const PROPOSAL_KINDS: Partial<Record<ProposalKind, ProposalHandler>> = {
   ADD_OWNER: addOwner,
   REMOVE_OWNER: removeOwner,
+  TRANSFER_APP_OUT: transferOut,
   CHANGE_HANDLE: changeHandle,
   DELETE_ORG: deleteOrg,
   RECOVER: recover,
+  FREEZE_APP: freezeHandler(true),
+  UNFREEZE_APP: freezeHandler(false),
 };

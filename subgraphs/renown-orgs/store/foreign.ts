@@ -3,13 +3,14 @@ import { sql } from "kysely";
 import { RenownCredentialProcessor } from "../../../processors/renown-credential/index.js";
 import type { DB as RenownCredentialDB } from "../../../processors/renown-credential/schema.js";
 import type { ReadModelDb } from "../../renown-auth/lookups.js";
+import type { StatsDB } from "../../renown-stats/store/types.js";
 import type { WorkloadDB } from "../../renown-workload/store/types.js";
 import { toDate } from "./kysely.js";
 
 /**
  * Reads and writes of other subgraphs' namespaces done on behalf of
- * organisations: renown-workload identities and the renown-credential
- * delegation read model.
+ * organisations: renown-workload identities, the renown-stats app profile
+ * index and the renown-credential delegation read model.
  *
  * `queryNamespace` is read-only on the host (selectFrom/selectNoFrom/with/
  * withRecursive only), so every write goes through a memoized
@@ -195,4 +196,83 @@ export async function liveCredentialsOf(
   if (issuedBy) query = query.where(issuedAtUtc(), "<=", issuedBy);
   const rows = await query.orderBy("credential_id").execute();
   return rows.map(toCredential);
+}
+
+export const STATS_NAMESPACE = "renown-stats";
+
+const statsHandles = new WeakMap<ReadModelDb, Promise<IRelationalDb<StatsDB>>>();
+
+/** A writable handle on the renown-stats namespace. */
+function writableStats(db: ReadModelDb): Promise<IRelationalDb<StatsDB>> {
+  return memoizedNamespace(statsHandles, db, () => db.createNamespace<StatsDB>(STATS_NAMESPACE));
+}
+
+/** Who the app profile index names as the publisher: the stored values, as they are (compare-and-set keys). */
+export interface PublisherFields {
+  /** Lowercase, as renown-stats stores it. */
+  publisherAddress: string;
+  publisherOrgId: string | null;
+}
+
+/** The app profile's document and publisher, or undefined without a profile. */
+export async function appPublisher(db: ReadModelDb, appDid: string): Promise<(PublisherFields & { documentId: string }) | undefined> {
+  const row = await db
+    .queryNamespace<StatsDB>(STATS_NAMESPACE)
+    .selectFrom("app_profile_documents")
+    .select(["document_id", "publisher_address", "publisher_org_id"])
+    .where("app_did", "=", appDid)
+    .executeTakeFirst();
+  return row && { documentId: row.document_id, publisherAddress: row.publisher_address, publisherOrgId: row.publisher_org_id ?? null };
+}
+
+/**
+ * Points the app profile index at `next`, only while it still names
+ * `expected` (compare-and-set); false when it no longer does.
+ */
+export async function setAppPublisher(db: ReadModelDb, appDid: string, next: PublisherFields, expected: PublisherFields): Promise<boolean> {
+  const stats = await writableStats(db);
+  const result = await stats
+    .updateTable("app_profile_documents")
+    .set({ publisher_address: next.publisherAddress, publisher_org_id: next.publisherOrgId })
+    .where("app_did", "=", appDid)
+    .where("publisher_address", "=", expected.publisherAddress)
+    .where((eb) => (expected.publisherOrgId === null ? eb("publisher_org_id", "is", null) : eb("publisher_org_id", "=", expected.publisherOrgId)))
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows) > 0;
+}
+
+/** The owner of a workload identity, as stored (EIP-55 address). */
+export interface WorkloadOwnerFields {
+  ownerAddress: string;
+  ownerOrgId: string | null;
+}
+
+/** The owner of the workload identity `did`, or undefined when none is registered. */
+export async function workloadOwner(db: ReadModelDb, did: string): Promise<WorkloadOwnerFields | undefined> {
+  const row = await db
+    .queryNamespace<WorkloadDB>(WORKLOAD_NAMESPACE)
+    .selectFrom("workload_identities")
+    .select(["owner_address", "owner_org_id"])
+    .where("did", "=", did)
+    .executeTakeFirst();
+  return row && { ownerAddress: row.owner_address, ownerOrgId: row.owner_org_id ?? null };
+}
+
+/** Moves the workload identity to `next`, only while it is still owned as `expected` (compare-and-set). */
+export async function setWorkloadOwner(
+  db: ReadModelDb,
+  did: string,
+  next: WorkloadOwnerFields,
+  expected: WorkloadOwnerFields,
+  now: Date,
+): Promise<boolean> {
+  const workloads = await writableWorkloads(db);
+  const result = await workloads
+    .updateTable("workload_identities")
+    .set({ owner_address: next.ownerAddress, owner_org_id: next.ownerOrgId, updated_at: now })
+    .where("did", "=", did)
+    .where("owner_address", "=", expected.ownerAddress)
+    .where((eb) => (expected.ownerOrgId === null ? eb("owner_org_id", "is", null) : eb("owner_org_id", "=", expected.ownerOrgId)))
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows) > 0;
 }

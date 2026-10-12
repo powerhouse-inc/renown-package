@@ -185,4 +185,46 @@ export const CREDENTIALS_SDL = `
   }
 `;
 
-export const SECURITY_SDL = [PROPOSALS_SDL, DOMAINS_SDL, WORKLOADS_SDL, CREDENTIALS_SDL].join("\n");
+export const TRANSFERS_SDL = `
+  enum AppTransferStatus {
+    PENDING
+    ACCEPTED
+    DECLINED
+    CANCELLED
+    EXPIRED
+  }
+
+  type AppTransfer {
+    id: String!
+    appDid: String!
+    fromKind: OrgPartyKind!
+    "Lowercase address (PERSON) or organization id (ORG)."
+    fromId: String!
+    toKind: OrgPartyKind!
+    toId: String!
+    status: AppTransferStatus!
+    createdAt: String!
+    "PENDING transfers expire 14 days after they were made."
+    expiresAt: String!
+    decidedAt: String
+    decidedBy: String
+    "The TRANSFER_APP_OUT proposal that made it."
+    proposalId: String
+  }
+
+  extend type Query {
+    "Transfers the caller is part of: by orgId (admins), by address (that address), or by appDid (either side's)."
+    appTransfers(appDid: String, orgId: String, address: String, auth: OrgAuthInput): [AppTransfer!]!
+  }
+
+  extend type Mutation {
+    "The app's personal publisher offers it to an organization; an admin of that organization accepts."
+    proposeAppTransfer(appDid: String!, toOrgId: String!, auth: OrgAuthInput): AppTransfer!
+    "The recipient (the person, or an admin of the organization) accepts: the app, its profile and its workload identity move. Errors also APP_FROZEN."
+    acceptAppTransfer(transferId: String!, auth: OrgAuthInput): AppTransfer!
+    "The recipient declines (DECLINED) or the source withdraws (CANCELLED)."
+    declineAppTransfer(transferId: String!, auth: OrgAuthInput): AppTransfer!
+  }
+`;
+
+export const SECURITY_SDL = [PROPOSALS_SDL, DOMAINS_SDL, WORKLOADS_SDL, CREDENTIALS_SDL, TRANSFERS_SDL].join("\n");
