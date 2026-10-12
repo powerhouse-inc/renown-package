@@ -102,5 +102,50 @@ export const WEBHOOKS_SDL = `
   }
 `;
 
+export const OIDC_SDL = `
+  enum OrgOidcClientStatus {
+    ACTIVE
+    DISABLED
+  }
+
+  "An OIDC client owned by an organisation: only its active members may sign in to it."
+  type OrgOidcClient {
+    clientId: String!
+    orgId: String!
+    name: String!
+    redirectUris: [String!]!
+    status: OrgOidcClientStatus!
+    createdAt: String!
+  }
+
+  type OrgOidcClientCredentials {
+    clientId: String!
+    "Shown once; only its hash is stored."
+    clientSecret: String!
+  }
+
+  extend type Query {
+    "Admins: the organisation's own OIDC clients (never their secrets)."
+    orgOidcClients(orgId: String!, auth: OrgAuthInput): [OrgOidcClient!]!
+  }
+
+  extend type Mutation {
+    "Admins: a confidential client only the organisation's active members may sign in to."
+    registerOrgOidcClient(orgId: String!, name: String!, redirectUris: [String!]!, auth: OrgAuthInput): OrgOidcClientCredentials!
+    "Admins: renames, changes redirect URIs (removals before additions) or disables/enables the client."
+    updateOrgOidcClient(
+      orgId: String!
+      clientId: String!
+      name: String
+      addRedirectUris: [String!]
+      removeRedirectUris: [String!]
+      status: OrgOidcClientStatus
+      auth: OrgAuthInput
+    ): OrgOidcClient!
+    "Admins: a new secret, shown once; the old one stops working."
+    rotateOrgOidcClientSecret(orgId: String!, clientId: String!, auth: OrgAuthInput): OrgOidcClientCredentials!
+  }
+`;
+
 /** Every A3 block; later tasks append theirs. */
-export const INTEGRATIONS_SDL = [NOTIFICATIONS_SDL, WEBHOOKS_SDL].join("\n");
+export const INTEGRATIONS_SDL = [NOTIFICATIONS_SDL, WEBHOOKS_SDL, OIDC_SDL].join("\n");

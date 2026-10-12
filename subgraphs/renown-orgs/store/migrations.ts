@@ -343,4 +343,14 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .execute();
   await db.schema.createIndex("org_webhook_deliveries_hook").ifNotExists().on("org_webhook_deliveries").columns(["webhook_id", "created_at", "id"]).execute();
   await db.schema.createIndex("org_webhook_deliveries_due").ifNotExists().on("org_webhook_deliveries").columns(["status", "next_attempt_at"]).execute();
+  // A3: OIDC clients owned by an organisation (the clients themselves live in renown-oidc).
+  await db.schema
+    .createTable("org_oidc_clients")
+    .ifNotExists()
+    .addColumn("client_id", "text", (col) => col.primaryKey())
+    .addColumn("org_id", "text", (col) => col.notNull())
+    .addColumn("created_by", "text", (col) => col.notNull())
+    .addColumn("created_at", "timestamptz", (col) => col.notNull())
+    .execute();
+  await db.schema.createIndex("org_oidc_clients_org").ifNotExists().on("org_oidc_clients").column("org_id").execute();
 }

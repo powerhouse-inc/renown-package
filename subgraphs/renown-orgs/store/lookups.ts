@@ -139,3 +139,29 @@ export async function orgClaimsFor(db: ReadModelDb, address: string, didHost: st
     throw error;
   }
 }
+
+/** The organisation owning an OIDC client, and whether it may still be used (neither archived nor taken down). */
+export interface OidcClientOwner {
+  orgId: string;
+  live: boolean;
+}
+
+/**
+ * The owner of an org-owned OIDC client, or undefined for a client no
+ * organisation owns (or a missing namespace). Any other error is thrown.
+ */
+export async function oidcClientOwner(db: ReadModelDb, clientId: string): Promise<OidcClientOwner | undefined> {
+  try {
+    const row = await orgs(db)
+      .selectFrom("org_oidc_clients")
+      .leftJoin("organizations", "organizations.id", "org_oidc_clients.org_id")
+      .select(["org_oidc_clients.org_id", "organizations.archived", "organizations.taken_down"])
+      .where("org_oidc_clients.client_id", "=", clientId)
+      .executeTakeFirst();
+    if (!row) return undefined;
+    return { orgId: row.org_id, live: row.archived === false && row.taken_down === false };
+  } catch (error) {
+    if (isMissingNamespace(error)) return undefined;
+    throw error;
+  }
+}

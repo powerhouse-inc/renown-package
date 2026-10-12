@@ -17,6 +17,11 @@ export interface OrgDirectory {
   orgsOf(address: string): Promise<OrgClaim[]>;
 }
 
+/** Which organisation (if any) owns a client, and whether that organisation is live (neither archived nor taken down). */
+export interface OrgClientOwners {
+  ownerOf(clientId: string): Promise<{ orgId: string; live: boolean } | undefined>;
+}
+
 export interface OidcDeps {
   config: OidcConfig;
   keys: SigningKeys;

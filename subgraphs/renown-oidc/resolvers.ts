@@ -13,6 +13,7 @@ import {
   type UpdateClientInput,
 } from "./register.js";
 import type { OidcStore } from "./store/types.js";
+import type { OrgClientOwners } from "./http/deps.js";
 
 export interface ResolverDeps {
   /** Read lazily: the config is resolved when the subgraph is set up. */
@@ -20,6 +21,8 @@ export interface ResolverDeps {
   /** The client registry's store; undefined until set up (or when the relational namespace is unavailable). */
   store(): OidcStore | undefined;
   reactorClient: Pick<IReactorClient, "createEmpty" | "execute">;
+  /** Org ownership of clients; an org-owned client keeps its organisation restriction here. */
+  orgClients?: OrgClientOwners;
   now?: () => Date;
   log?: (message: string) => void;
 }
@@ -77,6 +80,27 @@ async function asGraphQL<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * An org-owned client is managed by its organisation's admins (renown-orgs):
+ * this path may not widen who can sign in to it — its allowedOrgs stay
+ * exactly [{orgId, MEMBER}], it never allows any subject, and it gains no
+ * allowed subjects. Anything else (name, redirect URIs, status) still goes.
+ */
+async function keepOrgRestriction(owners: OrgClientOwners | undefined, clientId: string, input: UpdateClientInput): Promise<void> {
+  const owner = await owners?.ownerOf(clientId);
+  if (!owner) return;
+  const managed = (message: string) =>
+    new GraphQLError(`This client is owned by an organisation: ${message}`, { extensions: { code: "BAD_USER_INPUT" } });
+  if (input.allowedOrgs != null) {
+    const kept = input.allowedOrgs.length === 1 && input.allowedOrgs.every((org) => org.orgId.trim() === owner.orgId && org.minRole.trim().toUpperCase() === "MEMBER");
+    if (!kept) {
+      throw managed("allowedOrgs cannot change");
+    }
+  }
+  if (input.allowAnySubject === true) throw managed("allowAnySubject cannot be enabled");
+  if ((input.addAllowedSubjects ?? []).length > 0) throw managed("allowed subjects cannot be added");
+}
+
 export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
   /** The registry, after checking the caller's registration token. */
   function authorizedRegistry(ctx: ResolverContext): ClientRegistryDeps {
@@ -121,6 +145,7 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
         ctx: ResolverContext,
       ): Promise<OidcClientInfo> => {
         const registry = authorizedRegistry(ctx);
+        await keepOrgRestriction(deps.orgClients, args.clientId, args.input);
         return publicInfo(await asGraphQL(() => updateClient(registry, args.clientId, args.input)));
       },
       rotateOidcClientSecret: async (

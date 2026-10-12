@@ -22,6 +22,7 @@ import type {
   OrgWebhookDeliveriesTable,
   OrgWebhooksTable,
   WebhookPatch,
+  OrgOidcClientLink,
   WebhookRecord,
   OrgInviteLinksTable,
   OrgLink,
@@ -1468,5 +1469,23 @@ export class KyselyOrgStore implements OrgStore {
       .where("status", "<>", "PENDING")
       .where("id", "not in", keepIds)
       .execute();
+  }
+
+  async insertOrgOidcClient(link: OrgOidcClientLink): Promise<void> {
+    await this.db
+      .insertInto("org_oidc_clients")
+      .values({ client_id: link.clientId, org_id: link.orgId, created_by: link.createdBy, created_at: link.createdAt })
+      .execute();
+  }
+
+  async orgOidcClients(orgId: string): Promise<OrgOidcClientLink[]> {
+    const rows = await this.db
+      .selectFrom("org_oidc_clients")
+      .selectAll()
+      .where("org_id", "=", orgId)
+      .orderBy("created_at")
+      .orderBy("client_id")
+      .execute();
+    return rows.map((row) => ({ clientId: row.client_id, orgId: row.org_id, createdBy: row.created_by, createdAt: toDate(row.created_at) }));
   }
 }

@@ -361,6 +361,22 @@ export interface OrgReleaseAttestationsTable {
   created_at: Timestamp;
 }
 
+/** An OIDC client (renown-oidc's oidc_clients) owned by an organisation. */
+export interface OrgOidcClientsTable {
+  client_id: string;
+  org_id: string;
+  /** Lowercase address of the admin who registered it. */
+  created_by: string;
+  created_at: Timestamp;
+}
+
+export interface OrgOidcClientLink {
+  clientId: string;
+  orgId: string;
+  createdBy: string;
+  createdAt: Date;
+}
+
 export interface OrgsDB {
   organizations: OrganizationsTable;
   org_members: OrgMembersTable;
@@ -382,6 +398,7 @@ export interface OrgsDB {
   org_delegation_alerts: OrgDelegationAlertsTable;
   org_webhooks: OrgWebhooksTable;
   org_webhook_deliveries: OrgWebhookDeliveriesTable;
+  org_oidc_clients: OrgOidcClientsTable;
 }
 
 export type OrgsKysely = Kysely<OrgsDB>;
@@ -735,4 +752,8 @@ export interface OrgStore {
   updateDelivery(id: string, patch: DeliveryPatch): Promise<DeliveryRecord | undefined>;
   /** Deletes the settled (non-PENDING) deliveries of an endpoint beyond its newest `keep`. */
   pruneDeliveries(webhookId: string, keep: number): Promise<void>;
+  /** Records that `orgId` owns the OIDC client. */
+  insertOrgOidcClient(link: OrgOidcClientLink): Promise<void>;
+  /** The organisation's OIDC clients, createdAt order. */
+  orgOidcClients(orgId: string): Promise<OrgOidcClientLink[]>;
 }

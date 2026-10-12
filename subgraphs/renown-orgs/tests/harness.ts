@@ -17,12 +17,18 @@ import {
   renownOrganizationDocumentType,
   utils as orgUtils,
 } from "../../../document-models/renown-organization/index.js";
+import {
+  reducer as oidcReducer,
+  renownOidcClientDocumentType,
+  utils as oidcUtils,
+} from "../../../document-models/renown-oidc-client/index.js";
 import type { MediaBackend } from "../../../media/backend.js";
 import { RenownCredentialProcessor } from "../../../processors/renown-credential/index.js";
 import { up as upCredential } from "../../../processors/renown-credential/migrations.js";
 import { RenownUserProcessor } from "../../../processors/renown-user/index.js";
 import { up as upUser } from "../../../processors/renown-user/migrations.js";
 import { pkhDidFor } from "../../renown-stats/core/dids.js";
+import { migrate as migrateOidc } from "../../renown-oidc/store/migrations.js";
 import { migrate as migrateStats } from "../../renown-stats/store/migrations.js";
 import { migrate as migrateWorkload } from "../../renown-workload/store/migrations.js";
 import { orgMessage } from "../../../sdk/orgs.js";
@@ -49,6 +55,7 @@ export const USER_NS = RenownUserProcessor.getNamespace("renown-user");
 export const CRED_NS = RenownCredentialProcessor.getNamespace("renown-credential");
 export const WORKLOAD_NS = "renown-workload";
 export const STATS_NS = "renown-stats";
+export const OIDC_NS = "renown-oidc";
 export const TEST_CONFIG: OrgsConfig = {
   didHost: "renown.test",
   timelockSeconds: 3600,
@@ -74,6 +81,8 @@ export async function openHarness(): Promise<Harness> {
   await migrateWorkload(root.withSchema(WORKLOAD_NS));
   await sql`create schema ${sql.id(STATS_NS)}`.execute(root);
   await migrateStats(root.withSchema(STATS_NS));
+  await sql`create schema ${sql.id(OIDC_NS)}`.execute(root);
+  await migrateOidc(root.withSchema(OIDC_NS));
   // Like the host: queryNamespace reads, createNamespace hands out a writable handle.
   const relationalDb = {
     queryNamespace: (namespace: string) => root.withSchema(namespace),
@@ -84,7 +93,7 @@ export async function openHarness(): Promise<Harness> {
 
 /** Empties every table of every namespace the harness created (later phases add tables; this follows). */
 export async function resetHarness(h: Harness): Promise<void> {
-  for (const schema of [ORGS_NAMESPACE, USER_NS, CRED_NS, WORKLOAD_NS, STATS_NS]) {
+  for (const schema of [ORGS_NAMESPACE, USER_NS, CRED_NS, WORKLOAD_NS, STATS_NS, OIDC_NS]) {
     const { rows } = await sql<{ table_name: string }>`
       select table_name from information_schema.tables where table_schema = ${schema}`.execute(h.root);
     for (const { table_name } of rows) await h.root.withSchema(schema).deleteFrom(table_name).execute();
@@ -154,10 +163,12 @@ export function fakeReactor() {
   const reducers: Record<string, (doc: PHDocument, action: Action) => PHDocument> = {
     [renownOrganizationDocumentType]: orgReducer as never,
     [renownAppProfileDocumentType]: profileReducer as never,
+    [renownOidcClientDocumentType]: oidcReducer as never,
   };
   const creators: Record<string, () => PHDocument> = {
     [renownOrganizationDocumentType]: () => orgUtils.createDocument() as never,
     [renownAppProfileDocumentType]: () => profileUtils.createDocument() as never,
+    [renownOidcClientDocumentType]: () => oidcUtils.createDocument() as never,
   };
   return {
     docs,

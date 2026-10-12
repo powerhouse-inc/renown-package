@@ -56,7 +56,8 @@ function makeSubgraph() {
   const subgraph = new RenownOidcSubgraph({
     http,
     reactorClient,
-    relationalDb: { createNamespace },
+    // queryNamespace: renown-orgs' read-only view (an empty dummy: no client is org-owned).
+    relationalDb: { createNamespace, queryNamespace: () => dummyDb() },
   } as never);
   return { subgraph, routes, createNamespace, reactorClient };
 }

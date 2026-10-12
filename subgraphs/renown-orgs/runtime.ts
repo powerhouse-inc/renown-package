@@ -4,6 +4,9 @@ import type { MediaBackend } from "../../media/backend.js";
 import { mediaBackend } from "../../media/slot.js";
 import { orgMessage, sha256Hex } from "../../sdk/orgs.js";
 import { createRateLimiter } from "../renown-auth/core/rate-limit.js";
+import { KyselyOidcStore } from "../renown-oidc/store/kysely.js";
+import { OIDC_NAMESPACE } from "../renown-oidc/store/migrations.js";
+import type { OidcKysely, OidcStore } from "../renown-oidc/store/types.js";
 import { loadConfig as loadWorkloadConfig } from "../renown-workload/core/config.js";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
 import { createKeyedLock } from "../renown-stats/core/keyed-lock.js";
@@ -46,8 +49,19 @@ export interface OrgsResolverDeps {
   webhookKey?: () => Uint8Array | null;
   /** Extra activity sinks (A3: notifications, webhooks). */
   sinks?: readonly ActivitySink[];
+  /**
+   * The renown-oidc client registry; by default the host's renown-oidc
+   * namespace (migrated by the renown-oidc subgraph) and RENOWN_OIDC_DRIVE_ID.
+   */
+  oidc?: () => Promise<OidcRegistryHandle>;
   /** Initial membership-ended hooks (tests; A2 registers its own on the runtime). */
   membershipHooks?: readonly ((event: MembershipEnded) => Promise<void>)[];
+}
+
+/** The renown-oidc client store and the drive its audit mirror documents go to. */
+export interface OidcRegistryHandle {
+  store: OidcStore;
+  driveId: string | null;
 }
 
 /** A membership that just ended (LEFT or REMOVED); A2 suspends the member's org-app credentials. */
@@ -92,6 +106,8 @@ export interface OrgRuntime {
   /** Applies `actions` to a document; a rejected operation is BAD_USER_INPUT (field "document"). */
   execute(documentId: string, actions: Action[]): Promise<void>;
   record(activity: OrgActivity): Promise<void>;
+  /** The renown-oidc client registry, or SERVICE_UNAVAILABLE; the default namespace handle is created once. */
+  oidc(): Promise<OidcRegistryHandle>;
   /** Organisation rules as other subgraphs see them (credential status), over relationalDb; created once. */
   policy(): OrgPolicy;
   /** Activity sinks; built-in areas append theirs once. */
@@ -135,6 +151,18 @@ export function createRuntime(deps: OrgsResolverDeps): OrgRuntime {
   const record = createActivityRecorder({ store, newId, sinks });
   let policy: OrgPolicy | undefined;
   let workloadKey: Uint8Array | null | undefined;
+  let oidcStore: Promise<OidcStore> | undefined;
+  const defaultOidc = async (): Promise<OidcRegistryHandle> => {
+    // Writable, exactly as renown-oidc's own setup opens it; a failure is retried next time.
+    oidcStore ??= deps.relationalDb.createNamespace(OIDC_NAMESPACE).then(
+      (db) => new KyselyOidcStore(db as unknown as OidcKysely),
+      (error: unknown) => {
+        oidcStore = undefined;
+        throw error;
+      },
+    );
+    return { store: await oidcStore, driveId: process.env.RENOWN_OIDC_DRIVE_ID?.trim() || null };
+  };
 
   return {
     deps,
@@ -187,6 +215,15 @@ export function createRuntime(deps: OrgsResolverDeps): OrgRuntime {
         .flat()
         .find((operation) => operation.error && sent.has(operation.action.id));
       if (failed?.error) throw badInput("document", `${failed.action.type} failed: ${failed.error}`);
+    },
+    async oidc() {
+      try {
+        return await (deps.oidc ?? defaultOidc)();
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "unknown error";
+        console.error(`[renown-orgs] OIDC client registry unavailable: ${reason}`);
+        throw unavailable("The OIDC client registry is unavailable");
+      }
     },
     record,
     sinks,
