@@ -709,6 +709,8 @@ export interface OrgStore {
   updateWebhook(id: string, patch: WebhookPatch, now: Date): Promise<WebhookRecord | undefined>;
   /** Adds one consecutive failure atomically; the updated endpoint. */
   incrementWebhookFailures(id: string, now: Date): Promise<WebhookRecord | undefined>;
+  /** Sets consecutive failures back to 0 (no write when already 0). */
+  resetWebhookFailures(id: string, now: Date): Promise<void>;
   /** Disables the endpoint; true only for the call that turned an enabled one off. */
   disableWebhook(id: string, now: Date): Promise<boolean>;
   /** Deletes the endpoint and its deliveries. */
@@ -716,8 +718,13 @@ export interface OrgStore {
   insertDeliveries(rows: readonly DeliveryRecord[]): Promise<void>;
   /** Newest first. */
   deliveries(webhookId: string, limit: number): Promise<DeliveryRecord[]>;
-  /** PENDING deliveries due at `now`, oldest due first. */
-  dueDeliveries(now: Date, limit: number): Promise<DeliveryRecord[]>;
+  /**
+   * PENDING deliveries due at `now`, fairly: at most `perWebhook` per
+   * endpoint and `perOrg` per organisation (each the oldest due), then round
+   * robin across organisations (every org's oldest, then every org's second,
+   * …), at most `limit` in all.
+   */
+  dueDeliveries(now: Date, options: { limit: number; perWebhook: number; perOrg: number }): Promise<DeliveryRecord[]>;
   /**
    * Claims a PENDING delivery whose next_attempt_at is still `expected`
    * (compare-and-set): counts the attempt and moves next_attempt_at to

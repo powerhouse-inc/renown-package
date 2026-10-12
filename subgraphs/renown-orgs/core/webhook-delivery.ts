@@ -92,7 +92,7 @@ export async function attemptDelivery(rt: OrgRuntime, delivery: DeliveryRecord, 
   let updated: DeliveryRecord | undefined;
   if (error === null) {
     updated = await store.updateDelivery(claimed.id, { status: "DELIVERED", responseStatus: status, lastError: null, nextAttemptAt: null, deliveredAt: now });
-    if (webhook.consecutiveFailures !== 0) await store.updateWebhook(webhook.id, { consecutiveFailures: 0 }, now);
+    await store.resetWebhookFailures(webhook.id, now);
   } else {
     const done = !options.retry || attempts >= MAX_ATTEMPTS;
     updated = await store.updateDelivery(claimed.id, {

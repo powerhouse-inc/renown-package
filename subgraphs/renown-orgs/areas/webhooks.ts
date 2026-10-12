@@ -1,10 +1,9 @@
-import { isIP } from "node:net";
 import { seal } from "../../renown-workload/core/crypto.js";
 import { ORG_WEBHOOK_EVENTS, type ActivitySink } from "../core/activity.js";
 import type { OrgArgs, OrgContext } from "../core/auth.js";
 import { requireOrg, requireRole } from "../core/authz.js";
 import { badInput, limitReached, notFound, unavailable } from "../core/errors.js";
-import { isPublicAddress } from "../core/net.js";
+import { FETCH_TIMEOUT_MS, NetGuardError, vetUrl } from "../core/net.js";
 import { attemptDelivery, eventBody, MAX_WEBHOOKS, WEBHOOK_PORTS } from "../core/webhook-delivery.js";
 import { iso, isoOrNull } from "../output.js";
 import type { Area, OrgRuntime } from "../runtime.js";
@@ -41,31 +40,22 @@ function auditUrl(url: string): string {
 }
 
 /**
- * An https URL without credentials, on port 443 or 8443, whose host resolves
- * only to public addresses; BAD_USER_INPUT (field url) otherwise. Every
- * delivery checks the addresses again (the host may move).
+ * The URL rules every delivery applies again (vetUrl: https, no credentials,
+ * port 443 or 8443, a host resolving within 5 s to public addresses only),
+ * checked when the URL is saved; BAD_USER_INPUT (field url) otherwise. An
+ * unresolvable and a non-public host get the same message. Callers check the
+ * caller's role first, so only admins can probe host names.
  */
 async function webhookUrl(rt: OrgRuntime, raw: string): Promise<string> {
   const value = raw.trim();
-  let url: URL;
+  if (value.length > MAX_URL_LENGTH) throw badInput("url", `url must be at most ${MAX_URL_LENGTH} characters`);
   try {
-    url = new URL(value);
-  } catch {
-    throw badInput("url", "url must be an https URL");
+    const { url } = await vetUrl(rt.net(), value, { deadline: Date.now() + FETCH_TIMEOUT_MS, ports: WEBHOOK_PORTS });
+    return url.toString();
+  } catch (error) {
+    if (error instanceof NetGuardError) throw badInput("url", `url must be an https URL on port ${WEBHOOK_PORTS.join(" or ")} without credentials: ${error.message}`);
+    throw error;
   }
-  if (url.protocol !== "https:" || url.username || url.password || value.length > MAX_URL_LENGTH) {
-    throw badInput("url", `url must be an https URL of at most ${MAX_URL_LENGTH} characters, without credentials`);
-  }
-  if (!WEBHOOK_PORTS.includes(url.port ? Number(url.port) : 443)) throw badInput("url", `url must use port ${WEBHOOK_PORTS.join(" or ")}`);
-  const host = url.hostname.replace(/^\[|\]$/g, "");
-  let addresses: string[];
-  try {
-    addresses = isIP(host) ? [host] : (await rt.net().lookup(host)).map((entry) => entry.address);
-  } catch {
-    throw badInput("url", `${host} does not resolve`);
-  }
-  if (addresses.length === 0 || !addresses.every(isPublicAddress)) throw badInput("url", `${host} must resolve to public addresses only`);
-  return url.toString();
 }
 
 function eventsArg(values: readonly string[]): string[] {
@@ -158,6 +148,7 @@ export const webhookResolvers: Area = (rt) => {
       createOrgWebhook: async (_: unknown, args: OrgArgs & { orgId: string; url: string; events: string[] }, ctx: OrgContext) => {
         const caller = await rt.writer(ctx, "createOrgWebhook", args);
         const events = eventsArg(args.events);
+        await requireRole(rt.store(), args.orgId, caller, "ADMIN");
         const url = await webhookUrl(rt, args.url);
         return rt.lock(`org:${args.orgId}`, async () => {
           const store = rt.store();
@@ -191,8 +182,9 @@ export const webhookResolvers: Area = (rt) => {
         ctx: OrgContext,
       ) => {
         const caller = await rt.writer(ctx, "updateOrgWebhook", args);
-        const url = args.url != null ? await webhookUrl(rt, args.url) : undefined;
         const events = args.events != null ? eventsArg(args.events) : undefined;
+        await adminWebhook(rt, args.orgId, caller, args.webhookId);
+        const url = args.url != null ? await webhookUrl(rt, args.url) : undefined;
         return rt.lock(`org:${args.orgId}`, async () => {
           const now = rt.now();
           const webhook = await adminWebhook(rt, args.orgId, caller, args.webhookId);

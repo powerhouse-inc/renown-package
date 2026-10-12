@@ -327,7 +327,8 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .createTable("org_webhook_deliveries")
     .ifNotExists()
     .addColumn("id", "text", (col) => col.primaryKey())
-    .addColumn("webhook_id", "text", (col) => col.notNull())
+    // Deleting an endpoint deletes its deliveries, and a delivery can never be queued for a deleted one.
+    .addColumn("webhook_id", "text", (col) => col.notNull().references("org_webhooks.id").onDelete("cascade"))
     .addColumn("org_id", "text", (col) => col.notNull())
     .addColumn("event_id", "text", (col) => col.notNull())
     .addColumn("event_type", "text", (col) => col.notNull())

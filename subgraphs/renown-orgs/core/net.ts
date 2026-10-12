@@ -226,6 +226,51 @@ export function beforeDeadline<T>(promise: Promise<T>, deadline: number, what: s
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+/** The one message for a host that does not resolve or resolves to any non-public address (no internal-DNS oracle). */
+function notPublic(host: string): NetGuardError {
+  return new NetGuardError(`${host} is not a public host (it does not resolve, or resolves to a non-public address)`);
+}
+
+/**
+ * The URL rules of every organisation fetch (spec §3.6), shared by the checks
+ * made when a URL is saved and the ones made on every request: HTTPS, no
+ * credentials, an allowed port (`ports`, 443 when the URL names none; any
+ * when omitted), and a host that resolves before `deadline` (epoch ms) to
+ * public addresses only. A failed or non-public resolution gets one message.
+ * Throws NetGuardError.
+ */
+export async function vetUrl(
+  deps: Pick<NetDeps, "lookup">,
+  rawUrl: string,
+  options: { deadline: number; ports?: readonly number[] },
+): Promise<{ url: URL; host: string; addresses: ResolvedAddress[] }> {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new NetGuardError("Not a URL");
+  }
+  if (url.protocol !== "https:") throw new NetGuardError("Only https URLs are fetched");
+  if (url.username || url.password) throw new NetGuardError("URLs with credentials are not fetched");
+  const port = url.port ? Number(url.port) : 443;
+  if (options.ports && !options.ports.includes(port)) throw new NetGuardError(`Port ${port} is not allowed`);
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  const literal = isIP(host);
+  let addresses: ResolvedAddress[];
+  if (literal !== 0) {
+    addresses = [{ address: host, family: literal === 6 ? 6 : 4 }];
+  } else {
+    try {
+      addresses = await beforeDeadline(deps.lookup(host), options.deadline, `lookup ${host}`);
+    } catch (error) {
+      if (error instanceof NetGuardError) throw error;
+      throw notPublic(host);
+    }
+  }
+  if (addresses.length === 0 || !addresses.every((entry) => isPublicAddress(entry.address))) throw notPublic(host);
+  return { url, host, addresses };
+}
+
 /**
  * Fetches `rawUrl` under the organisation fetch rules (spec §3.6): HTTPS
  * only, no credentials in the URL, every resolved address public (checked
@@ -254,33 +299,7 @@ export async function guardedRequest(
   },
 ): Promise<{ status: number; body: Uint8Array }> {
   const deadline = init.deadline ?? Date.now() + (init.timeoutMs ?? FETCH_TIMEOUT_MS);
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw new NetGuardError("Not a URL");
-  }
-  if (url.protocol !== "https:") throw new NetGuardError("Only https URLs are fetched");
-  if (url.username || url.password) throw new NetGuardError("URLs with credentials are not fetched");
-  const port = url.port ? Number(url.port) : 443;
-  if (init.ports && !init.ports.includes(port)) throw new NetGuardError(`Port ${port} is not allowed`);
-  const host = url.hostname.replace(/^\[|\]$/g, "");
-  const literal = isIP(host);
-  let addresses: ResolvedAddress[];
-  if (literal !== 0) {
-    addresses = [{ address: host, family: literal === 6 ? 6 : 4 }];
-  } else {
-    try {
-      addresses = await beforeDeadline(deps.lookup(host), deadline, `lookup ${host}`);
-    } catch (error) {
-      if (error instanceof NetGuardError) throw error;
-      throw new NetGuardError(`${host} does not resolve`);
-    }
-  }
-  if (addresses.length === 0) throw new NetGuardError(`${host} does not resolve`);
-  if (!addresses.every((entry) => isPublicAddress(entry.address))) {
-    throw new NetGuardError(`${host} resolves to a non-public address`);
-  }
+  const { url, host, addresses } = await vetUrl(deps, rawUrl, { deadline, ports: init.ports });
   const maxBytes = init.maxBytes ?? FETCH_MAX_BYTES;
   let lastError: unknown;
   for (const [index, target] of addresses.entries()) {

@@ -5,7 +5,7 @@ import { registerWebhookSink } from "./areas/webhooks.js";
 import { writeDocument } from "./areas/members.js";
 import { expireProposal, rearmProposal, runProposal } from "./areas/proposals.js";
 import { expireTransfer } from "./areas/transfers.js";
-import { mapLimited } from "./core/concurrency.js";
+import { poolUntil } from "./core/concurrency.js";
 import { proveDomain } from "./core/domain-proof.js";
 import type { SweepJob } from "./core/sweeper.js";
 import { attemptDelivery } from "./core/webhook-delivery.js";
@@ -271,19 +271,50 @@ export function delegationsJob(rt: OrgRuntime, options: { pageSize?: number } = 
 
 /** Deliveries attempted at the same time by one run (each may wait up to 10 s on its receiver). */
 export const DELIVERY_CONCURRENCY = 8;
+/** Due deliveries one run takes per endpoint, per organisation, and in all. */
+export const DELIVERIES_PER_WEBHOOK = 5;
+export const DELIVERIES_PER_ORG = 20;
+const DELIVERY_BATCH = 100;
+/**
+ * No delivery is started once a run has taken this long; the rest stay due
+ * for the next run. With the 10 s attempt deadline a run ends within about
+ * 35 s, well inside the sweeper's minute, so it never delays the other jobs
+ * by a tick.
+ */
+export const DELIVERY_BUDGET_MS = 25_000;
+
+export interface DeliveryJobOptions {
+  concurrency?: number;
+  perWebhook?: number;
+  perOrg?: number;
+  budgetMs?: number;
+  /** Wall clock (epoch ms) for the budget; Date.now by default. */
+  clock?: () => number;
+}
 
 /**
- * Every minute: attempts every due webhook delivery, DELIVERY_CONCURRENCY at
- * a time. Each delivery is claimed before it is sent (attemptDelivery), so
+ * Every minute: attempts the due webhook deliveries, chosen fairly (at most
+ * DELIVERIES_PER_WEBHOOK per endpoint and DELIVERIES_PER_ORG per org, round
+ * robin across orgs, oldest first), on a pool of DELIVERY_CONCURRENCY
+ * workers, starting none after DELIVERY_BUDGET_MS. So one org's slow or
+ * flooded endpoints cannot hold back another org's deliveries, nor the
+ * sweeper. Each delivery is claimed before it is sent (attemptDelivery), so
  * two runs never send it twice, and isolated: one that throws is logged and
  * retried once its claim lapses. Pings are never retried.
  */
-export function webhookDeliveryJob(rt: OrgRuntime): SweepJob {
+export function webhookDeliveryJob(rt: OrgRuntime, options: DeliveryJobOptions = {}): SweepJob {
+  const clock = options.clock ?? Date.now;
   return {
     name: "webhooks",
     everyMs: MINUTE_MS,
     async run(now) {
-      await mapLimited(await rt.store().dueDeliveries(now, BATCH), DELIVERY_CONCURRENCY, async (delivery) => {
+      const deadline = clock() + (options.budgetMs ?? DELIVERY_BUDGET_MS);
+      const due = await rt.store().dueDeliveries(now, {
+        limit: DELIVERY_BATCH,
+        perWebhook: options.perWebhook ?? DELIVERIES_PER_WEBHOOK,
+        perOrg: options.perOrg ?? DELIVERIES_PER_ORG,
+      });
+      await poolUntil(due, { limit: options.concurrency ?? DELIVERY_CONCURRENCY, deadline, clock }, async (delivery) => {
         try {
           await attemptDelivery(rt, delivery, { retry: delivery.eventType !== "ping" });
         } catch (error) {

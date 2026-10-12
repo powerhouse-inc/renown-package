@@ -143,7 +143,12 @@ export function createRuntime(deps: OrgsResolverDeps): OrgRuntime {
     config: () => deps.config(),
     media: () => (deps.media ?? mediaBackend)(),
     net: () => deps.net ?? nodeNetDeps,
-    webhookKey: () => (deps.webhookKey ? deps.webhookKey() : (workloadKey ??= loadWorkloadConfig(process.env).config.encryptionKey)),
+    webhookKey() {
+      if (deps.webhookKey) return deps.webhookKey();
+      // Loaded once, also when unset (null).
+      if (workloadKey === undefined) workloadKey = loadWorkloadConfig(process.env).config.encryptionKey;
+      return workloadKey;
+    },
     newId,
     token: (bytes = 32) => Buffer.from(randomBytes(bytes)).toString("base64url"),
     lock,

@@ -194,21 +194,113 @@ describe("webhooks", () => {
     expect(r.requests[0].timeoutMs).toBeLessThanOrEqual(10_000);
   });
 
-  it("never returns or audits the secret, and an enqueue failure never fails the mutation", async () => {
+  it("shows the secret only in createOrgWebhook's secret field: never in any response, row, audit, request or log", async () => {
+    const r = receiver();
+    const logs = (["error", "warn", "log", "info", "debug"] as const).map((level) => vi.spyOn(console, level).mockImplementation(() => undefined));
+    const t = harnessResolvers(h, { net: r.net, webhookKey: () => KEY });
+    const { id } = await createOrg(t, ALICE, "acme");
+    const { secret, ...created } = await endpoint(t, id);
+    const { webhook } = created;
+    const seen: unknown[] = [created];
+    seen.push(await t.mutate("updateOrgWebhook", { orgId: id, webhookId: webhook.id, events: ["member.invited", "org.updated"] }, ALICE));
+    seen.push(await t.mutate("testOrgWebhook", { orgId: id, webhookId: webhook.id }, ALICE));
+    r.state.status = 500;
+    seen.push(await t.mutate("testOrgWebhook", { orgId: id, webhookId: webhook.id }, ALICE));
+    r.state.ip = "10.0.0.1";
+    seen.push(await t.mutate("testOrgWebhook", { orgId: id, webhookId: webhook.id }, ALICE));
+    r.state.ip = "93.184.216.34";
+    await t.mutate("inviteOrgMember", { orgId: id, invitee: BOB.address, role: "MEMBER" }, ALICE);
+    await sweep(t);
+    seen.push(await t.query("orgWebhooks", { orgId: id }, ALICE));
+    seen.push(await t.query("orgWebhookDeliveries", { orgId: id, webhookId: webhook.id, limit: 100 }, ALICE));
+    seen.push(await t.query("orgAuditLog", { orgId: id, limit: 100 }, ALICE));
+    seen.push(await t.store.auditPage(id, 100));
+    for (const table of ["org_webhooks", "org_webhook_deliveries", "org_audit", "org_notifications"] as const) {
+      seen.push(await h.root.withSchema("renown-orgs").selectFrom(table).selectAll().execute());
+    }
+    seen.push(r.requests.map((request) => ({ headers: request.headers, body: request.body, url: request.url.href })));
+    seen.push(logs.map((spy) => spy.mock.calls));
+    for (const spy of logs) spy.mockRestore();
+    expect(r.requests.length).toBeGreaterThanOrEqual(3);
+    expect(secret).toHaveLength(43);
+    const everything = JSON.stringify(seen);
+    expect(everything).toContain(webhook.id);
+    expect(everything).not.toContain(secret);
+  });
+
+  it("an enqueue failure is logged and never fails the mutation", async () => {
     const r = receiver();
     const t = harnessResolvers(h, { net: r.net, webhookKey: () => KEY });
     const { id } = await createOrg(t, ALICE, "acme");
-    const { webhook, secret } = await endpoint(t, id);
-    expect(JSON.stringify(await t.query("orgWebhooks", { orgId: id }, ALICE))).not.toContain(secret);
-    expect(JSON.stringify(await t.query("orgWebhooks", { orgId: id }, ALICE))).not.toContain(webhook.id + "\"secret");
+    const { webhook } = await endpoint(t, id);
     const spy = vi.spyOn(t.store, "insertDeliveries").mockRejectedValueOnce(new Error("db down"));
     const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
     await expect(t.mutate("inviteOrgMember", { orgId: id, invitee: BOB.address, role: "MEMBER" }, ALICE)).resolves.toBeTruthy();
     expect(log).toHaveBeenCalledWith(expect.stringContaining("db down"));
-    expect(log.mock.calls.flat().join(" ")).not.toContain(secret);
     spy.mockRestore();
     log.mockRestore();
     expect(await t.store.deliveries(webhook.id, 10)).toEqual([]);
+  });
+
+  it("gives an unresolvable and a non-public host the same answer, and checks the role before resolving", async () => {
+    const r = receiver();
+    const lookups: string[] = [];
+    const net: NetDeps = {
+      ...r.net,
+      lookup: (host) => {
+        lookups.push(host);
+        return host === "internal.example" ? Promise.resolve([{ address: "10.0.0.5", family: 4 }]) : Promise.reject(new Error("ENOTFOUND"));
+      },
+    };
+    const t = harnessResolvers(h, { net, webhookKey: () => KEY });
+    const { id } = await createOrg(t, ALICE, "acme");
+    await join(t, id, BOB, "PUBLISHER");
+    const create = (host: string, who = ALICE) => t.mutate("createOrgWebhook", { orgId: id, url: `https://${host}/`, events: ["org.updated"] }, who);
+    const internal = await failure(create("internal.example"));
+    const missing = await failure(create("missing.example"));
+    expect(internal.field).toBe("url");
+    expect(internal.message.replace("internal.example", "HOST")).toBe(missing.message.replace("missing.example", "HOST"));
+    lookups.length = 0;
+    expect((await failure(create("internal.example", BOB))).code).toBe("FORBIDDEN");
+    expect(lookups).toEqual([]);
+  });
+
+  it("is fair: an org flooding 10 slow endpoints cannot hold back another org's delivery, and a run stops starting work at its budget", async () => {
+    const slowHosts = new Set<string>();
+    const requests: string[] = [];
+    const net: NetDeps = {
+      lookup: () => Promise.resolve([{ address: "93.184.216.34", family: 4 }]),
+      resolveTxt: () => Promise.reject(new Error("ENODATA")),
+      request: async (request) => {
+        requests.push(request.url.hostname);
+        if (slowHosts.has(request.url.hostname)) await new Promise((resolve) => setTimeout(resolve, 60));
+        return { status: 200, body: new Uint8Array(), truncated: false };
+      },
+    };
+    const t = harnessResolvers(h, { net, webhookKey: () => KEY });
+    const flood = await createOrg(t, ALICE, "flood");
+    const quiet = await createOrg(t, BOB, "quiet");
+    for (let i = 0; i < 10; i++) {
+      slowHosts.add(`slow${i}.example`);
+      await t.mutate("createOrgWebhook", { orgId: flood.id, url: `https://slow${i}.example/`, events: ["org.updated"] }, ALICE);
+    }
+    await t.mutate("createOrgWebhook", { orgId: quiet.id, url: "https://quiet.example/", events: ["org.updated"] }, BOB);
+    // A full queue: 10 events × 10 endpoints, all older than the quiet org's one.
+    for (let i = 0; i < 10; i++) await t.mutate("setOrgListed", { orgId: flood.id, listed: i % 2 === 0 }, ALICE);
+    t.tick(1000);
+    await t.mutate("setOrgListed", { orgId: quiet.id, listed: true }, BOB);
+    const before = (await t.store.dueDeliveries(t.clock.now, { limit: 1000, perWebhook: 1000, perOrg: 1000 })).length;
+    expect(before).toBeGreaterThanOrEqual(101);
+    const started = Date.now();
+    await webhookDeliveryJob(t.rt, { concurrency: 2, budgetMs: 100 }).run(t.clock.now, null);
+    const took = Date.now() - started;
+    expect(requests).toContain("quiet.example");
+    // Budget 100 ms + one 60 ms attempt in flight, with slack; far below the 20 the run selected for the flooding org.
+    expect(took).toBeLessThan(400);
+    expect(requests.filter((host) => host !== "quiet.example").length).toBeLessThan(10);
+    const left = await t.store.dueDeliveries(t.clock.now, { limit: 1000, perWebhook: 1000, perOrg: 1000 });
+    expect(left.every((d) => d.orgId === flood.id)).toBe(true);
+    expect(left.length).toBe(before - requests.length);
   });
 
   it("sends a due delivery once even when two runs (replicas) race for it", async () => {

@@ -540,7 +540,7 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
         responseStatus: null, lastError: null, createdAt, nextAttemptAt, deliveredAt: null,
       });
       await store.insertDeliveries([delivery("d1", T0, T0), delivery("d2", at(1), at(5)), delivery("d3", at(2), null, "DELIVERED")]);
-      expect((await store.dueDeliveries(at(1), 10)).map((d) => d.id)).toEqual(["d1"]);
+      expect((await store.dueDeliveries(at(1), { limit: 10, perWebhook: 5, perOrg: 20 })).map((d) => d.id)).toEqual(["d1"]);
       expect(await store.updateDelivery("d1", { status: "FAILED", attempts: 6, lastError: "boom", nextAttemptAt: null })).toMatchObject({ status: "FAILED", attempts: 6 });
       expect((await store.deliveries("w1", 10)).map((d) => d.id)).toEqual(["d3", "d2", "d1"]);
       expect(await store.updateWebhook("w1", { consecutiveFailures: 3, enabled: false }, at(1))).toMatchObject({ consecutiveFailures: 3, enabled: false });
@@ -549,6 +549,27 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect((await store.webhooks("o1")).map((w) => w.id)).toEqual(["w1"]);
       expect(await store.deleteWebhook("w1")).toBe(true);
       expect(await store.deliveries("w1", 10)).toEqual([]);
+    });
+    it("selects due deliveries fairly: capped per endpoint and per org, round robin across orgs", async () => {
+      const { store } = await open();
+      const hook = (id: string, orgId: string) => ({ id, orgId, url: "https://h.example/", events: ["org.updated"], secretSealed: "v1.x.y", enabled: true, consecutiveFailures: 0, createdAt: T0, updatedAt: T0 });
+      for (const [id, orgId] of [["a1", "oa"], ["a2", "oa"], ["a3", "oa"], ["b1", "ob"], ["c1", "oc"]] as const) await store.insertWebhook(hook(id, orgId));
+      const rows = [];
+      let n = 0;
+      // oa floods first (older), ob and oc queue one each later.
+      for (const w of ["a1", "a2", "a3"]) for (let i = 0; i < 6; i++) rows.push({ webhook: w, org: "oa", due: at(n++) });
+      rows.push({ webhook: "b1", org: "ob", due: at(n++) }, { webhook: "c1", org: "oc", due: at(n++) });
+      await store.insertDeliveries(
+        rows.map((r, i) => ({
+          id: `d${String(i).padStart(2, "0")}`, webhookId: r.webhook, orgId: r.org, eventId: `e${i}`, eventType: "org.updated", body: "{}", status: "PENDING" as const,
+          attempts: 0, responseStatus: null, lastError: null, createdAt: r.due, nextAttemptAt: r.due, deliveredAt: null,
+        })),
+      );
+      const picked = await store.dueDeliveries(at(100), { limit: 100, perWebhook: 2, perOrg: 5 });
+      expect(picked.slice(0, 3).map((d) => d.orgId)).toEqual(["oa", "ob", "oc"]);
+      expect(picked.filter((d) => d.orgId === "oa")).toHaveLength(5);
+      for (const w of ["a1", "a2", "a3"]) expect(picked.filter((d) => d.webhookId === w).length).toBeLessThanOrEqual(2);
+      expect((await store.dueDeliveries(at(100), { limit: 2, perWebhook: 2, perOrg: 5 })).map((d) => d.orgId)).toEqual(["oa", "ob"]);
     });
     it("claims a pending delivery once, counts failures atomically, disables an enabled endpoint once, never prunes pending deliveries", async () => {
       const { store } = await open();
@@ -566,6 +587,11 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect((await store.incrementWebhookFailures("w1", at(1)))?.consecutiveFailures).toBe(1);
       expect((await store.incrementWebhookFailures("w1", at(1)))?.consecutiveFailures).toBe(2);
       expect(await store.incrementWebhookFailures("nope", at(1))).toBeUndefined();
+      await store.resetWebhookFailures("w1", at(2));
+      expect((await store.webhook("w1"))?.consecutiveFailures).toBe(0);
+      await store.incrementWebhookFailures("w1", at(1));
+      await store.incrementWebhookFailures("w1", at(1));
+      await expect(store.insertDeliveries([{ ...delivery("orphan", T0, T0), webhookId: "gone" }])).rejects.toThrow();
       expect(await store.disableWebhook("w1", at(2))).toBe(true);
       expect(await store.disableWebhook("w1", at(2))).toBe(false);
       expect(await store.webhook("w1")).toMatchObject({ enabled: false, consecutiveFailures: 2, updatedAt: at(2) });

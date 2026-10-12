@@ -1339,6 +1339,15 @@ export class KyselyOrgStore implements OrgStore {
     return row && toWebhook(row);
   }
 
+  async resetWebhookFailures(id: string, now: Date): Promise<void> {
+    await this.db
+      .updateTable("org_webhooks")
+      .set({ consecutive_failures: 0, updated_at: now })
+      .where("id", "=", id)
+      .where("consecutive_failures", "<>", 0)
+      .execute();
+  }
+
   async disableWebhook(id: string, now: Date): Promise<boolean> {
     const row = await this.db
       .updateTable("org_webhooks")
@@ -1351,7 +1360,7 @@ export class KyselyOrgStore implements OrgStore {
   }
 
   async deleteWebhook(id: string): Promise<boolean> {
-    await this.db.deleteFrom("org_webhook_deliveries").where("webhook_id", "=", id).execute();
+    // One statement: the foreign key cascades to the deliveries.
     const result = await this.db.deleteFrom("org_webhooks").where("id", "=", id).executeTakeFirst();
     return Number(result.numDeletedRows) > 0;
   }
@@ -1392,15 +1401,26 @@ export class KyselyOrgStore implements OrgStore {
     return rows.map(toDelivery);
   }
 
-  async dueDeliveries(now: Date, limit: number): Promise<DeliveryRecord[]> {
-    const rows = await this.db
+  async dueDeliveries(now: Date, options: { limit: number; perWebhook: number; perOrg: number }): Promise<DeliveryRecord[]> {
+    const due = this.db
       .selectFrom("org_webhook_deliveries")
       .selectAll()
+      .select(sql<number>`row_number() over (partition by webhook_id order by next_attempt_at, id)`.as("hook_rank"))
       .where("status", "=", "PENDING")
-      .where("next_attempt_at", "<=", now)
+      .where("next_attempt_at", "<=", now);
+    const perHook = this.db
+      .selectFrom(due.as("due"))
+      .selectAll()
+      .select(sql<number>`row_number() over (partition by org_id order by next_attempt_at, id)`.as("org_rank"))
+      .where("hook_rank", "<=", options.perWebhook);
+    const rows = await this.db
+      .selectFrom(perHook.as("fair"))
+      .selectAll()
+      .where("org_rank", "<=", options.perOrg)
+      .orderBy("org_rank")
       .orderBy("next_attempt_at")
       .orderBy("id")
-      .limit(limit)
+      .limit(options.limit)
       .execute();
     return rows.map(toDelivery);
   }
