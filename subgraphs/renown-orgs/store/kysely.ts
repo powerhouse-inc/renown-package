@@ -159,6 +159,7 @@ function toTransfer(row: Selectable<OrgAppTransfersTable>): TransferRecord {
     decidedAt: toDateOrNull(row.decided_at),
     decidedBy: row.decided_by,
     proposalId: row.proposal_id,
+    reason: row.reason,
   };
 }
 
@@ -614,6 +615,7 @@ export class KyselyOrgStore implements OrgStore {
         decided_at: t.decidedAt,
         decided_by: t.decidedBy,
         proposal_id: t.proposalId,
+        reason: t.reason,
       })
       .execute();
   }
@@ -656,6 +658,7 @@ export class KyselyOrgStore implements OrgStore {
         ...(patch.status !== undefined && { status: patch.status }),
         ...(patch.decidedAt !== undefined && { decided_at: patch.decidedAt }),
         ...(patch.decidedBy !== undefined && { decided_by: patch.decidedBy }),
+        ...(patch.reason !== undefined && { reason: patch.reason }),
       })
       .where("id", "=", id)
       .where("status", "=", expected)

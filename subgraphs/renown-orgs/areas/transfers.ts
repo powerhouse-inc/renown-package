@@ -1,6 +1,6 @@
 import { isOrgAppDid } from "../../../document-models/renown-organization/index.js";
 import type { OrgNotificationIntent } from "../core/activity.js";
-import { currentOwner, moveApp, ownerOf, partyId, sameOwner, TRANSFER_TTL_MS, type AppOwner } from "../core/app-ownership.js";
+import { cancelStaleTransfers, currentOwner, moveApp, ownerOf, partyId, sameOwner, TRANSFER_TTL_MS, type AppOwner } from "../core/app-ownership.js";
 import type { OrgArgs, OrgContext } from "../core/auth.js";
 import { requireOrg, requireRole } from "../core/authz.js";
 import { badInput, forbidden, notFound, orgError } from "../core/errors.js";
@@ -26,11 +26,11 @@ export function transferOutput(t: TransferRecord) {
   };
 }
 
-/** True when `caller` speaks for that side: the person, or an ACTIVE admin of the organisation. */
-async function speaksFor(rt: OrgRuntime, kind: PartyKind, id: string, caller: string): Promise<boolean> {
+/** True when `caller` speaks for that side: the person, or an ACTIVE member of the organisation with at least `role` (ADMIN). */
+async function speaksFor(rt: OrgRuntime, kind: PartyKind, id: string, caller: string, role: "ADMIN" | "OWNER" = "ADMIN"): Promise<boolean> {
   if (kind === "PERSON") return id === caller;
   try {
-    await requireRole(rt.store(), id, caller, "ADMIN");
+    await requireRole(rt.store(), id, caller, role);
     return true;
   } catch {
     return false;
@@ -61,6 +61,7 @@ export async function createTransfer(
     decidedAt: null,
     decidedBy: null,
     proposalId: input.proposalId,
+    reason: null,
   };
   try {
     await store.insertTransfer(transfer);
@@ -102,6 +103,19 @@ async function liveTransfer(rt: OrgRuntime, id: string): Promise<TransferRecord>
 
 function notPending() {
   return badInput("transferId", "The transfer is no longer pending");
+}
+
+/**
+ * BAD_USER_INPUT unless the transfer is PENDING and unexpired; one past its
+ * expiry that the sweeper has not reached yet is marked EXPIRED first.
+ * Call only after the caller was authorised, so status is never revealed to others.
+ */
+async function requireOpen(rt: OrgRuntime, transfer: TransferRecord, now: Date): Promise<void> {
+  if (transfer.status !== "PENDING") throw notPending();
+  if (transfer.expiresAt.getTime() <= now.getTime()) {
+    await expireTransfer(rt, transfer, now);
+    throw badInput("transferId", "The transfer expired");
+  }
 }
 
 /** Records the accepted transfer on each organisation involved. */
@@ -169,9 +183,11 @@ export const transferResolvers: Area = (rt) => ({
           throw forbidden("Only the app's personal publisher offers it to an organisation");
         }
         const target = await requireOrg(store, args.toOrgId.trim());
+        const now = rt.now();
+        await cancelStaleTransfers(rt, appDid, owner, now);
         if (await store.pendingTransferOf(appDid)) throw badInput("appDid", "A transfer of this app is pending");
         const to: AppOwner = { kind: "ORG", orgId: target.id };
-        return transferOutput(await createTransfer(rt, { appDid, from: owner, to, actor: caller, proposalId: null, now: rt.now() }));
+        return transferOutput(await createTransfer(rt, { appDid, from: owner, to, actor: caller, proposalId: null, now }));
       });
     },
     acceptAppTransfer: async (_: unknown, args: OrgArgs & { transferId: string }, ctx: OrgContext) => {
@@ -181,8 +197,8 @@ export const transferResolvers: Area = (rt) => ({
         const store = rt.store();
         const now = rt.now();
         const transfer = await liveTransfer(rt, found.id);
-        if (transfer.status !== "PENDING" || transfer.expiresAt.getTime() <= now.getTime()) throw notPending();
         if (!(await speaksFor(rt, transfer.toKind, transfer.toId, caller))) throw forbidden();
+        await requireOpen(rt, transfer, now);
         if (transfer.toKind === "ORG") await requireOrg(store, transfer.toId);
         const from = ownerOf(transfer.fromKind, transfer.fromId);
         const to = ownerOf(transfer.toKind, transfer.toId);
@@ -216,8 +232,10 @@ export const transferResolvers: Area = (rt) => ({
         const now = rt.now();
         const transfer = await liveTransfer(rt, found.id);
         const recipient = await speaksFor(rt, transfer.toKind, transfer.toId, caller);
-        if (!recipient && !(await speaksFor(rt, transfer.fromKind, transfer.fromId, caller))) throw forbidden();
-        if (transfer.status !== "PENDING") throw notPending();
+        // Withdrawing what an executed TRANSFER_APP_OUT proposal offered takes an owner of the source.
+        const sourceRole = transfer.proposalId && transfer.fromKind === "ORG" ? "OWNER" : "ADMIN";
+        if (!recipient && !(await speaksFor(rt, transfer.fromKind, transfer.fromId, caller, sourceRole))) throw forbidden();
+        await requireOpen(rt, transfer, now);
         const status = recipient ? "DECLINED" : "CANCELLED";
         const updated = await store.updateTransfer(transfer.id, { status, decidedAt: now, decidedBy: caller }, "PENDING");
         if (!updated) throw notPending();

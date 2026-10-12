@@ -109,7 +109,8 @@ describe("org-owned apps", () => {
       (t.resolvers as unknown as { Query: Record<string, (p: unknown, a: unknown, c: unknown) => Promise<{ appDid: string }[]>> }).Query.appProfilesByPublisher(null, { publisherDid }, {});
     expect((await byPublisher("did:web:renown.test:org:o1")).map((p) => p.appDid)).toEqual([APP]);
     expect((await failure(byPublisher("did:web:www.renown.id:org:o1"))).code).toBe("BAD_USER_INPUT");
-    expect((await byPublisher(`did:pkh:eip155:1:${getAddress(BOB)}`)).map((p) => p.appDid)).toEqual([APP]);
+    // BOB claimed it for the organisation: it is listed under the organisation, not under BOB.
+    expect(await byPublisher(`did:pkh:eip155:1:${getAddress(BOB)}`)).toEqual([]);
   });
 
   it("never lets one organisation's publishers act on another organisation's app or on a person's app", async () => {

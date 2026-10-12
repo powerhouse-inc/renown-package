@@ -168,7 +168,7 @@ export const schema: DocumentNode = gql`
   type Query {
     userStats(userDid: String!): [UserStat!]!
     appProfile(appDid: String!): AppProfile
-    "publisherDid: a did:pkh, an address, or an organisation's did:web"
+    "publisherDid: a did:pkh or an address (that person's own apps, never org-owned ones), or an organisation's did:web"
     appProfilesByPublisher(publisherDid: String!): [AppProfile!]!
     """
     Every app profile, newest first. limit 1-50 (default 20). category: only

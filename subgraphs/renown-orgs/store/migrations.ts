@@ -256,6 +256,7 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .column("app_did")
     .where(sql.ref("status"), "=", "PENDING")
     .execute();
+  await db.schema.alterTable("org_app_transfers").addColumn("reason", "text", (col) => col.ifNotExists()).execute();
   await db.schema.createIndex("org_app_transfers_from").ifNotExists().on("org_app_transfers").columns(["from_kind", "from_id"]).execute();
   await db.schema.createIndex("org_app_transfers_to").ifNotExists().on("org_app_transfers").columns(["to_kind", "to_id"]).execute();
   await db.schema.createIndex("org_app_transfers_due").ifNotExists().on("org_app_transfers").columns(["status", "expires_at"]).execute();

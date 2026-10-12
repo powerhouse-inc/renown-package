@@ -175,6 +175,8 @@ export interface OrgAppTransfersTable {
   decided_at: Timestamp | null;
   decided_by: string | null;
   proposal_id: string | null;
+  /** Why the system ended it (e.g. "app owner changed"); null otherwise. */
+  reason: string | null;
 }
 
 export interface TransferRecord {
@@ -192,9 +194,11 @@ export interface TransferRecord {
   decidedBy: string | null;
   /** The TRANSFER_APP_OUT proposal that made it; null for a person's offer. */
   proposalId: string | null;
+  /** Why the system ended it (e.g. "app owner changed"); null otherwise. */
+  reason: string | null;
 }
 
-export type TransferPatch = Partial<Pick<TransferRecord, "status" | "decidedAt" | "decidedBy">>;
+export type TransferPatch = Partial<Pick<TransferRecord, "status" | "decidedAt" | "decidedBy" | "reason">>;
 
 export interface OrgJobsTable {
   name: string;

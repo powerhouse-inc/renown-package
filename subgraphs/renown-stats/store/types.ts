@@ -136,6 +136,7 @@ export interface StatsIndex {
   appProfile(appDid: string): Promise<AppProfileEntry | undefined>;
   /** Records `entry` unless the app DID is recorded; returns the recorded entry. */
   claimAppProfile(entry: AppProfileEntry, now: Date): Promise<AppProfileEntry>;
+  /** Person-owned apps (no publisher_org_id) recorded for `publisherAddress`, oldest first. */
   appProfilesByPublisher(publisherAddress: string): Promise<AppProfileEntry[]>;
   /** Records the given image refs of a profile document; others are kept. */
   setAppImages(documentId: string, images: AppImagesPatch, now: Date): Promise<void>;

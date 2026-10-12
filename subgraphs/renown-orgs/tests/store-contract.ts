@@ -447,6 +447,7 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
         decidedAt: null,
         decidedBy: null,
         proposalId: null,
+        reason: null,
       });
       await store.insertTransfer(transfer("t1", "did:key:za"));
       await expect(store.insertTransfer(transfer("t2", "did:key:za"))).rejects.toThrow();
@@ -460,6 +461,8 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       // Back to PENDING (a failed acceptance): the decision is cleared.
       expect(await store.updateTransfer("t1", { status: "PENDING", decidedAt: null, decidedBy: null }, "ACCEPTED")).toMatchObject({ status: "PENDING", decidedBy: null, decidedAt: null });
       expect(await store.updateTransfer("t1", { status: "ACCEPTED", decidedAt: at(3), decidedBy: BOB }, "PENDING")).toBeDefined();
+      expect(await store.updateTransfer("t3", { status: "CANCELLED", reason: "app owner changed" }, "PENDING")).toMatchObject({ status: "CANCELLED", reason: "app owner changed" });
+      expect(await store.updateTransfer("t3", { status: "PENDING", reason: null }, "CANCELLED")).toMatchObject({ reason: null });
       expect((await store.dueTransfers(at(60), 10)).map((t) => t.id)).toEqual(["t3"]);
       expect(await store.dueTransfers(at(59), 10)).toEqual([]);
       expect(await store.insertOrgApp({ appDid: "did:key:za", orgId: "o1", frozen: false, addedAt: T0 })).toBe(true);

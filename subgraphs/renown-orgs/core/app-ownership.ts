@@ -50,6 +50,34 @@ function ownsWorkload(workload: WorkloadOwnerFields, owner: AppOwner): boolean {
     : workload.ownerOrgId === null && workload.ownerAddress.toLowerCase() === owner.address;
 }
 
+/** The reason recorded on a PENDING transfer cancelled because its source lost the app. */
+export const OWNER_CHANGED = "app owner changed";
+
+/**
+ * Cancels the app's PENDING transfers whose source is no longer `owner`
+ * (status CANCELLED, reason OWNER_CHANGED, decided by "system"), so a stale
+ * offer neither lingers nor holds the app's one pending slot. The caller
+ * holds the `app:<did>` lock. Returns the cancelled transfer ids.
+ */
+export async function cancelStaleTransfers(rt: OrgRuntime, appDid: string, owner: AppOwner, now: Date): Promise<string[]> {
+  const store = rt.store();
+  const cancelled: string[] = [];
+  for (const pending of await store.transfers({ appDid })) {
+    if (pending.status !== "PENDING" || sameOwner(ownerOf(pending.fromKind, pending.fromId), owner)) continue;
+    const done = await store.updateTransfer(pending.id, { status: "CANCELLED", decidedAt: now, decidedBy: "system", reason: OWNER_CHANGED }, "PENDING");
+    if (!done) continue;
+    cancelled.push(done.id);
+    await rt.record({
+      orgId: done.toKind === "ORG" ? done.toId : done.fromId,
+      actor: "system",
+      action: "system.cancelAppTransfer",
+      at: now,
+      details: { transferId: done.id, appDid, status: "CANCELLED", reason: OWNER_CHANGED },
+    });
+  }
+  return cancelled;
+}
+
 /** A guarded write found the app no longer owned as the transfer expects. */
 class OwnershipChanged extends Error {}
 
@@ -88,7 +116,10 @@ async function documentListsApp(rt: OrgRuntime, orgId: string, appDid: string): 
  *
  * A failure at any step undoes the earlier ones in reverse, so the app stays
  * with its original owner: BAD_USER_INPUT (field transferId) when the source
- * no longer owns it, APP_FROZEN, else SERVICE_UNAVAILABLE.
+ * no longer owns it, APP_FROZEN, else SERVICE_UNAVAILABLE. Once moved, other
+ * PENDING transfers of the app from a source that no longer owns it are
+ * cancelled (cancelStaleTransfers; a failure there is logged, the move stands).
+ * The caller holds the `app:<did>` lock.
  */
 export async function moveApp(rt: OrgRuntime, appDid: string, from: AppOwner, to: AppOwner, now: Date): Promise<void> {
   const db = rt.deps.relationalDb;
@@ -174,5 +205,10 @@ export async function moveApp(rt: OrgRuntime, appDid: string, from: AppOwner, to
     if (isAppFrozen(error)) throw error;
     console.error(`[renown-orgs] moveApp ${appDid} failed and was undone: ${describe(error)}`);
     throw unavailable();
+  }
+  try {
+    await cancelStaleTransfers(rt, appDid, to, now);
+  } catch (error) {
+    console.error(`[renown-orgs] moveApp ${appDid}: could not cancel stale transfers: ${describe(error)}`);
   }
 }

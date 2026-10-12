@@ -81,6 +81,8 @@ export class KyselyStatsIndex implements StatsIndex {
       .selectFrom("app_profile_documents")
       .select(["app_did", "document_id", "publisher_address", "publisher_org_id"])
       .where("publisher_address", "=", publisherAddress)
+      // An org-owned app is listed under its organisation, never under the person who published it before.
+      .where("publisher_org_id", "is", null)
       .orderBy("created_at", "asc")
       .orderBy("app_did", "asc")
       .execute();

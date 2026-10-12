@@ -6,6 +6,7 @@ import { pkhDidFor } from "../../renown-stats/core/dids.js";
 import { harnessResolvers as statsResolvers, relayed } from "../../renown-stats/tests/harness.js";
 import type { ProposalOutput } from "../areas/proposals.js";
 import type { RecordedActivity } from "../core/activity.js";
+import { moveApp, OWNER_CHANGED } from "../core/app-ownership.js";
 import { createOrgPolicy } from "../core/org-policy.js";
 import { createSweeper } from "../core/sweeper.js";
 import { sweepJobs } from "../jobs.js";
@@ -235,6 +236,7 @@ describe("person to organisation", () => {
       decidedAt: null,
       decidedBy: null,
       proposalId: null,
+      reason: null,
     });
     t.tick(14 * DAY);
     const store = t.rt.store();
@@ -249,6 +251,59 @@ describe("person to organisation", () => {
     errors.mockRestore();
     expect((await t.store.transfer(first.id))?.status).toBe("EXPIRED");
     expect((await t.store.transfer("t-other"))?.status).toBe("PENDING");
+  });
+
+  it("authorises the caller before telling whether a transfer is still open", async () => {
+    const { t, acme } = await world();
+    const first = await propose(t, ALICE, acme.id);
+    await t.mutate("declineAppTransfer", { transferId: first.id }, BOB);
+    expect((await failure(t.mutate("acceptAppTransfer", { transferId: first.id }, DAVE))).code).toBe("FORBIDDEN");
+    expect((await failure(t.mutate("declineAppTransfer", { transferId: first.id }, DAVE))).code).toBe("FORBIDDEN");
+    expect(await failure(t.mutate("acceptAppTransfer", { transferId: first.id }, BOB))).toMatchObject({ code: "BAD_USER_INPUT", field: "transferId" });
+  });
+
+  it.each(["acceptAppTransfer", "declineAppTransfer"] as const)("marks a transfer past its expiry EXPIRED on %s, before the sweeper does", async (field) => {
+    const { t, acme } = await world();
+    const pending = await propose(t, ALICE, acme.id);
+    t.tick(14 * DAY);
+    expect((await failure(t.mutate("acceptAppTransfer", { transferId: pending.id }, DAVE))).code).toBe("FORBIDDEN");
+    expect((await t.store.transfer(pending.id))?.status).toBe("PENDING");
+    expect(await failure(t.mutate(field, { transferId: pending.id }, field === "acceptAppTransfer" ? BOB : ALICE))).toMatchObject({ code: "BAD_USER_INPUT", field: "transferId" });
+    expect(await t.store.transfer(pending.id)).toMatchObject({ status: "EXPIRED", decidedBy: null });
+    expect(await t.store.orgOfApp(APP)).toBeUndefined();
+  });
+
+  it("cancels, with a reason, pending transfers whose source lost the app when it moves by another route", async () => {
+    const { t, docId, acme } = await world();
+    const globex = await createOrg(t, CAROL, "globex");
+    const stale = await propose(t, ALICE, acme.id);
+    await moveApp(t.rt, APP, { kind: "PERSON", address: lower(ALICE) }, { kind: "ORG", orgId: globex.id }, t.clock.now);
+    expect(await t.store.transfer(stale.id)).toMatchObject({ status: "CANCELLED", decidedBy: "system", reason: OWNER_CHANGED });
+    expect((await t.store.orgOfApp(APP))?.orgId).toBe(globex.id);
+    expect(profileDid(t, docId)).toBe(`did:web:renown.test:org:${globex.id}`);
+    expect(await failure(t.mutate("acceptAppTransfer", { transferId: stale.id }, BOB))).toMatchObject({ field: "transferId" });
+  });
+
+  it("lets the new owner offer the app when an earlier offer went stale, cancelling the stale one", async () => {
+    const { t, acme } = await world();
+    const stale = await propose(t, ALICE, acme.id);
+    await h.root.withSchema(STATS_NS).updateTable("app_profile_documents").set({ publisher_address: lower(DAVE) }).execute();
+    const fresh = await propose(t, DAVE, acme.id);
+    expect(fresh).toMatchObject({ status: "PENDING", fromId: lower(DAVE) });
+    expect(await t.store.transfer(stale.id)).toMatchObject({ status: "CANCELLED", reason: OWNER_CHANGED });
+  });
+
+  it("lists an app moved to an organisation under the organisation only, never under its former personal publisher", async () => {
+    const { t, acme } = await world();
+    const stats = statsResolvers(h, { orgPolicy: () => createOrgPolicy(h.relationalDb, "renown.test") });
+    expect((await stats.index.appProfilesByPublisher(lower(ALICE))).map((e) => e.appDid)).toEqual([APP]);
+    const pending = await propose(t, ALICE, acme.id);
+    await t.mutate("acceptAppTransfer", { transferId: pending.id }, BOB);
+    expect(await stats.index.appProfilesByPublisher(lower(ALICE))).toEqual([]);
+    const byPublisher = (publisherDid: string) =>
+      (stats.resolvers as unknown as { Query: Record<string, (p: unknown, a: unknown, c: unknown) => Promise<unknown[]>> }).Query.appProfilesByPublisher(null, { publisherDid }, {});
+    expect(await byPublisher(pkhDidFor(ALICE.address))).toEqual([]);
+    expect((await stats.index.appProfilesByOrg(acme.id)).map((e) => e.appDid)).toEqual([APP]);
   });
 
   // Each step of the move fails in turn: every earlier step is undone, the
@@ -322,6 +377,32 @@ describe("organisation to person, freezing", () => {
     });
     expect(await t.store.orgOfApp(APP)).toBeUndefined();
     expect((await statsRow()).publisher_org_id).toBeNull();
+  });
+
+  it("takes an owner of the source to withdraw what a TRANSFER_APP_OUT proposal offered", async () => {
+    const { t, acme } = await orgApp();
+    await join(t, acme.id, CAROL, "ADMIN", BOB);
+    const { pending } = await transferOut(t, acme.id);
+    expect((await failure(t.mutate("declineAppTransfer", { transferId: pending.id }, CAROL))).code).toBe("FORBIDDEN");
+    expect((await t.query<Transfer[]>("appTransfers", { orgId: acme.id }, CAROL)).map((x) => x.id)).toContain(pending.id);
+    expect(await t.mutate<Transfer>("declineAppTransfer", { transferId: pending.id }, BOB)).toMatchObject({ status: "CANCELLED", decidedBy: lower(BOB) });
+  });
+
+  it("stops counting the old organisation's delegations once the app left it (renown-stats actsFor)", async () => {
+    const { t, acme } = await orgApp();
+    await insertCredential(h, { credentialId: "c-bob", issuer: lower(BOB), appDid: APP });
+    const stats = statsResolvers(h, { orgPolicy: () => createOrgPolicy(h.relationalDb, "renown.test") });
+    const report = () =>
+      (stats.resolvers as unknown as { Mutation: Record<string, (p: unknown, a: unknown, c: unknown) => Promise<boolean>> }).Mutation.reportUserStat(
+        null,
+        { appDid: APP, userDid: "did:pkh:eip155:1:0x1111111111111111111111111111111111111111", metric: "notes", value: 1 },
+        { user: { address: BOB.address, appKey: APP } },
+      );
+    expect(await report()).toBe(true);
+    const { pending } = await transferOut(t, acme.id);
+    await t.mutate("acceptAppTransfer", { transferId: pending.id }, DAVE);
+    expect(await createOrgPolicy(h.relationalDb, "renown.test").credentialStatus({ credentialId: "c-bob", appDid: APP, issuer: lower(BOB), issuedAt: T0 })).toMatchObject({ orgId: null });
+    expect((await failure(report())).code).toBe("FORBIDDEN");
   });
 
   it("leaves the app with the organisation and the transfer pending when the organisation document cannot be written", async () => {

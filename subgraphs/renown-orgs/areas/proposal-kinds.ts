@@ -1,5 +1,5 @@
 import { actions as orgActions } from "../../../document-models/renown-organization/index.js";
-import { currentOwner, sameOwner, type AppOwner } from "../core/app-ownership.js";
+import { cancelStaleTransfers, currentOwner, sameOwner, type AppOwner } from "../core/app-ownership.js";
 import { requireOrg } from "../core/authz.js";
 import { RECOVERY_MIN_VERIFIED_DAYS } from "../core/domain-proof.js";
 import { badInput, orgError, unavailable } from "../core/errors.js";
@@ -370,7 +370,9 @@ const transferOut: ProposalHandler = {
     } else {
       throw badInput("payload", "payload.toKind must be PERSON or ORG");
     }
-    if (await rt.store().pendingTransferOf(app.appDid)) throw badInput("payload", "A transfer of this app is pending");
+    // A pending offer from someone who no longer owns the app is stale: execute cancels it.
+    const pending = await rt.store().pendingTransferOf(app.appDid);
+    if (pending?.fromKind === "ORG" && pending.fromId === org.id) throw badInput("payload", "A transfer of this app is pending");
     return { appDid: app.appDid, toKind: input.toKind, toId };
   },
   async execute({ rt, org, proposal, actor, now }) {
@@ -382,6 +384,7 @@ const transferOut: ProposalHandler = {
       if (app.frozen) return "APP_FROZEN: the app is frozen";
       const from: AppOwner = { kind: "ORG", orgId: org.id };
       if (!sameOwner(await currentOwner(rt, appDid), from)) return "The app profile no longer names the organization";
+      await cancelStaleTransfers(rt, appDid, from, now);
       if (await store.pendingTransferOf(appDid)) return "A transfer of this app is pending";
       const toId = proposal.payload.toId ?? "";
       const to: AppOwner = proposal.payload.toKind === "ORG" ? { kind: "ORG", orgId: toId } : { kind: "PERSON", address: toId };
