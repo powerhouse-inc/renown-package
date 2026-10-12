@@ -157,6 +157,8 @@ export interface OrgProposalsTable {
   expires_at: Timestamp;
   executed_at: Timestamp | null;
   reason: string | null;
+  /** When the sweeper last examined it without progressing it; null if never. */
+  checked_at: Timestamp | null;
 }
 
 export interface ProposalRecord {
@@ -382,13 +384,15 @@ export interface OrgStore {
   proposals(orgId: string, status?: ProposalStatus): Promise<ProposalRecord[]>;
   /** Applies `patch` only while the proposal still has the `expected` status; undefined otherwise. */
   updateProposal(id: string, patch: ProposalPatch, expected: ProposalStatus): Promise<ProposalRecord | undefined>;
-  /** PENDING proposals executable or expired at `now`, oldest first. */
+  /** PENDING proposals executable or expired at `now`; never-checked first, then least recently checked, then oldest. */
   dueProposals(now: Date, limit: number): Promise<ProposalRecord[]>;
-  /** Unexpired PENDING proposals without a countdown whose approvals could already reach their threshold, oldest first. */
+  /** Unexpired PENDING proposals without a countdown whose approvals could already reach their threshold; never-checked first, then least recently checked, then oldest. */
   rearmableProposals(now: Date, limit: number): Promise<ProposalRecord[]>;
   /** Claims a run of job `name` at `now` unless one started less than `everyMs` ago; the previous start, or null. */
   claimJob(name: string, now: Date, everyMs: number): Promise<{ previous: Date | null } | null>;
   /** Undoes the claim made at `claimedAt` (back to `previous`, or no row). */
   releaseJob(name: string, claimedAt: Date, previous: Date | null): Promise<void>;
   jobLastRun(name: string): Promise<Date | undefined>;
+  /** Notes that the sweeper examined a proposal without progressing it, so others get their turn in the batch. */
+  markProposalChecked(id: string, now: Date): Promise<void>;
 }

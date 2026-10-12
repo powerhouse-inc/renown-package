@@ -130,4 +130,74 @@ describe("sweeper", () => {
     expect(after.executableAt).toEqual(t.clock.now);
     expect((await t.mutate<ProposalOutput>("executeOrgProposal", { orgId: id, proposalId: p.id }, ALICE)).status).toBe("EXECUTED");
   });
+
+  it("keeps going when releasing a failed claim fails too", async () => {
+    const mem = await openMemoryOrgStore();
+    vi.spyOn(mem.store, "releaseJob").mockRejectedValue(new Error("release down"));
+    const log = vi.fn();
+    const ran: string[] = [];
+    const sweeper = createSweeper({
+      jobs: [
+        { name: "bad", everyMs: MINUTE, run: () => Promise.reject(new Error("boom")) },
+        { name: "good", everyMs: MINUTE, run: () => Promise.resolve(void ran.push("good")) },
+      ],
+      store: () => mem.store,
+      now: () => T0,
+      log,
+    });
+    expect(await sweeper.tick()).toEqual(["good"]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("release down"));
+    await mem.close();
+  });
+
+  const ghost = (i: number, extra: Record<string, unknown> = {}) => ({
+    id: `ghost-${String(i).padStart(3, "0")}`,
+    orgId: "ghost",
+    kind: "ADD_OWNER" as const,
+    payload: { address: BOB.address },
+    proposer: ALICE.address,
+    approvals: [ALICE.address, BOB.address],
+    status: "PENDING" as const,
+    threshold: 2,
+    createdAt: new Date(T0.getTime() - MINUTE),
+    executableAt: null,
+    expiresAt: new Date(T0.getTime() + 14 * DAY),
+    executedAt: null,
+    reason: null,
+    ...extra,
+  });
+
+  it("does not let 101 un-rearmable proposals starve a newer rearmable one", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    await join(t, id, BOB, "ADMIN");
+    const p = await t.mutate<ProposalOutput>("proposeOrgChange", { orgId: id, kind: "ADD_OWNER", payload: { address: BOB.address } }, ALICE);
+    await t.store.updateProposal(p.id, { executableAt: null }, "PENDING");
+    for (let i = 0; i < 101; i++) await t.store.insertProposal(ghost(i));
+    const sweeper = createSweeper({ jobs: sweepJobs(t.rt), store: () => t.store, now: () => t.clock.now });
+    t.tick(2 * 60 * MINUTE);
+    await sweeper.tick();
+    t.tick(MINUTE);
+    await sweeper.tick();
+    expect((await t.store.proposal(p.id))?.executableAt).not.toBeNull();
+  });
+
+  it("does not let proposals that keep failing block a later due one, and survives expireProposal throwing", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    await join(t, id, BOB, "ADMIN");
+    const p = await t.mutate<ProposalOutput>("proposeOrgChange", { orgId: id, kind: "ADD_OWNER", payload: { address: BOB.address } }, ALICE);
+    for (let i = 0; i < 101; i++) await t.store.insertProposal(ghost(i, { expiresAt: new Date(T0.getTime() + MINUTE) }));
+    const update = t.store.updateProposal.bind(t.store);
+    vi.spyOn(t.store, "updateProposal").mockImplementation((pid, patch, expected) =>
+      pid.startsWith("ghost") ? Promise.reject(new Error("poison")) : update(pid, patch, expected),
+    );
+    const sweeper = createSweeper({ jobs: sweepJobs(t.rt), store: () => t.store, now: () => t.clock.now });
+    t.tick(2 * 60 * MINUTE);
+    await sweeper.tick();
+    t.tick(MINUTE);
+    await sweeper.tick();
+    expect((await t.store.proposal(p.id))?.status).toBe("EXECUTED");
+  });
 });

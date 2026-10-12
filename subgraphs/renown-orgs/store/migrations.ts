@@ -208,4 +208,6 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("name", "text", (col) => col.primaryKey())
     .addColumn("last_run_at", "timestamptz", (col) => col.notNull())
     .execute();
+  // A2: when the sweeper last examined a proposal without progressing it (fair batching).
+  await db.schema.alterTable("org_proposals").addColumn("checked_at", "timestamptz", (col) => col.ifNotExists()).execute();
 }

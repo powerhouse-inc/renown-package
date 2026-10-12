@@ -695,6 +695,7 @@ export class KyselyOrgStore implements OrgStore {
       .selectAll()
       .where("status", "=", "PENDING")
       .where((eb) => eb.or([eb("executable_at", "<=", now), eb("expires_at", "<=", now)]))
+      .orderBy("checked_at", sql`asc nulls first`)
       .orderBy("created_at")
       .orderBy("id")
       .limit(limit)
@@ -710,6 +711,7 @@ export class KyselyOrgStore implements OrgStore {
       .where("executable_at", "is", null)
       .where("expires_at", ">", now)
       .where(sql<boolean>`jsonb_array_length(approvals) >= threshold`)
+      .orderBy("checked_at", sql`asc nulls first`)
       .orderBy("created_at")
       .orderBy("id")
       .limit(limit)
@@ -752,5 +754,9 @@ export class KyselyOrgStore implements OrgStore {
   async jobLastRun(name: string): Promise<Date | undefined> {
     const row = await this.db.selectFrom("org_jobs").select("last_run_at").where("name", "=", name).executeTakeFirst();
     return row ? toDate(row.last_run_at) : undefined;
+  }
+
+  async markProposalChecked(id: string, now: Date): Promise<void> {
+    await this.db.updateTable("org_proposals").set({ checked_at: now }).where("id", "=", id).execute();
   }
 }

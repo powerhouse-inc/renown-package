@@ -123,16 +123,16 @@ export async function createProposal(
 }
 
 /**
- * Gives a PENDING, unexpired proposal without a countdown whose threshold is
+ * Gives (and reports whether it gave) a PENDING, unexpired proposal without a countdown whose threshold is
  * met (again) the countdown max(createdAt + delay, now), so a transient
  * threshold drop cannot strand it. It does not run it. The caller holds the org lock.
  */
-export async function rearmProposal(rt: OrgRuntime, proposal: ProposalRecord, now: Date, owners?: string[]): Promise<void> {
-  if (!isLive(proposal, now) || proposal.executableAt) return;
+export async function rearmProposal(rt: OrgRuntime, proposal: ProposalRecord, now: Date, owners?: string[]): Promise<boolean> {
+  if (!isLive(proposal, now) || proposal.executableAt) return false;
   const current = owners ?? (await activeOwners(rt, proposal.orgId));
-  if (!thresholdMet(proposal, current)) return;
+  if (!thresholdMet(proposal, current)) return false;
   const executableAt = executableAtFor(proposal, current, rt.config(), now, false);
-  await rt.store().updateProposal(proposal.id, { executableAt }, "PENDING");
+  return Boolean(await rt.store().updateProposal(proposal.id, { executableAt }, "PENDING"));
 }
 
 /**

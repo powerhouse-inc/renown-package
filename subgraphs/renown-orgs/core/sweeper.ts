@@ -43,7 +43,11 @@ export function createSweeper(deps: {
             ran.push(job.name);
           } catch (error) {
             log(`[renown-orgs] sweep job ${job.name} failed: ${error instanceof Error ? error.message : String(error)}`);
-            await store.releaseJob(job.name, now, claim.previous);
+            try {
+              await store.releaseJob(job.name, now, claim.previous);
+            } catch (releaseError) {
+              log(`[renown-orgs] could not release sweep job ${job.name}: ${releaseError instanceof Error ? releaseError.message : String(releaseError)}`);
+            }
           }
         }
       } catch (error) {

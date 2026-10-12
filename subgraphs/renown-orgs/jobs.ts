@@ -18,27 +18,52 @@ export function proposalsJob(rt: OrgRuntime): SweepJob {
     name: "proposals",
     everyMs: MINUTE_MS,
     async run(now) {
-      for (const due of await rt.store().dueProposals(now, BATCH)) {
-        await rt.lock(`org:${due.orgId}`, async () => {
-          const proposal = await rt.store().proposal(due.id);
-          if (!proposal || proposal.status !== "PENDING") return;
-          const executableAt = proposal.executableAt;
-          if (executableAt && executableAt.getTime() <= now.getTime() && executableAt.getTime() < proposal.expiresAt.getTime()) {
-            try {
-              await runProposal(rt, proposal, "system");
-            } catch (error) {
-              console.error(`[renown-orgs] proposal ${proposal.id} could not run: ${error instanceof Error ? error.message : String(error)}`);
+      const store = rt.store();
+      const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
+      // A proposal that cannot progress is marked checked, so it goes to the back of the batch order.
+      const skip = async (id: string) => {
+        try {
+          await store.markProposalChecked(id, now);
+        } catch (error) {
+          console.error(`[renown-orgs] could not mark proposal ${id} checked: ${describe(error)}`);
+        }
+      };
+      for (const due of await store.dueProposals(now, BATCH)) {
+        try {
+          await rt.lock(`org:${due.orgId}`, async () => {
+            const proposal = await rt.store().proposal(due.id);
+            if (!proposal || proposal.status !== "PENDING") return;
+            const executableAt = proposal.executableAt;
+            if (executableAt && executableAt.getTime() <= now.getTime() && executableAt.getTime() < proposal.expiresAt.getTime()) {
+              const ran = await runProposal(rt, proposal, "system").then(
+                () => true,
+                (error: unknown) => {
+                  console.error(`[renown-orgs] proposal ${proposal.id} could not run: ${describe(error)}`);
+                  return false;
+                },
+              );
+              if (!ran) await skip(proposal.id);
+            } else if (proposal.expiresAt.getTime() <= now.getTime()) {
+              await expireProposal(rt, proposal, now);
+            } else {
+              await skip(proposal.id);
             }
-          } else if (proposal.expiresAt.getTime() <= now.getTime()) {
-            await expireProposal(rt, proposal, now);
-          }
-        });
+          });
+        } catch (error) {
+          console.error(`[renown-orgs] proposal ${due.id} could not be swept: ${describe(error)}`);
+          await skip(due.id);
+        }
       }
-      for (const stuck of await rt.store().rearmableProposals(now, BATCH)) {
-        await rt.lock(`org:${stuck.orgId}`, async () => {
-          const proposal = await rt.store().proposal(stuck.id);
-          if (proposal) await rearmProposal(rt, proposal, now);
-        });
+      for (const stuck of await store.rearmableProposals(now, BATCH)) {
+        try {
+          await rt.lock(`org:${stuck.orgId}`, async () => {
+            const proposal = await rt.store().proposal(stuck.id);
+            if (proposal && !(await rearmProposal(rt, proposal, now))) await skip(proposal.id);
+          });
+        } catch (error) {
+          console.error(`[renown-orgs] proposal ${stuck.id} could not be re-armed: ${describe(error)}`);
+          await skip(stuck.id);
+        }
       }
     },
   };
