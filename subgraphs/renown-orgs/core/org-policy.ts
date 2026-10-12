@@ -65,7 +65,7 @@ export interface OrgPolicy {
   /** The organisation id of an org DID on this host (didHost); null for any other DID or host. */
   orgIdOfDid(did: string): string | null;
   orgDid(orgId: string): string;
-  /** Records `appDid` as an app of `orgId` (with an audit row by `actor`); false when it already belongs to an organisation. */
+  /** Records `appDid` as an app of `orgId` (with an audit row by `actor`); false when it already belongs to an organisation or `orgId` is not live (archived, taken down, unknown). */
   attachApp(orgId: string, appDid: string, actor: string, at: Date): Promise<boolean>;
   /** Undoes an attachApp of this caller: removes `appDid` from `orgId` (with an audit row); false when it was not there. */
   detachApp(orgId: string, appDid: string, actor: string, at: Date): Promise<boolean>;
@@ -213,9 +213,20 @@ export function createOrgPolicy(db: ReadModelDb, didHost: string): OrgPolicy {
     attachApp: (orgId, appDid, actor, at) =>
       orEmpty(false, async () => {
         return (await writable()).transaction().execute(async (trx) => {
+          // Only into a live organisation: the check and the insert are one statement,
+          // which share-locks the organisation row against a concurrent archive or takedown.
           const inserted = await trx
             .insertInto("org_apps")
-            .values({ app_did: appDid, org_id: orgId, frozen: false, added_at: at })
+            .columns(["app_did", "org_id", "frozen", "added_at"])
+            .expression((eb) =>
+              eb
+                .selectFrom("organizations")
+                .select([eb.val(appDid).as("app_did"), "id", eb.val(false).as("frozen"), eb.val(at).as("added_at")])
+                .where("id", "=", orgId)
+                .where("archived", "=", false)
+                .where("taken_down", "=", false)
+                .forShare(),
+            )
             .onConflict((oc) => oc.column("app_did").doNothing())
             .returning("app_did")
             .executeTakeFirst();

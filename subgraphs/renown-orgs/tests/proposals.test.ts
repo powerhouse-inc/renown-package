@@ -144,6 +144,44 @@ describe("proposals", () => {
     expect((await act(t, "executeOrgProposal", id, back.id)).status).toBe("EXECUTED");
   });
 
+  it("DELETE_ORG re-counts apps inside its archive transaction and cancels transfers into the organisation", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    const transfer = {
+      appDid: "did:key:zOffered",
+      fromKind: "PERSON" as const,
+      fromId: lower(BOB),
+      toKind: "ORG" as const,
+      toId: id,
+      status: "PENDING" as const,
+      createdAt: T0,
+      expiresAt: new Date(T0.getTime() + 14 * DAY),
+      decidedAt: null,
+      decidedBy: null,
+      proposalId: null,
+      reason: null,
+    };
+    await t.store.insertTransfer({ ...transfer, id: "t-in" });
+    const first = await propose(t, id, "DELETE_ORG", {});
+    t.tick(HOUR);
+    // An app lands (outside every lock) after execute's first count, before the archive.
+    const teams = vi.spyOn(t.store, "teams").mockImplementationOnce(async () => {
+      await t.store.db.insertInto("org_apps").values({ app_did: APP, org_id: id, frozen: false, added_at: T0 }).execute();
+      return [];
+    });
+    const failed = await act(t, "executeOrgProposal", id, first.id);
+    teams.mockRestore();
+    expect(failed).toMatchObject({ status: "FAILED" });
+    expect(failed.reason).toMatch(/ORG_HAS_APPS/);
+    expect(await t.store.organization(id)).toMatchObject({ archived: false });
+    expect((await t.store.members(id)).map((m) => m.status)).toEqual(["ACTIVE"]);
+    await t.store.db.deleteFrom("org_apps").execute();
+    const second = await propose(t, id, "DELETE_ORG", {});
+    t.tick(HOUR);
+    expect((await act(t, "executeOrgProposal", id, second.id)).status).toBe("EXECUTED");
+    expect(await t.store.transfer("t-in")).toMatchObject({ status: "CANCELLED" });
+  });
+
   it("DELETE_ORG needs zero apps and archives everything", async () => {
     const t = harnessResolvers(h);
     const { id } = await createOrg(t, ALICE, "acme", { listed: true });

@@ -184,13 +184,19 @@ const deleteOrg: ProposalHandler = {
     const open = await store.members(org.id, ["INVITED", "ACTIVE"]);
     const owners = open.filter((m) => m.status === "ACTIVE" && m.role === "OWNER").map((m) => m.address);
     const teams = await store.teams(org.id);
-    await store.transaction(async (tx) => {
+    const archived = await store.transaction(async (tx) => {
+      // Lock the organisation row, then count again: an app inserted (insertOrgApp
+      // share-locks this row) either lands before this count or sees the archive.
+      await tx.lockOrganization(org.id);
+      if ((await tx.orgApps(org.id)).length > 0) return false;
       await tx.updateOrganization(org.id, { archived: true, listed: false }, now);
       for (const member of open) {
         await tx.updateMember(member.id, { status: member.status === "INVITED" ? "REVOKED" : "REMOVED", endedAt: now, updatedAt: now });
         await tx.removeMemberFromTeams(member.id);
       }
+      return true;
     });
+    if (!archived) return "ORG_HAS_APPS: the organization owns apps";
     await writeDocument(rt, "proposal.DELETE_ORG", org.id, [orgActions.archiveOrg({ archivedAt: iso(now) })], () =>
       store.transaction(async (tx) => {
         await tx.updateOrganization(org.id, { archived: org.archived, listed: org.listed }, org.updatedAt);
@@ -202,6 +208,13 @@ const deleteOrg: ProposalHandler = {
     // write, so none needs undoing, and a failing one is logged, never a FAILED proposal.
     await afterwards("revoke invite links", async () => {
       for (const link of await store.inviteLinks(org.id)) if (!link.revoked) await store.revokeInviteLink(link.id);
+    });
+    await afterwards("cancel transfers into the organization", async () => {
+      for (const t of await store.transfers({ party: { kind: "ORG", id: org.id } })) {
+        if (t.status === "PENDING" && t.toKind === "ORG" && t.toId === org.id) {
+          await store.updateTransfer(t.id, { status: "CANCELLED", decidedAt: now, reason: "organization deleted" }, "PENDING");
+        }
+      }
     });
     await afterwards("cancel pending proposals", () => cancelPending(rt, org.id, proposal.id, owners, actor, now));
     await afterwards("reserve the handle", () =>

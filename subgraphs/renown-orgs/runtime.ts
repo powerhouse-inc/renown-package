@@ -9,7 +9,7 @@ import { OIDC_NAMESPACE } from "../renown-oidc/store/migrations.js";
 import type { OidcKysely, OidcStore } from "../renown-oidc/store/types.js";
 import { loadConfig as loadWorkloadConfig } from "../renown-workload/core/config.js";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
-import { createKeyedLock } from "../renown-stats/core/keyed-lock.js";
+import { sharedKeyedLock } from "../renown-stats/core/keyed-lock.js";
 import { createActivityRecorder, type ActivitySink, type OrgActivity } from "./core/activity.js";
 import { provenAddress, requireAddress, type OrgArgs, type OrgContext } from "./core/auth.js";
 import type { OrgsConfig } from "./core/config.js";
@@ -141,7 +141,7 @@ export function createRuntime(deps: OrgsResolverDeps): OrgRuntime {
   const writeLimiter = deps.writeLimiter ?? createRateLimiter(WRITES_PER_MINUTE, 60_000);
   const inviteLimiter = deps.inviteLimiter ?? createRateLimiter(INVITES_PER_HOUR, 3_600_000);
   const readLimiter = deps.readLimiter ?? createRateLimiter(READS_PER_MINUTE, 60_000);
-  const lock = createKeyedLock();
+  const lock = sharedKeyedLock;
   const store = (): OrgStore => {
     const current = deps.store();
     if (!current) throw unavailable();

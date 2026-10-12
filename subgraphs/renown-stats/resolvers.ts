@@ -55,7 +55,7 @@ import {
   canonicalUserDid,
   pkhDidFor,
 } from "./core/dids.js";
-import { createKeyedLock } from "./core/keyed-lock.js";
+import { sharedKeyedLock } from "./core/keyed-lock.js";
 import {
   activeCredentialCount,
   contributorProfiles,
@@ -334,7 +334,8 @@ export function createResolvers(
     deps.profileRateLimiter ?? createRateLimiter(PROFILE_LIMIT, WINDOW_MS);
   const registrationToken = deps.registrationToken ?? (() => null);
   const media = deps.media ?? mediaBackend;
-  const lock = createKeyedLock();
+  // Shared with renown-orgs: its app:<did> lock must exclude this one.
+  const lock = sharedKeyedLock;
   let defaultPolicy: OrgPolicy | undefined;
   const orgPolicy =
     deps.orgPolicy ?? (() => (defaultPolicy ??= createOrgPolicy(relationalDb, loadOrgsConfig(process.env).didHost)));

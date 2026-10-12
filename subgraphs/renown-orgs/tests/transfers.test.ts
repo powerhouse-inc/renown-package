@@ -148,6 +148,55 @@ async function expectOrgOwns(t: TestResolvers, docId: string, orgId: string) {
   expect(profileDid(t, docId)).toBe(`did:web:renown.test:org:${orgId}`);
 }
 
+/** A promise and its resolver. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve = () => {};
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+/** Waits for `promise` to settle, or 300 ms when the other side is (correctly) blocked behind a lock. */
+async function settledOrTimeout(promise: Promise<unknown>): Promise<void> {
+  await Promise.race([promise.then(() => undefined, () => undefined), new Promise<void>((r) => setTimeout(r, 300))]);
+}
+
+describe("ownership changes racing organisation deletion", () => {
+  it("an acceptance arriving while DELETE_ORG executes fails, and the app keeps its original owner", async () => {
+    const { t, docId, acme } = await world();
+    const pending = await propose(t, ALICE, acme.id);
+    const del = await t.mutate<ProposalOutput>("proposeOrgChange", { orgId: acme.id, kind: "DELETE_ORG", payload: {} }, BOB);
+    t.tick(3600 * 1000);
+    // DELETE_ORG has counted zero apps and is about to archive when the acceptance arrives.
+    const counted = deferred();
+    let accept: Promise<unknown> = Promise.resolve();
+    // Once: the inner this.teams() call reaches the real method.
+    const spy = vi.spyOn(KyselyOrgStore.prototype, "teams").mockImplementationOnce(async function (this: KyselyOrgStore, orgId: string) {
+      counted.resolve();
+      await new Promise((r) => setTimeout(r, 0)); // lets the test start the acceptance
+      await settledOrTimeout(accept);
+      return this.teams(orgId);
+    });
+    let executed: ProposalOutput;
+    try {
+      const execution = t.mutate<ProposalOutput>("executeOrgProposal", { orgId: acme.id, proposalId: del.id }, BOB);
+      await counted.promise;
+      accept = t.mutate("acceptAppTransfer", { transferId: pending.id }, BOB).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      executed = await execution;
+    } finally {
+      spy.mockRestore();
+    }
+    expect(executed.status).toBe("EXECUTED");
+    expect(await accept).toBeInstanceOf(Error);
+    expect(await t.store.organization(acme.id)).toMatchObject({ archived: true });
+    await expectAliceOwns(t, docId, acme.id);
+  });
+});
+
 describe("person to organisation", () => {
   it("moves the app when an admin of the target accepts", async () => {
     const events: RecordedActivity[] = [];
@@ -517,4 +566,38 @@ describe("organisation to person, freezing", () => {
     expect((await t.store.orgOfApp(APP))?.orgId).toBe(acme.id);
     expect((await t.store.transfer(pending.id))?.status).toBe("PENDING");
   });
+  it("a profile edit racing an org-to-person acceptance cannot re-attach the app to the old organisation", async () => {
+    const { t, acme } = await orgApp();
+    const { pending } = await transferOut(t, acme.id);
+    const stats = statsResolvers(h, { orgPolicy: () => createOrgPolicy(h.relationalDb, "renown.test") });
+    // renown-stats reads the profile index (still naming acme), then yields until
+    // the move has taken the app out of org_apps but not yet off the workload identity.
+    const moved = deferred();
+    let edit: Promise<unknown> = Promise.resolve();
+    const readProfile = stats.index.appProfile.bind(stats.index);
+    vi.spyOn(stats.index, "appProfile").mockImplementationOnce(async (appDid: string) => {
+      const entry = await readProfile(appDid);
+      await settledOrTimeout(moved.promise);
+      return entry;
+    });
+    // Once: the inner this.transaction() call reaches the real method.
+    const spy = vi.spyOn(KyselyOrgStore.prototype, "transaction").mockImplementationOnce(async function (this: KyselyOrgStore, fn) {
+      const result = await this.transaction(fn);
+      moved.resolve();
+      await settledOrTimeout(edit);
+      return result as never;
+    });
+    try {
+      edit = stats.upsert({ appDid: APP, tagline: "ours" }, relayed(BOB.address)).catch((e: unknown) => e);
+      await t.mutate("acceptAppTransfer", { transferId: pending.id }, DAVE);
+      await edit;
+    } finally {
+      spy.mockRestore();
+    }
+    // DAVE owns the app everywhere; acme got nothing back.
+    expect(await t.store.orgOfApp(APP)).toBeUndefined();
+    expect(await statsRow()).toMatchObject({ publisher_org_id: null, publisher_address: lower(DAVE) });
+    expect(await workloadRow()).toMatchObject({ owner_org_id: null, owner_address: DAVE.address });
+  });
 });
+

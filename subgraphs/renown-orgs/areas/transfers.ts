@@ -37,6 +37,20 @@ async function speaksFor(rt: OrgRuntime, kind: PartyKind, id: string, caller: st
   }
 }
 
+/** The organisations on either side of a transfer, sorted (the lock order). */
+function transferOrgs(t: Pick<TransferRecord, "fromKind" | "fromId" | "toKind" | "toId">): string[] {
+  const ids = new Set<string>();
+  if (t.fromKind === "ORG") ids.add(t.fromId);
+  if (t.toKind === "ORG") ids.add(t.toId);
+  return [...ids].sort();
+}
+
+/** Runs `fn` holding `org:<id>` for every id, taken in the given (sorted) order. */
+function withOrgLocks<T>(rt: OrgRuntime, orgIds: readonly string[], fn: () => Promise<T>): Promise<T> {
+  if (orgIds.length === 0) return fn();
+  return rt.lock(`org:${orgIds[0]}`, () => withOrgLocks(rt, orgIds.slice(1), fn));
+}
+
 /** The organisation a transfer's audit and events belong to: the recipient when it is one, else the source. */
 function recordOrg(t: Pick<TransferRecord, "fromKind" | "fromId" | "toKind" | "toId">): string {
   return t.toKind === "ORG" ? t.toId : t.fromId;
@@ -193,7 +207,10 @@ export const transferResolvers: Area = (rt) => ({
     acceptAppTransfer: async (_: unknown, args: OrgArgs & { transferId: string }, ctx: OrgContext) => {
       const caller = await rt.writer(ctx, "acceptAppTransfer", args);
       const found = await liveTransfer(rt, args.transferId);
-      return rt.lock(`app:${found.appDid}`, async () => {
+      // Every organisation involved first (sorted, so two acceptances never wait on each
+      // other), then the app: the org -> app order of the proposal handlers. Under the org
+      // locks no DELETE_ORG, takedown or proposal of either side interleaves with the move.
+      return withOrgLocks(rt, transferOrgs(found), () => rt.lock(`app:${found.appDid}`, async () => {
         const store = rt.store();
         const now = rt.now();
         const transfer = await liveTransfer(rt, found.id);
@@ -222,7 +239,7 @@ export const transferResolvers: Area = (rt) => ({
         }
         await recordAccepted(rt, accepted, caller, now);
         return transferOutput(accepted);
-      });
+      }));
     },
     declineAppTransfer: async (_: unknown, args: OrgArgs & { transferId: string }, ctx: OrgContext) => {
       const caller = await rt.writer(ctx, "declineAppTransfer", args);

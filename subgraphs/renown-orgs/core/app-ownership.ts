@@ -119,7 +119,8 @@ async function documentListsApp(rt: OrgRuntime, orgId: string, appDid: string): 
  * no longer owns it, APP_FROZEN, else SERVICE_UNAVAILABLE. Once moved, other
  * PENDING transfers of the app from a source that no longer owns it are
  * cancelled (cancelStaleTransfers; a failure there is logged, the move stands).
- * The caller holds the `app:<did>` lock.
+ * The caller holds the `org:<id>` lock of every organisation involved, then
+ * the `app:<did>` lock (shared with renown-stats).
  */
 export async function moveApp(rt: OrgRuntime, appDid: string, from: AppOwner, to: AppOwner, now: Date): Promise<void> {
   const db = rt.deps.relationalDb;
@@ -149,8 +150,9 @@ export async function moveApp(rt: OrgRuntime, appDid: string, from: AppOwner, to
       } else if (await tx.orgOfApp(appDid)) {
         throw new OwnershipChanged("The app belongs to an organisation");
       }
+      // Conditional on the target being live (not archived, not taken down) in the same statement.
       if (to.kind === "ORG" && !(await tx.insertOrgApp({ appDid, orgId: to.orgId, frozen: false, addedAt: now }))) {
-        throw new OwnershipChanged("The app belongs to an organisation");
+        throw new OwnershipChanged((await tx.orgOfApp(appDid)) ? "The app belongs to an organisation" : "The receiving organisation is archived or taken down");
       }
       return gone;
     });
@@ -159,7 +161,7 @@ export async function moveApp(rt: OrgRuntime, appDid: string, from: AppOwner, to
       run: () =>
         store.transaction(async (tx) => {
           if (to.kind === "ORG") await tx.deleteOrgApp(appDid, to.orgId);
-          if (removed) await tx.insertOrgApp(removed);
+          if (removed) await tx.restoreOrgApp(removed);
         }),
     });
 

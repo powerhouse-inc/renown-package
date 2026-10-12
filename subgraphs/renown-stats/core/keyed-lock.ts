@@ -20,3 +20,11 @@ export function createKeyedLock(): <T>(key: string, fn: () => Promise<T>) => Pro
     }
   };
 }
+
+/**
+ * The one lock registry of this process, shared by renown-orgs and
+ * renown-stats: their `app:<did>` (and every other) keys must exclude each
+ * other, which two separate registries would not. In-process only, so a
+ * tenant runs a single switchboard replica.
+ */
+export const sharedKeyedLock: <T>(key: string, fn: () => Promise<T>) => Promise<T> = createKeyedLock();

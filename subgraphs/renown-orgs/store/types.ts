@@ -657,8 +657,20 @@ export interface OrgStore {
   revokeInviteLink(id: string): Promise<void>;
   orgApps(orgId: string): Promise<OrgAppRecord[]>;
   orgOfApp(appDid: string): Promise<OrgAppRecord | undefined>;
-  /** False (nothing written) when the app already belongs to an organisation. */
+  /**
+   * False (nothing written) when the app already belongs to an organisation, or
+   * when the organisation is archived, taken down or unknown: an organisation
+   * that is not live never receives an app (the check and the insert are one
+   * statement, which share-locks the organisation row).
+   */
   insertOrgApp(app: OrgAppRecord): Promise<boolean>;
+  /** Puts back an org_apps row an undo removed, whatever its organisation became meanwhile. */
+  restoreOrgApp(app: OrgAppRecord): Promise<void>;
+  /**
+   * Locks the organisation row until the enclosing transaction ends (SELECT ... FOR UPDATE),
+   * so a concurrent insertOrgApp for it waits and then sees the outcome. Use inside transaction().
+   */
+  lockOrganization(orgId: string): Promise<void>;
   /** Removes the app from `orgId`; the removed record, or undefined when it was not that organisation's. */
   deleteOrgApp(appDid: string, orgId: string): Promise<OrgAppRecord | undefined>;
   setAppFrozen(appDid: string, frozen: boolean): Promise<void>;

@@ -27,6 +27,19 @@ beforeEach(async () => {
 });
 
 describe("OrgPolicy", () => {
+  it("never attaches an app to an archived, taken-down or unknown organisation", async () => {
+    const t = harnessResolvers(h);
+    const policy = createOrgPolicy(h.relationalDb, "renown.test");
+    const { id: gone } = await createOrg(t, ALICE, "gone");
+    const { id: banned } = await createOrg(t, ALICE, "banned");
+    await t.store.updateOrganization(gone, { archived: true }, T0);
+    await t.store.updateOrganization(banned, { takenDown: true }, T0);
+    expect(await policy.attachApp(gone, APP_A, lower(ALICE), T0)).toBe(false);
+    expect(await policy.attachApp(banned, APP_A, lower(ALICE), T0)).toBe(false);
+    expect(await policy.attachApp("nope", APP_A, lower(ALICE), T0)).toBe(false);
+    expect(await policy.orgOfApp(APP_A)).toBeNull();
+  });
+
   it("knows org apps, roles, scopes (own and teams) and summaries", async () => {
     const t = harnessResolvers(h);
     const policy = createOrgPolicy(h.relationalDb, "renown.test");

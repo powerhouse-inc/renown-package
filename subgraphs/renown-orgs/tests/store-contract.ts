@@ -465,6 +465,15 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect(await store.updateTransfer("t3", { status: "PENDING", reason: null }, "CANCELLED")).toMatchObject({ reason: null });
       expect((await store.dueTransfers(at(60), 10)).map((t) => t.id)).toEqual(["t3"]);
       expect(await store.dueTransfers(at(59), 10)).toEqual([]);
+      // Only a live organisation receives an app.
+      for (const o of [org("o1", "one"), org("o2", "two"), org("o3", "gone", { archived: true }), org("o4", "banned", { takenDown: true })]) await store.insertOrganization(o);
+      expect(await store.insertOrgApp({ appDid: "did:key:za", orgId: "o3", frozen: false, addedAt: T0 })).toBe(false);
+      expect(await store.insertOrgApp({ appDid: "did:key:za", orgId: "o4", frozen: false, addedAt: T0 })).toBe(false);
+      expect(await store.insertOrgApp({ appDid: "did:key:za", orgId: "o9", frozen: false, addedAt: T0 })).toBe(false);
+      expect(await store.orgOfApp("did:key:za")).toBeUndefined();
+      // restoreOrgApp (an undo) puts an app back whatever the organisation became meanwhile.
+      await store.restoreOrgApp({ appDid: "did:key:zr", orgId: "o3", frozen: true, addedAt: T0 });
+      expect(await store.orgOfApp("did:key:zr")).toMatchObject({ orgId: "o3", frozen: true });
       expect(await store.insertOrgApp({ appDid: "did:key:za", orgId: "o1", frozen: false, addedAt: T0 })).toBe(true);
       expect(await store.insertOrgApp({ appDid: "did:key:za", orgId: "o2", frozen: false, addedAt: T0 })).toBe(false);
       await store.setAppFrozen("did:key:za", true);
@@ -523,6 +532,8 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       await store.setJobWatermark("delegations", T0);
       await store.setJobWatermark("delegations", at(5));
       expect(await store.jobWatermark("delegations")).toEqual(at(5));
+      await store.insertOrganization(org("o1", "one"));
+      await store.insertOrganization(org("o2", "two"));
       await store.insertOrgApp({ appDid: "did:key:zb", orgId: "o2", frozen: false, addedAt: T0 });
       await store.insertOrgApp({ appDid: "did:key:za", orgId: "o1", frozen: false, addedAt: T0 });
       expect((await store.allOrgApps()).map((a) => [a.appDid, a.orgId])).toEqual([["did:key:za", "o1"], ["did:key:zb", "o2"]]);

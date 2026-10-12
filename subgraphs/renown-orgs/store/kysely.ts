@@ -662,11 +662,32 @@ export class KyselyOrgStore implements OrgStore {
   async insertOrgApp(app: OrgAppRecord): Promise<boolean> {
     const inserted = await this.db
       .insertInto("org_apps")
-      .values({ app_did: app.appDid, org_id: app.orgId, frozen: app.frozen, added_at: app.addedAt })
+      .columns(["app_did", "org_id", "frozen", "added_at"])
+      .expression((eb) =>
+        eb
+          .selectFrom("organizations")
+          .select([eb.val(app.appDid).as("app_did"), "id", eb.val(app.frozen).as("frozen"), eb.val(app.addedAt).as("added_at")])
+          .where("id", "=", app.orgId)
+          .where("archived", "=", false)
+          .where("taken_down", "=", false)
+          .forShare(),
+      )
       .onConflict((oc) => oc.column("app_did").doNothing())
       .returning("app_did")
       .executeTakeFirst();
     return inserted !== undefined;
+  }
+
+  async restoreOrgApp(app: OrgAppRecord): Promise<void> {
+    await this.db
+      .insertInto("org_apps")
+      .values({ app_did: app.appDid, org_id: app.orgId, frozen: app.frozen, added_at: app.addedAt })
+      .onConflict((oc) => oc.column("app_did").doNothing())
+      .execute();
+  }
+
+  async lockOrganization(orgId: string): Promise<void> {
+    await this.db.selectFrom("organizations").select("id").where("id", "=", orgId).forUpdate().execute();
   }
 
   async deleteOrgApp(appDid: string, orgId: string): Promise<OrgAppRecord | undefined> {
