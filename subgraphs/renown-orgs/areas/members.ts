@@ -91,7 +91,7 @@ function reason(error: unknown): string {
  * `undo` reverts the store and the caller gets SERVICE_UNAVAILABLE. Never
  * log action payloads here; nothing secret is in them today, keep it so.
  */
-async function writeDocument(rt: OrgRuntime, field: string, orgId: string, actions: Action[], undo: () => Promise<unknown>): Promise<void> {
+export async function writeDocument(rt: OrgRuntime, field: string, orgId: string, actions: Action[], undo: () => Promise<unknown>): Promise<void> {
   try {
     await rt.execute(orgId, actions);
   } catch (error) {
