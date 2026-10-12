@@ -369,5 +369,37 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       });
       expect((await store.proposals("o1", "PENDING")).map((p) => p.id)).toEqual(["p1"]);
     });
+
+    it("writes domains, verifies a domain for one organization only, lists those due for a re-check", async () => {
+      const { store } = await open();
+      const domain = (id: string, orgId: string, name: string) => ({
+        id,
+        orgId,
+        domain: name,
+        token: "t",
+        status: "PENDING" as const,
+        verifiedAt: null,
+        lastCheckedAt: null,
+        failures: 0,
+        createdAt: T0,
+      });
+      await store.insertDomain(domain("d1", "o1", "acme.example"));
+      await store.insertDomain(domain("d2", "o2", "acme.example"));
+      expect(await store.updateDomain("d1", { status: "VERIFIED", verifiedAt: T0, lastCheckedAt: T0 })).toMatchObject({
+        status: "VERIFIED",
+        verifiedAt: T0,
+      });
+      await expect(store.updateDomain("d2", { status: "VERIFIED", verifiedAt: T0 })).rejects.toThrow();
+      expect(await store.verifiedDomainOwner("ACME.example")).toBe("o1");
+      expect(await store.verifiedDomainOwner("other.example")).toBeUndefined();
+      expect((await store.domains("o1")).map((d) => d.id)).toEqual(["d1"]);
+      expect((await store.domainsToRecheck(new Date(T0.getTime() - 1), 10)).map((d) => d.id)).toEqual([]);
+      expect((await store.domainsToRecheck(T0, 10)).map((d) => d.id)).toEqual(["d1"]);
+      expect(await store.updateDomain("missing", { failures: 1 })).toBeUndefined();
+      expect(await store.deleteDomain("d2")).toBe(true);
+      expect(await store.deleteDomain("d2")).toBe(false);
+      expect(await store.domain("d2")).toBeUndefined();
+    });
   });
 }
+

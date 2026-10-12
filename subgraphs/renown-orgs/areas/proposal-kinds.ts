@@ -4,7 +4,7 @@ import { handleError, normalizeHandle, orgHandleProblem } from "../core/handles.
 import { ownersNotice, type ProposalHandler } from "../core/proposals.js";
 import { iso } from "../output.js";
 import type { OrgRuntime } from "../runtime.js";
-import type { ProposalKind } from "../store/types.js";
+import type { MemberRecord, ProposalKind } from "../store/types.js";
 import { addressArg, endMembership, membershipEnded, restoreOf, writeDocument } from "./members.js";
 
 const DAY_MS = 86_400_000;
@@ -221,6 +221,80 @@ const deleteOrg: ProposalHandler = {
   },
 };
 
+/**
+ * RECOVER (started by startOrgRecovery only): makes the address the domain
+ * named an ACTIVE owner, if the domain is still VERIFIED for the org. An
+ * active member is promoted; anyone else joins as an owner (an open invite
+ * is revoked first). Member caps do not apply: recovery must not be blockable.
+ */
+const recover: ProposalHandler = {
+  proposable: false,
+  validate() {
+    return Promise.reject(badInput("kind", "Recovery starts with startOrgRecovery"));
+  },
+  async execute({ rt, org, proposal, actor, now }) {
+    const store = rt.store();
+    const address = proposal.payload.address ?? "";
+    const verified = (await store.domains(org.id)).some((d) => d.domain === proposal.payload.domain && d.status === "VERIFIED");
+    if (!verified) return "The recovery domain is no longer verified";
+    const at = iso(now);
+    const existing = await store.openMember(org.id, address);
+    if (existing?.status === "ACTIVE") {
+      if (existing.role === "OWNER") return null;
+      const updated = await store.updateMember(existing.id, { role: "OWNER", updatedAt: now });
+      if (!updated) throw unavailable();
+      await writeDocument(rt, "proposal.RECOVER", org.id, [orgActions.setMemberRole({ id: existing.id, role: "OWNER", at })], () =>
+        store.updateMember(existing.id, restoreOf(existing)),
+      );
+    } else {
+      const member: MemberRecord = {
+        id: rt.newId(),
+        orgId: org.id,
+        address,
+        role: "OWNER",
+        status: "ACTIVE",
+        appScopeAll: true,
+        appDids: [],
+        hidden: false,
+        invitedBy: null,
+        invitedAt: now,
+        joinedAt: now,
+        endedAt: null,
+        updatedAt: now,
+      };
+      await store.transaction(async (tx) => {
+        if (existing) await tx.updateMember(existing.id, { status: "REVOKED", endedAt: now, updatedAt: now });
+        await tx.insertMember(member);
+      });
+      await writeDocument(
+        rt,
+        "proposal.RECOVER",
+        org.id,
+        [
+          ...(existing ? [orgActions.setMemberStatus({ id: existing.id, status: "REVOKED", at })] : []),
+          orgActions.inviteMember({ id: member.id, address, role: "OWNER", invitedAt: at }),
+          orgActions.setMemberStatus({ id: member.id, status: "ACTIVE", at }),
+        ],
+        () =>
+          store.transaction(async (tx) => {
+            await tx.deleteMember(member.id);
+            if (existing) await tx.updateMember(existing.id, restoreOf(existing));
+          }),
+      );
+    }
+    const data = { address, role: "OWNER" };
+    await rt.record({
+      orgId: org.id,
+      actor,
+      action: "proposal.RECOVER",
+      at: now,
+      details: { ...data, domain: proposal.payload.domain, proposalId: proposal.id },
+      event: existing?.status === "ACTIVE" ? { type: "member.role_changed", data: { address, from: existing.role, to: "OWNER" } } : { type: "member.joined", data },
+    });
+    return null;
+  },
+};
+
 /** A follow-up of an applied change: its failure is logged, the change stands. */
 async function afterwards(what: string, fn: () => Promise<unknown>): Promise<void> {
   try {
@@ -251,10 +325,11 @@ async function cancelPending(rt: OrgRuntime, orgId: string, exceptId: string, ow
   }
 }
 
-/** The executable kinds; Tasks 3 and 7 add RECOVER, TRANSFER_APP_OUT, FREEZE_APP and UNFREEZE_APP. */
+/** The executable kinds; Task 7 adds TRANSFER_APP_OUT, FREEZE_APP and UNFREEZE_APP. */
 export const PROPOSAL_KINDS: Partial<Record<ProposalKind, ProposalHandler>> = {
   ADD_OWNER: addOwner,
   REMOVE_OWNER: removeOwner,
   CHANGE_HANDLE: changeHandle,
   DELETE_ORG: deleteOrg,
+  RECOVER: recover,
 };

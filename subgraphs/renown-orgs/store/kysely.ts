@@ -2,6 +2,8 @@ import { sql, type Selectable } from "kysely";
 import type {
   AuditCursor,
   AuditRecord,
+  DomainPatch,
+  DomainRecord,
   InviteLinkRecord,
   MemberPatch,
   MemberRecord,
@@ -9,6 +11,7 @@ import type {
   OrganizationsTable,
   OrgInviteLinksTable,
   OrgLink,
+  OrgDomainsTable,
   OrgMembersTable,
   OrgPatch,
   OrgProposalsTable,
@@ -112,6 +115,20 @@ function toLink(row: Selectable<OrgInviteLinksTable>): InviteLinkRecord {
     expiresAt: toDate(row.expires_at),
     revoked: row.revoked,
     createdBy: row.created_by,
+    createdAt: toDate(row.created_at),
+  };
+}
+
+function toDomain(row: Selectable<OrgDomainsTable>): DomainRecord {
+  return {
+    id: row.id,
+    orgId: row.org_id,
+    domain: row.domain,
+    token: row.token,
+    status: row.status,
+    verifiedAt: toDateOrNull(row.verified_at),
+    lastCheckedAt: toDateOrNull(row.last_checked_at),
+    failures: row.failures,
     createdAt: toDate(row.created_at),
   };
 }
@@ -545,6 +562,76 @@ export class KyselyOrgStore implements OrgStore {
       .execute();
     for (const row of rows) out.set(row.org_id, [...(out.get(row.org_id) ?? []), row.domain]);
     return out;
+  }
+
+  async insertDomain(d: DomainRecord): Promise<void> {
+    await this.db
+      .insertInto("org_domains")
+      .values({
+        id: d.id,
+        org_id: d.orgId,
+        domain: d.domain,
+        token: d.token,
+        status: d.status,
+        verified_at: d.verifiedAt,
+        last_checked_at: d.lastCheckedAt,
+        failures: d.failures,
+        created_at: d.createdAt,
+      })
+      .execute();
+  }
+
+  async domain(id: string): Promise<DomainRecord | undefined> {
+    const row = await this.db.selectFrom("org_domains").selectAll().where("id", "=", id).executeTakeFirst();
+    return row && toDomain(row);
+  }
+
+  async domains(orgId: string): Promise<DomainRecord[]> {
+    const rows = await this.db.selectFrom("org_domains").selectAll().where("org_id", "=", orgId).orderBy("created_at").orderBy("id").execute();
+    return rows.map(toDomain);
+  }
+
+  async updateDomain(id: string, patch: DomainPatch): Promise<DomainRecord | undefined> {
+    const row = await this.db
+      .updateTable("org_domains")
+      .set({
+        ...(patch.status !== undefined && { status: patch.status }),
+        ...(patch.verifiedAt !== undefined && { verified_at: patch.verifiedAt }),
+        ...(patch.lastCheckedAt !== undefined && { last_checked_at: patch.lastCheckedAt }),
+        ...(patch.failures !== undefined && { failures: patch.failures }),
+      })
+      .where("id", "=", id)
+      .returningAll()
+      .executeTakeFirst();
+    return row && toDomain(row);
+  }
+
+  async deleteDomain(id: string): Promise<boolean> {
+    const result = await this.db.deleteFrom("org_domains").where("id", "=", id).executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
+  }
+
+  async verifiedDomainOwner(domain: string): Promise<string | undefined> {
+    const row = await this.db
+      .selectFrom("org_domains")
+      .select("org_id")
+      .where(sql<string>`lower(domain)`, "=", domain.toLowerCase())
+      .where("status", "=", "VERIFIED")
+      .executeTakeFirst();
+    return row?.org_id;
+  }
+
+  async domainsToRecheck(checkedBefore: Date, limit: number): Promise<DomainRecord[]> {
+    const rows = await this.db
+      .selectFrom("org_domains")
+      .selectAll()
+      .where("status", "=", "VERIFIED")
+      .where((eb) => eb.or([eb("last_checked_at", "is", null), eb("last_checked_at", "<=", checkedBefore)]))
+      .orderBy("last_checked_at", sql`asc nulls first`)
+      .orderBy("id")
+      .limit(limit)
+      .execute();
+    return rows.map(toDomain);
   }
 
   async verifiedOrgNamed(name: string, exceptOrgId: string): Promise<OrgRecord | undefined> {

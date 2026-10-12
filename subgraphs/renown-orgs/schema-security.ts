@@ -76,5 +76,47 @@ export const PROPOSALS_SDL = `
   }
 `;
 
+export const DOMAINS_SDL = `
+  enum OrgDomainStatus {
+    PENDING
+    VERIFIED
+    LAPSED
+  }
+
+  type OrgDomain {
+    id: String!
+    orgId: String!
+    domain: String!
+    status: OrgDomainStatus!
+    verifiedAt: String
+    lastCheckedAt: String
+    failures: Int!
+    createdAt: String!
+    "DNS TXT record name: _renown.<domain>"
+    txtName: String!
+    "DNS TXT record value: renown-org=<orgId>;token=<token>"
+    txtValue: String!
+    "https://<domain>/.well-known/renown.json"
+    wellKnownUrl: String!
+    "A renown.json body that proves the domain"
+    wellKnownJson: String!
+  }
+
+  extend type Query {
+    "Admins."
+    orgDomains(orgId: String!, auth: OrgAuthInput): [OrgDomain!]!
+  }
+
+  extend type Mutation {
+    "Admins; at most 10 domains. DOMAIN_TAKEN when another organization has it verified."
+    addOrgDomain(orgId: String!, domain: String!, auth: OrgAuthInput): OrgDomain!
+    "Admins. DOMAIN_PROOF_MISSING when neither the TXT record nor renown.json proves it."
+    checkOrgDomain(orgId: String!, domainId: String!, auth: OrgAuthInput): OrgDomain!
+    removeOrgDomain(orgId: String!, domainId: String!, auth: OrgAuthInput): Boolean!
+    "Anyone signed in: a RECOVER proposal (no approvals, recovery delay) proven by a domain verified for at least 14 days."
+    startOrgRecovery(orgId: String!, domain: String!, newOwner: String!, auth: OrgAuthInput): OrgProposal!
+  }
+`;
+
 /** Every A2 block; later tasks append theirs. */
-export const SECURITY_SDL = [PROPOSALS_SDL].join("\n");
+export const SECURITY_SDL = [PROPOSALS_SDL, DOMAINS_SDL].join("\n");

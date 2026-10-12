@@ -10,6 +10,7 @@ import { createActivityRecorder, type ActivitySink, type OrgActivity } from "./c
 import { provenAddress, requireAddress, type OrgArgs, type OrgContext } from "./core/auth.js";
 import type { OrgsConfig } from "./core/config.js";
 import { badInput, forbidden, rateLimited, unavailable } from "./core/errors.js";
+import { nodeNetDeps, type NetDeps } from "./core/net.js";
 import type { OrgStore } from "./store/types.js";
 
 export type RateLimiter = { take(key: string, now?: number): boolean };
@@ -37,6 +38,8 @@ export interface OrgsResolverDeps {
   writeLimiter?: RateLimiter;
   inviteLimiter?: RateLimiter;
   readLimiter?: RateLimiter;
+  /** DNS and HTTPS for domain proofs and webhooks; node's by default. */
+  net?: NetDeps;
   /** Extra activity sinks (A3: notifications, webhooks). */
   sinks?: readonly ActivitySink[];
   /** Initial membership-ended hooks (tests; A2 registers its own on the runtime). */
@@ -60,6 +63,8 @@ export interface OrgRuntime {
   store(): OrgStore;
   config(): OrgsConfig;
   media(): MediaBackend | null;
+  /** DNS and HTTPS; every fetch goes through guardedRequest. */
+  net(): NetDeps;
   newId(): string;
   /** `bytes` random bytes, base64url. */
   token(bytes?: number): string;
@@ -124,6 +129,7 @@ export function createRuntime(deps: OrgsResolverDeps): OrgRuntime {
     store,
     config: () => deps.config(),
     media: () => (deps.media ?? mediaBackend)(),
+    net: () => deps.net ?? nodeNetDeps,
     newId,
     token: (bytes = 32) => Buffer.from(randomBytes(bytes)).toString("base64url"),
     lock,

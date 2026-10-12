@@ -257,6 +257,8 @@ export interface TeamRecord {
 
 export type TeamPatch = Partial<Pick<TeamRecord, "slug" | "name" | "appDids">>;
 
+export type DomainPatch = Partial<Pick<DomainRecord, "status" | "verifiedAt" | "lastCheckedAt" | "failures">>;
+
 export interface InviteLinkRecord {
   id: string;
   orgId: string;
@@ -367,6 +369,17 @@ export interface OrgStore {
   orgApps(orgId: string): Promise<OrgAppRecord[]>;
   orgOfApp(appDid: string): Promise<OrgAppRecord | undefined>;
   verifiedDomains(orgIds: readonly string[]): Promise<Map<string, string[]>>;
+  insertDomain(domain: DomainRecord): Promise<void>;
+  domain(id: string): Promise<DomainRecord | undefined>;
+  /** createdAt order. */
+  domains(orgId: string): Promise<DomainRecord[]>;
+  /** Throws when a second organization would get the same VERIFIED domain (the org_domains_verified_once index). */
+  updateDomain(id: string, patch: DomainPatch): Promise<DomainRecord | undefined>;
+  deleteDomain(id: string): Promise<boolean>;
+  /** The organization the domain is VERIFIED for (case-insensitive), if any. */
+  verifiedDomainOwner(domain: string): Promise<string | undefined>;
+  /** VERIFIED domains never checked or last checked at or before `checkedBefore`, never-checked first, then oldest check. */
+  domainsToRecheck(checkedBefore: Date, limit: number): Promise<DomainRecord[]>;
   verifiedOrgNamed(name: string, exceptOrgId: string): Promise<OrgRecord | undefined>;
   appendAudit(entry: AuditRecord): Promise<void>;
   auditPage(orgId: string, limit: number, after?: AuditCursor): Promise<AuditRecord[]>;
