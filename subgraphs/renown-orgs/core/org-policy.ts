@@ -6,7 +6,7 @@ import type { ReadModelDb } from "../../renown-auth/lookups.js";
 import { memoizedNamespace } from "../store/foreign.js";
 import { jsonValue } from "../store/kysely.js";
 import { isMissingNamespace } from "../store/lookups.js";
-import { ORGS_NAMESPACE, type OrgRole, type OrgsDB } from "../store/types.js";
+import { memberSuspensionId, ORGS_NAMESPACE, type OrgRole, type OrgsDB } from "../store/types.js";
 import { orgDid } from "./config.js";
 
 const ORG_DID_RE = /^did:web:[^:]+:org:([A-Za-z0-9_-]{1,128})$/;
@@ -51,8 +51,9 @@ export interface OrgPolicy {
    * rules (spec 3.7). Person apps always do. For an org app (org_apps) the
    * reasons, in precedence order: APP_FROZEN, SUSPENDED (by that org),
    * ISSUER_NOT_MEMBER (no ACTIVE membership in a live org), ISSUER_NOT_PUBLISHER
-   * (coversApp fails). Throws when organisation data cannot be read (other
-   * than no organisations at all): callers fail closed.
+   * (coversApp fails). SUSPENDED covers per-credential rows and the issuer's
+   * member-level suspension. Only a missing namespace on the org_apps read
+   * means "person app"; any other failure throws: callers fail closed.
    */
   credentialStatus(input: { credentialId: string; appDid: string; issuer: string }): Promise<CredentialVerdict>;
   /** Public card of a live organisation, null when unknown or taken down. */
@@ -169,22 +170,25 @@ export function createOrgPolicy(db: ReadModelDb, didHost: string): OrgPolicy {
       }),
     activeRole: (orgId, address) => orEmpty(null, async () => (await activeMember(orgId, address))?.role ?? null),
     coversApp: (orgId, address, appDid) => orEmpty(false, () => covers(orgId, address, appDid)),
-    credentialStatus: ({ credentialId, appDid, issuer }) =>
-      orEmpty<CredentialVerdict>({ orgId: null, counts: true, reason: null }, async () => {
-        const app = await orgs().selectFrom("org_apps").select(["org_id", "frozen"]).where("app_did", "=", appDid).executeTakeFirst();
-        if (!app) return { orgId: null, counts: true, reason: null };
-        const verdict = (reason: OrgCredentialReason | null): CredentialVerdict => ({ orgId: app.org_id, counts: reason === null, reason });
-        if (app.frozen) return verdict("APP_FROZEN");
-        const suspended = await orgs()
-          .selectFrom("org_credential_suspensions")
-          .select("credential_id")
-          .where("org_id", "=", app.org_id)
-          .where("credential_id", "=", credentialId)
-          .executeTakeFirst();
-        if (suspended) return verdict("SUSPENDED");
-        if (!(await activeMember(app.org_id, issuer))) return verdict("ISSUER_NOT_MEMBER");
-        return verdict((await covers(app.org_id, issuer, appDid)) ? null : "ISSUER_NOT_PUBLISHER");
-      }),
+    credentialStatus: async ({ credentialId, appDid, issuer }) => {
+      // Only "no organisations at all" makes an app a person app; once it is
+      // known to be an org app every later read must succeed (fail closed).
+      const app = await orEmpty(undefined, () =>
+        orgs().selectFrom("org_apps").select(["org_id", "frozen"]).where("app_did", "=", appDid).executeTakeFirst(),
+      );
+      if (!app) return { orgId: null, counts: true, reason: null };
+      const verdict = (reason: OrgCredentialReason | null): CredentialVerdict => ({ orgId: app.org_id, counts: reason === null, reason });
+      if (app.frozen) return verdict("APP_FROZEN");
+      const suspended = await orgs()
+        .selectFrom("org_credential_suspensions")
+        .select("credential_id")
+        .where("org_id", "=", app.org_id)
+        .where("credential_id", "in", [credentialId, memberSuspensionId(issuer)])
+        .executeTakeFirst();
+      if (suspended) return verdict("SUSPENDED");
+      if (!(await activeMember(app.org_id, issuer))) return verdict("ISSUER_NOT_MEMBER");
+      return verdict((await covers(app.org_id, issuer, appDid)) ? null : "ISSUER_NOT_PUBLISHER");
+    },
     orgSummary: async (orgId) => (await summaries([orgId])).get(orgId) ?? null,
     orgsOfApps: (appDids) =>
       orEmpty(new Map<string, OrgAppInfo>(), async () => {

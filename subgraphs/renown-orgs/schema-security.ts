@@ -179,7 +179,7 @@ export const CREDENTIALS_SDL = `
   }
 
   extend type Mutation {
-    "Admins: exactly one of credentialIds and memberAddress (all of that member's live delegations for org apps)."
+    "Admins: exactly one of credentialIds (at most 100) and memberAddress (all of that member's live delegations for org apps). Returns the newly suspended ids."
     suspendOrgCredentials(orgId: String!, credentialIds: [String!], memberAddress: String, auth: OrgAuthInput): [String!]!
     unsuspendOrgCredential(orgId: String!, credentialId: String!, auth: OrgAuthInput): Boolean!
   }

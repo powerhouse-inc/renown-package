@@ -337,4 +337,20 @@ describe("delegations of org apps", () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("connection refused"));
     warn.mockRestore();
   });
+
+  it("refuse a registrant of an org workload whose scope does not cover it", async () => {
+    await registerApp(h, GLOBEX_APP, CAROL);
+    await h.root.withSchema(WORKLOAD_NS).updateTable("workload_identities").set({ owner_org_id: "o1" }).where("did", "=", GLOBEX_APP).execute();
+    await orgs.db.insertInto("org_apps").values({ app_did: GLOBEX_APP, org_id: "o1", frozen: false, added_at: new Date() }).execute();
+    const t = setup();
+    const report = () =>
+      (t.resolvers as unknown as { Mutation: Record<string, (p: unknown, a: unknown, c: unknown) => Promise<boolean>> }).Mutation.reportUserStat(
+        null,
+        { appDid: GLOBEX_APP, userDid, metric: "notes", value: 1 },
+        { user: { address: CAROL, appKey: GLOBEX_APP } },
+      );
+    expect((await failure(report())).code).toBe("FORBIDDEN");
+    await orgs.db.updateTable("org_members").set({ app_dids: JSON.stringify([GLOBEX_APP]) }).where("address", "=", CAROL).execute();
+    expect(await report()).toBe(true);
+  });
 });

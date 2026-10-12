@@ -6,10 +6,21 @@ import type { CredentialVerdict } from "../core/org-policy.js";
 import { iso, isoOrNull, memberStatus } from "../output.js";
 import type { Area, MembershipEnded, OrgRuntime } from "../runtime.js";
 import { credentialById, credentialsForApps, liveCredentialsOf, type CredentialRow } from "../store/foreign.js";
-import type { MemberRecord } from "../store/types.js";
+import { memberSuspensionId, type MemberRecord } from "../store/types.js";
 import { addressArg, writeDocument } from "./members.js";
 
 const MAX_LISTED = 500;
+/** credentialIds per suspendOrgCredentials call. */
+export const MAX_SUSPEND_IDS = 100;
+/** Concurrent status checks while listing. */
+const STATUS_CONCURRENCY = 10;
+
+/** `fn` over `items`, at most `limit` at a time, in order. */
+async function mapLimited<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += limit) out.push(...(await Promise.all(items.slice(i, i + limit).map(fn))));
+  return out;
+}
 
 /** A read of the credential read model or of organisation rules; a failure is SERVICE_UNAVAILABLE (never a verdict). */
 async function guarded<T>(what: string, run: () => Promise<T>): Promise<T> {
@@ -34,9 +45,11 @@ async function appsOf(rt: OrgRuntime, orgId: string): Promise<string[]> {
 
 /**
  * Suspends `credentialIds` for `orgId` (call under the org lock): the store
- * first, then the document (a failed document write lifts the new
- * suspensions again: SERVICE_UNAVAILABLE), then the activity. Returns the
- * newly suspended ids.
+ * first, then the document, then the activity. Returns the newly suspended
+ * ids. Admin writes compensate a failed document write (the new suspensions
+ * are lifted again: SERVICE_UNAVAILABLE); exits keep them and log the
+ * missing mirror, since the store is what counting reads and a suspension
+ * must survive a re-join.
  */
 async function suspend(
   rt: OrgRuntime,
@@ -51,9 +64,18 @@ async function suspend(
   const store = rt.store();
   const added = await store.suspendCredentials(credentialIds.map((credentialId) => ({ orgId, credentialId, reason, memberAddress, at: now })));
   if (added.length === 0) return added;
-  await writeDocument(rt, field, orgId, [orgActions.suspendCredentials({ credentialIds: added })], async () => {
-    for (const id of added) await store.unsuspendCredential(orgId, id);
-  });
+  const mirror = [orgActions.suspendCredentials({ credentialIds: added })];
+  if (reason === "ADMIN") {
+    await writeDocument(rt, field, orgId, mirror, async () => {
+      for (const id of added) await store.unsuspendCredential(orgId, id);
+    });
+  } else {
+    try {
+      await rt.execute(orgId, mirror);
+    } catch (error) {
+      console.error(`[renown-orgs] ${field}: document ${orgId} did not record suspensions (${error instanceof Error ? error.message : "unknown error"}); kept in the store`);
+    }
+  }
   const data = { credentialIds: added, reason };
   await rt.record({
     orgId,
@@ -68,17 +90,45 @@ async function suspend(
 
 /**
  * Leaving or removal suspends the member's live delegations for the
- * organisation's apps (they stay suspended if the member re-joins). Runs
- * inside endMembership, which already holds the org lock.
+ * organisation's apps (they stay suspended if the member re-joins). When
+ * they cannot be listed, a member-level suspension stands in for them (fail
+ * closed). Runs inside endMembership, which already holds the org lock.
  */
 function suspendOnExit(rt: OrgRuntime) {
   return async (event: MembershipEnded) => {
-    const apps = await appsOf(rt, event.orgId);
-    const live = await liveCredentialsOf(rt.deps.relationalDb, event.address, apps, event.at);
     const reason = event.reason === "LEFT" ? "MEMBER_LEFT" : "MEMBER_REMOVED";
-    const ids = live.map((row) => row.credentialId);
+    let ids: string[];
+    try {
+      const apps = await appsOf(rt, event.orgId);
+      ids = (await liveCredentialsOf(rt.deps.relationalDb, event.address, apps, event.at)).map((row) => row.credentialId);
+    } catch (error) {
+      console.error(
+        `[renown-orgs] suspendOnExit: delegations of a member of ${event.orgId} unreadable (${error instanceof Error ? error.message : "unknown error"}); suspending the member`,
+      );
+      await rt.store().suspendCredentials([
+        { orgId: event.orgId, credentialId: memberSuspensionId(event.address), reason, memberAddress: event.address, at: event.at },
+      ]);
+      return;
+    }
     await suspend(rt, "suspendOnExit", event.orgId, ids, reason, event.address, event.actor, event.at);
   };
+}
+
+/**
+ * Replaces the issuer's member-level suspension in `orgId`, if any, with
+ * per-credential suspensions of their live delegations except `keep`
+ * (call under the org lock). True when there was one.
+ */
+async function resolveMemberSuspension(rt: OrgRuntime, orgId: string, issuer: string, keep: string, actor: string, now: Date): Promise<boolean> {
+  const store = rt.store();
+  const marker = await store.credentialSuspension(orgId, memberSuspensionId(issuer));
+  if (!marker) return false;
+  const apps = await appsOf(rt, orgId);
+  const live = await guarded("credential read model", () => liveCredentialsOf(rt.deps.relationalDb, issuer, apps, now));
+  const others = live.map((row) => row.credentialId).filter((id) => id !== keep);
+  await suspend(rt, "unsuspendOrgCredential", orgId, others, "ADMIN", issuer, actor, now);
+  await store.unsuspendCredential(orgId, marker.credentialId);
+  return true;
 }
 
 /** The issuer's ACTIVE membership record, else their latest one. */
@@ -102,7 +152,8 @@ export const credentialResolvers: Area = (rt) => {
   rt.hooks.membershipEnded.push(suspendOnExit(rt));
   return {
     Query: {
-      orgCredentialStatus: async (_: unknown, args: { credentialId: string }) => {
+      orgCredentialStatus: async (_: unknown, args: { credentialId: string }, ctx: OrgContext) => {
+        rt.throttleRead(ctx);
         const row = await guarded("credential read model", () => credentialById(rt.deps.relationalDb, args.credentialId));
         return row ? statusOf(rt, row) : null;
       },
@@ -115,8 +166,7 @@ export const credentialResolvers: Area = (rt) => {
         const rows = await guarded("credential read model", () => credentialsForApps(rt.deps.relationalDb, apps, MAX_LISTED));
         const members = await store.members(args.orgId);
         const now = rt.now();
-        return Promise.all(
-          rows.map(async (row) => {
+        return mapLimited(rows, STATUS_CONCURRENCY, async (row) => {
             const member = issuerMember(members, row.issuer);
             return {
               credentialId: row.credentialId,
@@ -130,8 +180,7 @@ export const credentialResolvers: Area = (rt) => {
               revoked: row.revoked,
               status: await statusOf(rt, row),
             };
-          }),
-        );
+        });
       },
     },
     Mutation: {
@@ -154,6 +203,7 @@ export const credentialResolvers: Area = (rt) => {
           let memberAddress: string | null = null;
           if (args.credentialIds != null) {
             ids = [...new Set(args.credentialIds)];
+            if (ids.length > MAX_SUSPEND_IDS) throw badInput("credentialIds", `At most ${MAX_SUSPEND_IDS} credentials at once`);
             for (const id of ids) {
               const row = await guarded("credential read model", () => credentialById(rt.deps.relationalDb, id));
               if (!row || !apps.includes(row.appDid)) throw badInput("credentialIds", `${id} is not a delegation for an app of this organisation`);
@@ -163,8 +213,7 @@ export const credentialResolvers: Area = (rt) => {
             memberAddress = address;
             ids = (await guarded("credential read model", () => liveCredentialsOf(rt.deps.relationalDb, address, apps, now))).map((row) => row.credentialId);
           }
-          await suspend(rt, "suspendOrgCredentials", args.orgId, ids, "ADMIN", memberAddress, caller, now);
-          return ids;
+          return suspend(rt, "suspendOrgCredentials", args.orgId, ids, "ADMIN", memberAddress, caller, now);
         });
       },
       unsuspendOrgCredential: async (_: unknown, args: OrgArgs & { orgId: string; credentialId: string }, ctx: OrgContext) => {
@@ -174,9 +223,20 @@ export const credentialResolvers: Area = (rt) => {
           const now = rt.now();
           await requireOrg(store, args.orgId);
           await requireRole(store, args.orgId, caller, "ADMIN");
+          // A member-level suspension (an exit whose delegations could not be listed)
+          // becomes per-credential rows first, so only this credential is lifted.
+          const row = await guarded("credential read model", () => credentialById(rt.deps.relationalDb, args.credentialId));
+          const resolved = row ? await resolveMemberSuspension(rt, args.orgId, row.issuer, args.credentialId, caller, now) : false;
           const suspension = await store.credentialSuspension(args.orgId, args.credentialId);
-          if (!suspension || !(await store.unsuspendCredential(args.orgId, args.credentialId))) throw notFound("Suspension");
-          // A document that never recorded the suspension (an older failed mirror) has nothing to lift.
+          if (!suspension) {
+            if (resolved) {
+              await rt.record({ orgId: args.orgId, actor: caller, action: "unsuspendOrgCredential", at: now, details: { credentialId: args.credentialId } });
+              return true;
+            }
+            throw notFound("Suspension");
+          }
+          if (!(await store.unsuspendCredential(args.orgId, args.credentialId))) throw notFound("Suspension");
+          // A document that never recorded the suspension (an exit whose mirror failed) has nothing to lift.
           if (await documentLists(rt, args.orgId, args.credentialId)) {
             await writeDocument(rt, "unsuspendOrgCredential", args.orgId, [orgActions.unsuspendCredential({ credentialId: args.credentialId })], () =>
               store.suspendCredentials([suspension]),

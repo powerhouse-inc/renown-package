@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RenownOrganizationState } from "../../../document-models/renown-organization/index.js";
+import { sql } from "kysely";
+import { migrate } from "../store/migrations.js";
+import { ORGS_NAMESPACE } from "../store/types.js";
 import { ALICE, BOB, CAROL, DAVE, createOrg, failure, harnessResolvers, insertCredential, join, lower, openHarness, resetHarness, T0, type Harness, type TestResolvers } from "./harness.js";
 
 vi.mock("../../renown-auth/core/smart-wallet.js", () => ({
@@ -122,6 +125,78 @@ describe("credential status under organisation rules", () => {
       ["c-carol", "MEMBER", "ACTIVE", "SUSPENDED"],
       ["c-dave", null, null, "ISSUER_NOT_MEMBER"],
     ]);
+  });
+
+  it("keeps an exit suspension when the document cannot record it", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await setup(t);
+    const real = t.reactor.execute.getMockImplementation();
+    if (!real) throw new Error("no reactor implementation");
+    // removeOrgMember's own write succeeds; the suspension mirror fails.
+    t.reactor.execute.mockImplementationOnce(real).mockImplementationOnce(() => Promise.reject(new Error("reactor down")));
+    await t.mutate("removeOrgMember", { orgId: id, address: BOB.address }, ALICE);
+    expect(await status(t, "c-bob")).toMatchObject({ counts: false, reason: "SUSPENDED" });
+    expect(t.reactor.state<RenownOrganizationState>(id).suspendedCredentialIds).toEqual([]);
+    await join(t, id, BOB, "PUBLISHER");
+    await t.mutate("setOrgMemberAppScope", { orgId: id, address: BOB.address, appScope: { all: true, appDids: [] } }, ALICE);
+    expect(await status(t, "c-bob")).toMatchObject({ counts: false, reason: "SUSPENDED" });
+    // The document never listed it: unsuspending lifts the store row only.
+    expect(await t.mutate("unsuspendOrgCredential", { orgId: id, credentialId: "c-bob" }, ALICE)).toBe(true);
+    expect(await status(t, "c-bob")).toMatchObject({ counts: true });
+  });
+
+  it("suspends the whole member when an exit cannot list their delegations, until an admin unsuspends one", async () => {
+    let credentialsDown = false;
+    const t = harnessResolvers(h, {
+      relationalDb: {
+        queryNamespace: (ns: string) => {
+          if (credentialsDown && ns !== ORGS_NAMESPACE) throw new Error("read model down");
+          return h.relationalDb.queryNamespace(ns);
+        },
+        createNamespace: (ns: string) => h.relationalDb.createNamespace(ns),
+      } as never,
+    });
+    const { id } = await setup(t);
+    await insertCredential(h, { credentialId: "c-bob-2", issuer: lower(BOB), appDid: APP });
+    credentialsDown = true;
+    await t.mutate("removeOrgMember", { orgId: id, address: BOB.address }, ALICE);
+    credentialsDown = false;
+    expect(await t.store.suspendedCredentialIds(id)).toEqual([`member:${lower(BOB)}`]);
+    await join(t, id, BOB, "PUBLISHER");
+    await t.mutate("setOrgMemberAppScope", { orgId: id, address: BOB.address, appScope: { all: true, appDids: [] } }, ALICE);
+    expect(await status(t, "c-bob")).toMatchObject({ counts: false, reason: "SUSPENDED" });
+    expect(await status(t, "c-bob-2")).toMatchObject({ counts: false, reason: "SUSPENDED" });
+    // Lifting one credential turns the member suspension into per-credential rows.
+    expect(await t.mutate("unsuspendOrgCredential", { orgId: id, credentialId: "c-bob" }, ALICE)).toBe(true);
+    expect(await status(t, "c-bob")).toMatchObject({ counts: true, reason: null });
+    expect(await status(t, "c-bob-2")).toMatchObject({ counts: false, reason: "SUSPENDED" });
+    expect(await t.store.suspendedCredentialIds(id)).toEqual(["c-bob-2"]);
+    expect(t.reactor.state<RenownOrganizationState>(id).suspendedCredentialIds).toEqual(["c-bob-2"]);
+  });
+
+  it("fails closed once the app is an org app, even when a later table is missing", async () => {
+    const { t } = await setup();
+    await sql`drop table ${sql.id(ORGS_NAMESPACE, "org_credential_suspensions")}`.execute(h.root);
+    try {
+      expect((await failure(status(t, "c-bob"))).code).toBe("SERVICE_UNAVAILABLE");
+      expect(await status(t, "c-person")).toMatchObject({ counts: true });
+    } finally {
+      await migrate(h.root.withSchema(ORGS_NAMESPACE));
+    }
+  });
+
+  it("caps credentialIds and returns only newly suspended ids", async () => {
+    const { t, id } = await setup();
+    const many = Array.from({ length: 101 }, (_, i) => `c-${i}`);
+    expect(await failure(t.mutate("suspendOrgCredentials", { orgId: id, credentialIds: many }, ALICE))).toMatchObject({ code: "BAD_USER_INPUT", field: "credentialIds" });
+    expect(await t.mutate("suspendOrgCredentials", { orgId: id, credentialIds: ["c-bob"] }, ALICE)).toEqual(["c-bob"]);
+    expect(await t.mutate("suspendOrgCredentials", { orgId: id, credentialIds: ["c-bob", "c-carol"] }, ALICE)).toEqual(["c-carol"]);
+  });
+
+  it("throttles anonymous status reads", async () => {
+    const { t } = await setup();
+    for (let i = 0; i < 60; i++) await status(t, "nope");
+    expect((await failure(status(t, "nope"))).code).toBe("RATE_LIMITED");
   });
 
   it("rolls the store back when the document cannot record a suspension", async () => {

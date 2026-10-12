@@ -291,6 +291,16 @@ export interface OrgAppRecord {
   addedAt: Date;
 }
 
+/**
+ * The credential_id of a member-level suspension: written when a member's
+ * exit could not list their delegations, it suspends every delegation the
+ * address issued for the organisation's apps until an admin unsuspends one
+ * of them (which turns it into per-credential rows).
+ */
+export function memberSuspensionId(address: string): string {
+  return `member:${address.toLowerCase()}`;
+}
+
 export interface SuspensionRecord {
   orgId: string;
   credentialId: string;
