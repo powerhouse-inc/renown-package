@@ -1,6 +1,6 @@
 import { hashTypedData } from "viem";
 import { describe, expect, it } from "vitest";
-import { canonicalJson, ORG_ROLES, orgMessage, parseOrgRole, RELEASE_DOMAIN, RELEASE_TYPES, releaseTypedData, roleAtLeast } from "../orgs.js";
+import { canonicalJson, fetchOrgMembership, hasOrgRole, ORG_ROLES, ORG_WEBHOOK_SIGNATURE_HEADER, orgMessage, orgsFromClaims, parseOrgRole, verifyWebhookSignature, RELEASE_DOMAIN, RELEASE_TYPES, releaseTypedData, roleAtLeast } from "../orgs.js";
 
 const TS = "2026-10-12T12:00:00.000Z";
 
@@ -75,5 +75,79 @@ describe("release attestations", () => {
     });
     expect(typed.primaryType).toBe("ReleaseAttestation");
     expect(hashTypedData(typed)).toBe("0x43728eb03c4cceb9ea1f9150324df1eef8628987665e83977e7cfe4d0588ebc4");
+  });
+});
+
+const CLAIMS = {
+  sub: "did:pkh:eip155:1:0xAbC0000000000000000000000000000000000001",
+  orgs: [
+    { id: "o1", did: "did:web:www.renown.id:org:o1", handle: "acme", name: "Acme", role: "PUBLISHER", teams: ["core"], verifiedDomains: ["acme.example"] },
+    { id: "o2", did: "did:web:www.renown.id:org:o2", handle: "beta", name: "Beta", role: "owner", teams: [], verifiedDomains: [] },
+    { id: "junk" },
+    "nope",
+    null,
+  ],
+};
+
+describe("OIDC orgs claim helpers", () => {
+  it("reads well-formed entries and checks role thresholds by id or handle", () => {
+    expect(orgsFromClaims(CLAIMS).map((o) => [o.id, o.role])).toEqual([["o1", "PUBLISHER"], ["o2", "OWNER"]]);
+    for (const bad of [{}, null, undefined, "x", 3, { orgs: "x" }, { orgs: {} }]) expect(orgsFromClaims(bad)).toEqual([]);
+    expect(hasOrgRole(CLAIMS, "o1", "PUBLISHER")).toBe(true);
+    expect(hasOrgRole(CLAIMS, "ACME", "admin")).toBe(false);
+    expect(hasOrgRole(CLAIMS, "ACME", "member")).toBe(true);
+    expect(hasOrgRole(CLAIMS, "beta", "ADMIN")).toBe(true);
+    expect(hasOrgRole(CLAIMS, "gamma", "MEMBER")).toBe(false);
+    expect(hasOrgRole(null, "o1", "MEMBER")).toBe(false);
+  });
+});
+
+describe("verifyWebhookSignature (receivers pin this vector)", () => {
+  const body = '{"id":"e1","type":"ping","orgId":"o1","createdAt":"2026-10-12T12:00:00.000Z","data":{}}';
+  const sig = "d75d85f23b7a86faf73cdd020c6fa4436f53a1b646e17bc80d97e2299b4f4d17";
+  const header = `t=1791806400,v1=${sig}`;
+  const now = 1791806400 * 1000;
+
+  it("accepts the vector and any of several v1 values", async () => {
+    expect(ORG_WEBHOOK_SIGNATURE_HEADER).toBe("Renown-Signature");
+    expect(await verifyWebhookSignature("whsec-test", header, body, 300, now)).toBe(true);
+    expect(await verifyWebhookSignature("whsec-test", `t=1791806400,v1=${"0".repeat(64)},v1=${sig}`, body, 300, now)).toBe(true);
+    expect(await verifyWebhookSignature("whsec-test", header, body, 300, now + 300_000)).toBe(true);
+  });
+
+  it("rejects a changed body, wrong secret, stale or future timestamp and malformed headers", async () => {
+    expect(await verifyWebhookSignature("whsec-test", header, body.replace("ping", "pong"), 300, now)).toBe(false);
+    expect(await verifyWebhookSignature("other", header, body, 300, now)).toBe(false);
+    expect(await verifyWebhookSignature("whsec-test", header, body, 300, now + 301_000)).toBe(false);
+    expect(await verifyWebhookSignature("whsec-test", header, body, 300, now - 301_000)).toBe(false);
+    for (const bad of [null, undefined, "", "v1=abc", "t=abc,v1=00", "t=1791806400", `t=1791806400,v1=${sig.slice(2)}`, `t=1791806400,v1=${sig.toUpperCase()}`, `t=-1,v1=${sig}`]) {
+      expect(await verifyWebhookSignature("whsec-test", bad, body, 300, now)).toBe(false);
+    }
+  });
+});
+
+describe("fetchOrgMembership", () => {
+  const URL = "https://sb.example/graphql/renown-orgs";
+  const seen: { url: string; body: unknown }[] = [];
+  const reply = (payload: unknown, status = 200) =>
+    ((url: string, init?: RequestInit) => {
+      seen.push({ url, body: JSON.parse(typeof init?.body === "string" ? init.body : "null") as unknown });
+      return Promise.resolve(new Response(JSON.stringify(payload), { status }));
+    }) as unknown as typeof fetch;
+  const membership = { orgId: "o1", address: "0xabc", role: "PUBLISHER", status: "ACTIVE", appScope: { all: false, appDids: [] }, effectiveScope: { all: false, appDids: ["did:key:z1"] }, teams: ["core"] };
+
+  it("returns the membership or null for a non-member; failures throw (callers fail closed)", async () => {
+    expect(await fetchOrgMembership(URL, "o1", "0xABC", { fetch: reply({ data: { orgMembership: membership } }) })).toEqual(membership);
+    expect(seen[0]).toMatchObject({ url: URL, body: { variables: { orgId: "o1", address: "0xABC" } } });
+    expect(await fetchOrgMembership(URL, "o1", "0xabc", { fetch: reply({ data: { orgMembership: null } }) })).toBeNull();
+    expect(await fetchOrgMembership(URL, "o1", "0xabc", { fetch: reply({ data: {} }) })).toBeNull();
+    await expect(fetchOrgMembership(URL, "o1", "0xabc", { fetch: reply({ errors: [{ message: "boom" }] }) })).rejects.toThrow("boom");
+    await expect(fetchOrgMembership(URL, "o1", "0xabc", { fetch: reply({}, 503) })).rejects.toThrow("503");
+  });
+
+  it("times out", async () => {
+    const hang = ((_u: string, init?: RequestInit) =>
+      new Promise((_r, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))))) as unknown as typeof fetch;
+    await expect(fetchOrgMembership(URL, "o1", "0xabc", { fetch: hang, timeoutMs: 20 })).rejects.toThrow("aborted");
   });
 });
