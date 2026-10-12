@@ -277,7 +277,7 @@ export interface NotificationRecord {
   readAt: Date | null;
 }
 
-export type DeliveryStatus = "PENDING" | "DELIVERED" | "FAILED";
+export type DeliveryStatus = "PENDING" | "PAUSED" | "DELIVERED" | "FAILED";
 
 export interface OrgWebhooksTable {
   id: string;
@@ -802,8 +802,16 @@ export interface OrgStore {
   reports(status?: ReportStatus): Promise<ReportRecord[]>;
   /** Reports filed by `reporter` at or after `since`. */
   countReportsSince(reporter: string, since: Date): Promise<number>;
-  /** Resolves an OPEN report (compare-and-set); undefined when it is not OPEN or unknown. */
-  resolveReport(id: string, resolution: ReportResolution): Promise<ReportRecord | undefined>;
-  /** Puts a RESOLVED report back to OPEN (compensation for a resolution that could not be applied). */
-  reopenReport(id: string): Promise<void>;
+  /**
+   * Resolves a report (compare-and-set): an OPEN one, or with
+   * `expectedResolution` one RESOLVED that way (RESTORE after TAKE_DOWN);
+   * undefined when it is not in that state or unknown.
+   */
+  resolveReport(id: string, resolution: ReportResolution, expectedResolution?: string): Promise<ReportRecord | undefined>;
+  /** Puts back a report's status and resolution fields (compensation for a resolution that could not be applied). */
+  restoreReport(previous: ReportRecord): Promise<void>;
+  /** PENDING deliveries of the organisation become PAUSED; returns how many. */
+  pauseDeliveries(orgId: string): Promise<number>;
+  /** PAUSED deliveries of the organisation become PENDING, due at `now`; returns how many. */
+  resumeDeliveries(orgId: string, now: Date): Promise<number>;
 }

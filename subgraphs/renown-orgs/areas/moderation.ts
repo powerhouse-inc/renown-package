@@ -6,7 +6,7 @@ import { badInput, forbidden, notFound, rateLimited, unavailable } from "../core
 import { orgHandleProblem, RELEASED_REASON } from "../core/handles.js";
 import { iso, isoOrNull, orgSummaries } from "../output.js";
 import type { Area, OrgRuntime } from "../runtime.js";
-import type { OrgRecord, OrgStore, ReportRecord, ReportStatus, ReservedHandleRecord } from "../store/types.js";
+import type { OrgRecord, OrgStore, ReportRecord, ReportResolution, ReportStatus, ReservedHandleRecord } from "../store/types.js";
 import { writeDocument } from "./members.js";
 
 export const MAX_REPORTS_PER_DAY = 5;
@@ -20,8 +20,12 @@ const REASONS: ReadonlySet<string> = new Set(["IMPERSONATION", "HANDLE_DISPUTE",
 const RESOLUTIONS = ["DISMISS", "TAKE_DOWN", "RELEASE_HANDLE", "RESTORE"] as const;
 type Resolution = (typeof RESOLUTIONS)[number];
 
-/** Detail keys an export never carries, at any depth (the audit itself should hold none). */
-const SECRET_KEY_RE = /secret|signature|token|password|private/i;
+/**
+ * Detail keys an export never carries, at any depth (the audit itself should
+ * hold none); identifiers (`…Id`, `…Ids`, such as credentialId) stay.
+ */
+const SECRET_KEY_RE = /secret|signature|token|password|passphrase|private|key|credential|auth|hmac|jwt|cookie|session/i;
+const ID_KEY_RE = /Ids?$/;
 
 /** FORBIDDEN for anyone outside RENOWN_PLATFORM_ADMINS, before anything about reports is looked up. */
 function requirePlatformAdmin(rt: OrgRuntime, caller: string): void {
@@ -39,7 +43,7 @@ function redact(value: unknown): unknown {
   if (value === null || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
-      .filter(([key]) => !SECRET_KEY_RE.test(key))
+      .filter(([key]) => ID_KEY_RE.test(key) || !SECRET_KEY_RE.test(key))
       .map(([key, inner]) => [key, redact(inner)]),
   );
 }
@@ -72,41 +76,56 @@ async function releasedName(rt: OrgRuntime, org: OrgRecord, now: Date): Promise<
   throw unavailable("No replacement handle is free");
 }
 
+/** What a resolution changed on the organisation: its org-audit action and org.updated data. */
 interface Applied {
-  /** Organisation fields changed (org.updated), empty for DISMISS. */
-  fields: string[];
-  details: Record<string, unknown>;
+  action: string;
+  data: Record<string, unknown>;
 }
 
 /**
- * Resolves the report and applies the resolution, store first (one
- * transaction), then the document; a document that cannot be written undoes
- * both and throws SERVICE_UNAVAILABLE. The caller holds org:<id>.
+ * Applies the resolution, store first (one transaction with the report's
+ * compare-and-set), then the document; a document that cannot be written
+ * undoes both and throws SERVICE_UNAVAILABLE. The caller holds org:<id>.
+ * Returns the resolved report and, unless DISMISS, what changed.
  */
-async function applyResolution(rt: OrgRuntime, report: ReportRecord, org: OrgRecord, resolution: Resolution, caller: string, note: string | null, now: Date): Promise<{ resolved: ReportRecord; applied: Applied }> {
+async function applyResolution(
+  rt: OrgRuntime,
+  report: ReportRecord,
+  org: OrgRecord | undefined,
+  resolution: Resolution,
+  expected: string | undefined,
+  resolved: ReportResolution,
+): Promise<{ report: ReportRecord; applied: Applied | null }> {
   const store = rt.store();
+  const now = resolved.resolvedAt;
   const resolve = async (tx: OrgStore) => {
-    const resolved = await tx.resolveReport(report.id, { resolution, resolvedBy: caller, resolvedAt: now, note });
-    if (!resolved) throw badInput("reportId", "The report is already resolved");
-    return resolved;
+    const done = await tx.resolveReport(report.id, resolved, expected);
+    if (!done) throw badInput("reportId", "The report is already resolved");
+    return done;
   };
 
-  if (resolution === "DISMISS") return { resolved: await resolve(store), applied: { fields: [], details: {} } };
+  if (resolution === "DISMISS") return { report: await resolve(store), applied: null };
+  if (!org) throw notFound("Organization");
 
   if (resolution === "TAKE_DOWN" || resolution === "RESTORE") {
     const takenDown = resolution === "TAKE_DOWN";
-    const resolved = await store.transaction(async (tx) => {
-      const done = await resolve(tx);
+    // Webhook deliveries wait while the organisation is down and resume when it is restored.
+    const done = await store.transaction(async (tx) => {
+      const result = await resolve(tx);
       await tx.updateOrganization(org.id, { takenDown }, now);
-      return done;
+      if (takenDown) await tx.pauseDeliveries(org.id);
+      else await tx.resumeDeliveries(org.id, now);
+      return result;
     });
     await writeDocument(rt, "resolveOrgReport", org.id, [orgActions.setTakenDown({ takenDown })], () =>
       store.transaction(async (tx) => {
         await tx.updateOrganization(org.id, { takenDown: org.takenDown }, org.updatedAt);
-        await tx.reopenReport(report.id);
+        if (takenDown) await tx.resumeDeliveries(org.id, now);
+        else await tx.pauseDeliveries(org.id);
+        await tx.restoreReport(report);
       }),
     );
-    return { resolved, applied: { fields: ["takenDown"], details: { takenDown } } };
+    return { report: done, applied: { action: takenDown ? "moderation.takenDown" : "moderation.restored", data: { fields: ["takenDown"], takenDown } } };
   }
 
   // RELEASE_HANDLE. Lock order org -> handle, as CHANGE_HANDLE.
@@ -116,22 +135,22 @@ async function applyResolution(rt: OrgRuntime, report: ReportRecord, org: OrgRec
       throw unavailable("The replacement handle was just taken; try again");
     }
     const previous: ReservedHandleRecord | undefined = await store.reservedHandle(org.handle, now);
-    const resolved = await store.transaction(async (tx) => {
-      const done = await resolve(tx);
+    const done = await store.transaction(async (tx) => {
+      const result = await resolve(tx);
       await tx.updateOrganization(org.id, { handle }, now);
       // Nobody's reservation (orgId null): only the verified-domain exception may claim it.
       await tx.reserveHandle({ handle: org.handle, until: new Date(now.getTime() + RELEASED_HANDLE_DAYS * DAY_MS), reason: RELEASED_REASON, orgId: null });
-      return done;
+      return result;
     });
     await writeDocument(rt, "resolveOrgReport", org.id, [orgActions.setOrgHandle({ handle })], () =>
       store.transaction(async (tx) => {
         await tx.updateOrganization(org.id, { handle: org.handle }, org.updatedAt);
         if (previous) await tx.reserveHandle(previous);
         else await tx.deleteReservedHandle(org.handle);
-        await tx.reopenReport(report.id);
+        await tx.restoreReport(report);
       }),
     );
-    return { resolved, applied: { fields: ["handle"], details: { from: org.handle, to: handle } } };
+    return { report: done, applied: { action: "moderation.handleReleased", data: { fields: ["handle"], from: org.handle, to: handle } } };
   });
 }
 
@@ -193,18 +212,24 @@ export const moderationResolvers: Area = (rt) => {
           const store = rt.store();
           const now = rt.now();
           const report = await store.report(found.id);
-          if (report?.status !== "OPEN") throw badInput("reportId", "The report is already resolved");
+          if (!report) throw notFound("Report");
+          // An OPEN report takes any resolution; a taken-down organisation is restored on its TAKE_DOWN report.
+          let expected: string | undefined;
+          if (report.status !== "OPEN") {
+            if (resolution !== "RESTORE" || report.resolution !== "TAKE_DOWN") throw badInput("reportId", "The report is already resolved");
+            expected = "TAKE_DOWN";
+          }
           const org = await store.organization(report.orgId);
-          if (!org) throw notFound("Organization");
-          const { resolved, applied } = await applyResolution(rt, report, org, resolution, caller, note, now);
-          await rt.record({
-            orgId: org.id,
-            actor: caller,
-            action: "resolveOrgReport",
-            at: now,
-            details: { reportId: report.id, reason: report.reason, resolution, note, ...applied.details },
-            ...(applied.fields.length > 0 && { event: { type: "org.updated" as const, data: { fields: applied.fields, ...applied.details } } }),
+          const { report: resolved, applied } = await applyResolution(rt, report, org, resolution, expected, {
+            resolution,
+            resolvedBy: caller,
+            resolvedAt: now,
+            note,
           });
+          // The org audit gets only what changed; reason, note and reporter stay in the platform-only report.
+          if (org && applied) {
+            await rt.record({ orgId: org.id, actor: caller, action: applied.action, at: now, details: applied.data, event: { type: "org.updated", data: applied.data } });
+          }
           const [output] = await reportOutputs(rt, [resolved]);
           return output;
         });

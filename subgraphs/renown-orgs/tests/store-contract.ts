@@ -618,8 +618,33 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect(await store.resolveReport("nope", { resolution: "DISMISS", resolvedBy: BOB, resolvedAt: at(4), note: null })).toBeUndefined();
       expect((await store.reports("RESOLVED")).map((r) => r.id)).toEqual(["r1"]);
       expect((await store.reports()).map((r) => r.id)).toEqual(["r3", "r2", "r1"]);
-      await store.reopenReport("r1");
+      // A RESOLVED report moves on only from the expected resolution.
+      const dismissed = await store.report("r1");
+      expect(await store.resolveReport("r1", { resolution: "RESTORE", resolvedBy: BOB, resolvedAt: at(4), note: null }, "TAKE_DOWN")).toBeUndefined();
+      expect(await store.resolveReport("r2", { resolution: "RESTORE", resolvedBy: BOB, resolvedAt: at(4), note: null }, "TAKE_DOWN")).toBeUndefined();
+      await store.resolveReport("r2", { resolution: "TAKE_DOWN", resolvedBy: BOB, resolvedAt: at(4), note: null });
+      expect(await store.resolveReport("r2", { resolution: "RESTORE", resolvedBy: ALICE, resolvedAt: at(5), note: "fine" }, "TAKE_DOWN")).toMatchObject({ resolution: "RESTORE", resolvedBy: ALICE });
+      if (dismissed) await store.restoreReport({ ...dismissed, status: "OPEN", resolution: null, resolvedBy: null, resolvedAt: null, note: null });
       expect(await store.report("r1")).toMatchObject({ status: "OPEN", resolution: null, resolvedBy: null, resolvedAt: null, note: null });
+    });
+
+    it("pauses an organisation's pending deliveries and resumes them due at once, keeping paused ones through pruning", async () => {
+      const { store } = await open();
+      for (const [id, orgId] of [["w1", "o1"], ["w2", "o2"]]) {
+        await store.insertWebhook({ id, orgId, url: "https://h.example/hook", events: ["org.updated"], secretSealed: "v1.x.y", enabled: true, consecutiveFailures: 0, createdAt: T0, updatedAt: T0 });
+      }
+      const delivery = (id: string, webhookId: string, orgId: string, status: "PENDING" | "DELIVERED") => ({
+        id, webhookId, orgId, eventId: `e-${id}`, eventType: "org.updated", body: "{}", status, attempts: 1,
+        responseStatus: null, lastError: null, createdAt: T0, nextAttemptAt: status === "PENDING" ? at(30) : null, deliveredAt: null,
+      });
+      await store.insertDeliveries([delivery("d1", "w1", "o1", "PENDING"), delivery("d2", "w1", "o1", "DELIVERED"), delivery("d3", "w2", "o2", "PENDING")]);
+      expect(await store.pauseDeliveries("o1")).toBe(1);
+      expect(await store.dueDeliveries(at(60), { limit: 10, perWebhook: 5, perOrg: 20 })).toEqual([expect.objectContaining({ id: "d3" })]);
+      await store.pruneDeliveries("w1", 0);
+      expect((await store.deliveries("w1", 10)).map((d) => [d.id, d.status])).toEqual([["d1", "PAUSED"]]);
+      expect(await store.resumeDeliveries("o1", at(1))).toBe(1);
+      expect(await store.resumeDeliveries("o1", at(1))).toBe(0);
+      expect((await store.dueDeliveries(at(1), { limit: 10, perWebhook: 5, perOrg: 20 })).map((d) => d.id)).toEqual(["d1"]);
     });
   });
 }

@@ -1486,7 +1486,8 @@ export class KyselyOrgStore implements OrgStore {
     await this.db
       .deleteFrom("org_webhook_deliveries")
       .where("webhook_id", "=", webhookId)
-      .where("status", "<>", "PENDING")
+      // PENDING and PAUSED deliveries are still to be sent.
+      .where("status", "not in", ["PENDING", "PAUSED"])
       .where("id", "not in", keepIds)
       .execute();
   }
@@ -1550,8 +1551,8 @@ export class KyselyOrgStore implements OrgStore {
     return Number(row.n);
   }
 
-  async resolveReport(id: string, resolution: ReportResolution): Promise<ReportRecord | undefined> {
-    const row = await this.db
+  async resolveReport(id: string, resolution: ReportResolution, expectedResolution?: string): Promise<ReportRecord | undefined> {
+    let query = this.db
       .updateTable("org_reports")
       .set({
         status: "RESOLVED",
@@ -1560,18 +1561,46 @@ export class KyselyOrgStore implements OrgStore {
         resolved_at: resolution.resolvedAt,
         note: resolution.note,
       })
-      .where("id", "=", id)
-      .where("status", "=", "OPEN")
-      .returningAll()
-      .executeTakeFirst();
+      .where("id", "=", id);
+    query =
+      expectedResolution === undefined
+        ? query.where("status", "=", "OPEN")
+        : query.where("status", "=", "RESOLVED").where("resolution", "=", expectedResolution);
+    const row = await query.returningAll().executeTakeFirst();
     return row && toReport(row);
   }
 
-  async reopenReport(id: string): Promise<void> {
+  async restoreReport(previous: ReportRecord): Promise<void> {
     await this.db
       .updateTable("org_reports")
-      .set({ status: "OPEN", resolution: null, resolved_by: null, resolved_at: null, note: null })
-      .where("id", "=", id)
+      .set({
+        status: previous.status,
+        resolution: previous.resolution,
+        resolved_by: previous.resolvedBy,
+        resolved_at: previous.resolvedAt,
+        note: previous.note,
+      })
+      .where("id", "=", previous.id)
       .execute();
+  }
+
+  async pauseDeliveries(orgId: string): Promise<number> {
+    const result = await this.db
+      .updateTable("org_webhook_deliveries")
+      .set({ status: "PAUSED" })
+      .where("org_id", "=", orgId)
+      .where("status", "=", "PENDING")
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows);
+  }
+
+  async resumeDeliveries(orgId: string, now: Date): Promise<number> {
+    const result = await this.db
+      .updateTable("org_webhook_deliveries")
+      .set({ status: "PENDING", next_attempt_at: now })
+      .where("org_id", "=", orgId)
+      .where("status", "=", "PAUSED")
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows);
   }
 }

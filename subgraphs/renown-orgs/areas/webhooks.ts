@@ -74,8 +74,8 @@ function requireKey(rt: OrgRuntime): Uint8Array {
 
 /**
  * Queues a delivery for every enabled endpoint of the organisation subscribed
- * to the activity's event, unless the organisation is gone or taken down. A failure is logged by the activity recorder; it
- * never fails the mutation.
+ * to the activity's event, unless the organisation is gone or taken down. A
+ * failure is logged by the activity recorder; it never fails the mutation.
  */
 export function webhookSink(rt: OrgRuntime): ActivitySink {
   return async (activity) => {

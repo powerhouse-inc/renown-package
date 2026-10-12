@@ -50,6 +50,8 @@ export const NOTIFICATIONS_SDL = `
 export const WEBHOOKS_SDL = `
   enum OrgWebhookDeliveryStatus {
     PENDING
+    "Held while the organisation is taken down; due again once it is restored"
+    PAUSED
     DELIVERED
     FAILED
   }
@@ -168,7 +170,7 @@ export const MODERATION_SDL = `
     TAKE_DOWN
     "Renames the organisation to org-<first 8 of id>; the old handle is reserved 30 days for the org verified for <handle>.<tld>"
     RELEASE_HANDLE
-    "takenDown=false"
+    "takenDown=false; paused webhook deliveries resume. Also on a report resolved TAKE_DOWN"
     RESTORE
   }
 

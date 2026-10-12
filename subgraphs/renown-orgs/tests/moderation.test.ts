@@ -8,6 +8,7 @@ import { sweepJobs } from "../jobs.js";
 import type { OrganizationOutput } from "../output.js";
 import type { ProposalOutput } from "../areas/proposals.js";
 import { AUDIT_EXPORT_MAX, AUDIT_EXPORTS_PER_HOUR } from "../areas/moderation.js";
+import { registrableDomainNames } from "../core/handles.js";
 import { ALICE, BOB, CAROL, DAVE, EVE, createOrg, failure, harnessResolvers, join, lower, OIDC_NS, openHarness, resetHarness, T0, type Harness, type TestResolvers } from "./harness.js";
 
 vi.mock("../../renown-auth/core/smart-wallet.js", () => ({
@@ -91,17 +92,35 @@ describe("reports", () => {
     expect(await t.query("orgMembership", { orgId: id, address: ALICE.address })).toBeNull();
     expect(t.reactor.state<RenownOrganizationState>(id).takenDown).toBe(true);
     expect(await failure(resolve(t, first.id, "DISMISS"))).toMatchObject({ field: "reportId" });
-    await report(t, id, CAROL);
-    const [second] = await t.query<Report[]>("orgReports", { status: "OPEN" }, EVE);
-    await resolve(t, second.id, "RESTORE");
+    expect(await failure(resolve(t, first.id, "RELEASE_HANDLE"))).toMatchObject({ field: "reportId" });
+    // Restored on the same report: no new report needs filing.
+    expect(await resolve(t, first.id, "RESTORE")).toMatchObject({ status: "RESOLVED", resolution: "RESTORE", note: "checked" });
+    expect(await failure(resolve(t, first.id, "RESTORE"))).toMatchObject({ field: "reportId" });
     expect((await t.query<OrganizationOutput | null>("organization", { id }))?.takenDown).toBe(false);
     expect(t.reactor.state<RenownOrganizationState>(id).takenDown).toBe(false);
-    expect(
-      (await t.store.auditPage(id, 5)).filter((e) => e.action === "resolveOrgReport").map((e) => [e.actor, e.details.resolution]),
-    ).toEqual([
-      [lower(EVE), "RESTORE"],
-      [lower(EVE), "TAKE_DOWN"],
+    // The org audit says what happened, never the reason, the note or the reporter.
+    const audit = (await t.store.auditPage(id, 5)).filter((e) => e.action.startsWith("moderation."));
+    expect(audit.map((e) => [e.actor, e.action, e.details])).toEqual([
+      [lower(EVE), "moderation.restored", { fields: ["takenDown"], takenDown: false }],
+      [lower(EVE), "moderation.takenDown", { fields: ["takenDown"], takenDown: true }],
     ]);
+    expect(JSON.stringify(await t.store.auditPage(id, 50))).not.toMatch(/checked|IMPERSONATION|fake|resolveOrgReport/);
+  });
+
+  it("dismisses without touching the organisation's audit, also for a report whose organisation is gone", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme");
+    await report(t, id);
+    const [r] = await t.query<Report[]>("orgReports", {}, EVE);
+    expect(await resolve(t, r.id, "DISMISS")).toMatchObject({ status: "RESOLVED", resolution: "DISMISS" });
+    expect((await t.store.auditPage(id, 50)).map((e) => e.action)).toEqual(["createOrganization"]);
+    await t.store.insertReport({
+      id: "orphan", orgId: "gone", reporter: lower(BOB), reason: "SPAM", details: null, status: "OPEN",
+      resolution: null, resolvedBy: null, resolvedAt: null, note: null, createdAt: T0,
+    });
+    expect((await t.query<Report[]>("orgReports", { status: "OPEN" }, EVE))[0]).toMatchObject({ id: "orphan", org: null });
+    expect((await failure(resolve(t, "orphan", "TAKE_DOWN"))).code).toBe("NOT_FOUND");
+    expect(await resolve(t, "orphan", "DISMISS")).toMatchObject({ status: "RESOLVED", resolution: "DISMISS" });
   });
 
   it("keeps the store unchanged when the document cannot be written", async () => {
@@ -120,7 +139,7 @@ describe("reports", () => {
     expect(await t.store.report(r.id)).toMatchObject({ status: "OPEN" });
   });
 
-  it("disables a taken-down organisation's OIDC clients and stops its webhook deliveries", async () => {
+  it("disables a taken-down organisation's OIDC clients and pauses its webhook deliveries until it is restored", async () => {
     const r = receiver();
     const t = harnessResolvers(h, { net: r.net, webhookKey: () => KEY });
     const sweep = () => createSweeper({ jobs: sweepJobs(t.rt), store: () => t.store, now: () => t.clock.now }).tick();
@@ -143,16 +162,22 @@ describe("reports", () => {
     expect((await directory.getClient(clientId))?.status).toBe("DISABLED");
     await sweep();
     expect(r.requests).toHaveLength(0);
-    // The queued invite is failed; the takedown's own org.updated was never queued.
-    expect((await t.store.deliveries(webhook.id, 10)).map((d) => [d.eventType, d.status])).toEqual([["member.invited", "FAILED"]]);
+    // The queued invite waits; the takedown's own org.updated was never queued.
+    expect((await t.store.deliveries(webhook.id, 10)).map((d) => [d.eventType, d.status, d.attempts])).toEqual([["member.invited", "PAUSED", 0]]);
+    // One queued in a race with the takedown is paused when its turn comes, not sent.
+    await t.store.insertDeliveries([
+      { id: "late", webhookId: webhook.id, orgId: id, eventId: "e-late", eventType: "member.invited", body: JSON.stringify({ type: "member.invited" }), status: "PENDING", attempts: 0, responseStatus: null, lastError: null, createdAt: t.clock.now, nextAttemptAt: t.clock.now, deliveredAt: null },
+    ]);
+    t.tick(HOUR);
+    await sweep();
+    expect(r.requests).toHaveLength(0);
+    expect((await t.store.deliveries(webhook.id, 10)).map((d) => d.status)).toEqual(["PAUSED", "PAUSED"]);
 
-    await report(t, id, DAVE);
-    const [second] = await t.query<Report[]>("orgReports", { status: "OPEN" }, EVE);
-    await resolve(t, second.id, "RESTORE");
+    await resolve(t, first.id, "RESTORE");
     expect((await directory.getClient(clientId))?.status).toBe("ACTIVE");
     t.tick(HOUR);
     await sweep();
-    expect(r.requests.map((request) => (JSON.parse(request.body ?? "{}") as { type: string }).type)).toEqual(["org.updated"]);
+    expect(r.requests.map((request) => (JSON.parse(request.body ?? "{}") as { type: string }).type).sort()).toEqual(["member.invited", "member.invited", "org.updated"]);
   });
 
   it("releases a disputed handle: the org is renamed and only the org verified for <handle>.<tld> may take it", async () => {
@@ -168,7 +193,7 @@ describe("reports", () => {
     expect(renamed?.handle).toBe(`org-${squatter.id.slice(0, 8).toLowerCase().replace(/[^a-z0-9]/g, "0")}`);
     expect(t.reactor.state<RenownOrganizationState>(squatter.id).handle).toBe(renamed?.handle);
     expect(await t.store.reservedHandle("acme", t.clock.now)).toMatchObject({ reason: "RELEASED", orgId: null });
-    expect((await t.store.auditPage(squatter.id, 1))[0]).toMatchObject({ action: "resolveOrgReport", details: { resolution: "RELEASE_HANDLE", from: "acme", to: renamed?.handle } });
+    expect((await t.store.auditPage(squatter.id, 1))[0]).toMatchObject({ actor: lower(EVE), action: "moderation.handleReleased", details: { fields: ["handle"], from: "acme", to: renamed?.handle } });
     expect((await t.query<{ available: boolean }>("orgHandleAvailability", { handle: "acme" }, ALICE)).available).toBe(false);
     // The org that lost it cannot change back.
     expect(
@@ -177,12 +202,21 @@ describe("reports", () => {
     expect((await failure(t.mutate("proposeOrgChange", { orgId: other.id, kind: "CHANGE_HANDLE", payload: { handle: "acme" } }, CAROL))).code).toBe("HANDLE_RESERVED");
     await t.store.db
       .insertInto("org_domains")
-      .values({ id: "d0", org_id: other.id, domain: "acme.example", token: "t", status: "PENDING", verified_at: null, last_checked_at: null, failures: 0, created_at: T0 })
+      .values({ id: "d0", org_id: other.id, domain: "acme.com", token: "t", status: "PENDING", verified_at: null, last_checked_at: null, failures: 0, created_at: T0 })
       .execute();
     expect((await failure(t.mutate("proposeOrgChange", { orgId: other.id, kind: "CHANGE_HANDLE", payload: { handle: "acme" } }, CAROL))).code).toBe("HANDLE_RESERVED");
+    // A verified name that is not acme's own registrable domain does not count, also for the squatter.
+    for (const [n, orgId, domain] of [[1, other.id, "acme.their-domain.com"], [2, other.id, "sub.acme.net"], [3, other.id, "acme-corp.com"], [4, squatter.id, "acme.squatter.org"]] as const) {
+      await t.store.db
+        .insertInto("org_domains")
+        .values({ id: `x${n}`, org_id: orgId, domain, token: "t", status: "VERIFIED", verified_at: T0, last_checked_at: T0, failures: 0, created_at: T0 })
+        .execute();
+    }
+    expect((await failure(t.mutate("proposeOrgChange", { orgId: other.id, kind: "CHANGE_HANDLE", payload: { handle: "acme" } }, CAROL))).code).toBe("HANDLE_RESERVED");
+    expect((await failure(t.mutate("proposeOrgChange", { orgId: squatter.id, kind: "CHANGE_HANDLE", payload: { handle: "acme" } }, ALICE))).code).toBe("HANDLE_RESERVED");
     await t.store.db
       .insertInto("org_domains")
-      .values({ id: "d1", org_id: owner.id, domain: "acme.example", token: "t", status: "VERIFIED", verified_at: T0, last_checked_at: T0, failures: 0, created_at: T0 })
+      .values({ id: "d1", org_id: owner.id, domain: "acme.co.uk", token: "t", status: "VERIFIED", verified_at: T0, last_checked_at: T0, failures: 0, created_at: T0 })
       .execute();
     const p = await t.mutate<ProposalOutput>("proposeOrgChange", { orgId: owner.id, kind: "CHANGE_HANDLE", payload: { handle: "acme" } }, BOB);
     t.tick(HOUR);
@@ -198,6 +232,20 @@ describe("reports", () => {
     await resolve(t, r.id, "RELEASE_HANDLE");
     t.tick(30 * 24 * HOUR + 1);
     expect((await createOrg(t, CAROL, "acme")).handle).toBe("acme");
+  });
+});
+
+describe("registrable domain names", () => {
+  it.each([
+    ["acme.com", true],
+    ["acme.co.uk", true],
+    ["acme.their-domain.com", false],
+    ["sub.acme.com", false],
+    ["acme-corp.com", false],
+    ["acme.github.io", false],
+    ["acme", false],
+  ])("%s names acme: %s", (domain, names) => {
+    expect(registrableDomainNames(domain, "acme")).toBe(names);
   });
 });
 
@@ -222,13 +270,26 @@ describe("orgAuditExport", () => {
       at: new Date(T0.getTime() - (i + 1) * 1000),
       actor: "system",
       action: "test",
-      details: JSON.stringify({ n: i, secret: "s", nested: { tokenHash: "x", signature: "y", kept: true } }),
+      details: JSON.stringify({
+        n: i,
+        secret: "s",
+        apiKey: "k",
+        api_key: "k",
+        Authorization: "Bearer x",
+        hmac: "h",
+        jwt: "j",
+        password: "p",
+        cookie: "c",
+        credential: "c",
+        credentialId: "cred-1",
+        nested: { tokenHash: "x", signature: "y", privateKey: "z", list: [{ authToken: "a", kept: 1 }], kept: true },
+      }),
     }));
     for (let i = 0; i < rows.length; i += 1000) await t.store.db.insertInto("org_audit").values(rows.slice(i, i + 1000)).execute();
     const exported = JSON.parse(await t.query<string>("orgAuditExport", { orgId: id }, ALICE)) as { action: string; details: Record<string, unknown> }[];
     expect(exported).toHaveLength(AUDIT_EXPORT_MAX);
     expect(exported[0].action).toBe("createOrganization");
-    expect(exported[1].details).toEqual({ n: 0, nested: { kept: true } });
+    expect(exported[1].details).toEqual({ n: 0, credentialId: "cred-1", nested: { list: [{ kept: 1 }], kept: true } });
     for (let i = 1; i < AUDIT_EXPORTS_PER_HOUR; i++) await t.query("orgAuditExport", { orgId: id }, ALICE);
     expect((await failure(t.query("orgAuditExport", { orgId: id }, ALICE))).code).toBe("RATE_LIMITED");
     t.tick(HOUR + 1);

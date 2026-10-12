@@ -175,5 +175,8 @@
     "react-dom": "^19",
     "zod": "^4"
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "dependencies": {
+    "tldts": "7.4.16"
+  }
 }

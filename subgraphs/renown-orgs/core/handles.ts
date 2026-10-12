@@ -1,3 +1,4 @@
+import { getDomain, getDomainWithoutSuffix } from "tldts";
 import type { GraphQLError } from "graphql";
 import { handleProblem, normalizeHandle } from "../../renown-auth/core/handle.js";
 import { findHandleOwner, type ReadModelDb } from "../../renown-auth/lookups.js";
@@ -44,13 +45,22 @@ export async function orgHandleProblem(
 }
 
 /**
+ * True when `domain` is exactly the registrable domain (eTLD+1, ICANN public
+ * suffixes only) `<handle>.<public suffix>`: acme.com and acme.co.uk name
+ * "acme"; sub.acme.com, acme.their-domain.com and acme.github.io do not.
+ */
+export function registrableDomainNames(domain: string, handle: string): boolean {
+  return getDomain(domain) === domain && getDomainWithoutSuffix(domain) === handle;
+}
+
+/**
  * A handle released after a dispute (spec §3.11) may go, while it is still
- * reserved, to an organization with a VERIFIED domain whose first label is
- * the handle (acme for acme.example).
+ * reserved, to an organization with a VERIFIED registrable domain
+ * `<handle>.<public suffix>` (domains are stored lowercase).
  */
 async function claimsReleased(store: OrgStore, reserved: ReservedHandleRecord, orgId: string | undefined): Promise<boolean> {
   if (reserved.reason !== RELEASED_REASON || orgId === undefined) return false;
-  return (await store.domains(orgId)).some((d) => d.status === "VERIFIED" && d.domain.toLowerCase().split(".")[0] === reserved.handle);
+  return (await store.domains(orgId)).some((d) => d.status === "VERIFIED" && registrableDomainNames(d.domain, reserved.handle));
 }
 
 export function handleError(problem: OrgHandleProblem, handle: string): GraphQLError {
