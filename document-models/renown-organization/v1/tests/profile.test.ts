@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  archiveOrg,
   initOrganization,
-  inviteMember,
   isOrgDomain,
   isOrgName,
   isOrgWebsite,
   isTeamSlug,
   reducer,
-  setMemberStatus,
   setMembersPublic,
   setOrgHandle,
   setOrgListed,
