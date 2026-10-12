@@ -1,4 +1,5 @@
 import type { IRelationalDb } from "@powerhousedao/reactor-browser";
+import { sql } from "kysely";
 import { RenownCredentialProcessor } from "../../../processors/renown-credential/index.js";
 import type { DB as RenownCredentialDB } from "../../../processors/renown-credential/schema.js";
 import type { ReadModelDb } from "../../renown-auth/lookups.js";
@@ -114,12 +115,20 @@ function credentials(db: ReadModelDb) {
   return RenownCredentialProcessor.query<RenownCredentialDB>("renown-credential", db).selectFrom("renown_credential");
 }
 
+/**
+ * The read model's issuance_date is a timestamp without time zone holding UTC
+ * wall time; read and compare it as UTC explicitly, so neither the database
+ * session's nor the node process's time zone shifts it.
+ */
+export function issuedAtUtc() {
+  return sql<Date>`(issuance_date at time zone 'UTC')`;
+}
+
 const CREDENTIAL_COLUMNS = [
   "credential_id",
   "document_id",
   "credential_subject_id",
   "issuer_ethereum_address",
-  "issuance_date",
   "expiration_date",
   "revoked",
 ] as const;
@@ -147,7 +156,7 @@ function toCredential(row: {
 /** A credential by VC id: a live copy first, then the oldest. */
 export async function credentialById(db: ReadModelDb, credentialId: string): Promise<CredentialRow | undefined> {
   const row = await credentials(db)
-    .select([...CREDENTIAL_COLUMNS])
+    .select([...CREDENTIAL_COLUMNS, issuedAtUtc().as("issuance_date")])
     .where("credential_id", "=", credentialId)
     .orderBy("revoked", "asc")
     .orderBy("created_at", "asc")
@@ -159,7 +168,7 @@ export async function credentialById(db: ReadModelDb, credentialId: string): Pro
 export async function credentialsForApps(db: ReadModelDb, appDids: readonly string[], limit: number): Promise<CredentialRow[]> {
   if (appDids.length === 0) return [];
   const rows = await credentials(db)
-    .select([...CREDENTIAL_COLUMNS])
+    .select([...CREDENTIAL_COLUMNS, issuedAtUtc().as("issuance_date")])
     .where("credential_subject_id", "in", [...appDids])
     .orderBy("issuance_date", "desc")
     .orderBy("credential_id", "desc")
@@ -178,12 +187,12 @@ export async function liveCredentialsOf(
 ): Promise<CredentialRow[]> {
   if (appDids.length === 0) return [];
   let query = credentials(db)
-    .select([...CREDENTIAL_COLUMNS])
+    .select([...CREDENTIAL_COLUMNS, issuedAtUtc().as("issuance_date")])
     .where((eb) => eb(eb.fn("LOWER", ["issuer_ethereum_address"]), "=", issuer.toLowerCase()))
     .where("credential_subject_id", "in", [...appDids])
     .where("revoked", "=", false)
     .where((eb) => eb.or([eb("expiration_date", "is", null), eb("expiration_date", ">", now)]));
-  if (issuedBy) query = query.where("issuance_date", "<=", issuedBy);
+  if (issuedBy) query = query.where(issuedAtUtc(), "<=", issuedBy);
   const rows = await query.orderBy("credential_id").execute();
   return rows.map(toCredential);
 }

@@ -3,6 +3,7 @@ import { RenownCredentialProcessor } from "../../processors/renown-credential/in
 import type { DB as RenownCredentialDB } from "../../processors/renown-credential/schema.js";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
 import type { OrgPolicy } from "../renown-orgs/core/org-policy.js";
+import { issuedAtUtc } from "../renown-orgs/store/foreign.js";
 import type { WorkloadDB } from "../renown-workload/store/types.js";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
@@ -27,7 +28,7 @@ export async function hasDelegation(
     db,
   )
     .selectFrom("renown_credential")
-    .select(["credential_id", "issuance_date"])
+    .select(["credential_id", issuedAtUtc().as("issued_at")])
     .where((eb) =>
       eb(eb.fn("LOWER", ["issuer_ethereum_address"]), "=", issuer),
     )
@@ -43,7 +44,7 @@ export async function hasDelegation(
   if (rows.length === 0) return false;
   if (!policy) return true;
   for (const row of rows) {
-    const issuedAt = new Date(row.issuance_date);
+    const issuedAt = new Date(row.issued_at);
     if ((await policy.credentialStatus({ credentialId: row.credential_id, appDid, issuer, issuedAt })).counts) return true;
   }
   return false;

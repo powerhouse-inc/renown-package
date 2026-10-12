@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RenownOrganizationState } from "../../../document-models/renown-organization/index.js";
 import { sql } from "kysely";
+import { credentialById } from "../store/foreign.js";
 import { migrate } from "../store/migrations.js";
 import { ORGS_NAMESPACE } from "../store/types.js";
 import { ALICE, BOB, CAROL, DAVE, EVE, createOrg, failure, harnessResolvers, insertCredential, join, lower, openHarness, resetHarness, T0, type Harness, type TestResolvers } from "./harness.js";
@@ -195,6 +196,46 @@ describe("credential status under organisation rules", () => {
       actor: lower(ALICE),
       details: { memberAddress: lower(BOB), reason: "MEMBER_REMOVED", credentialId: "c-bob" },
     });
+  });
+
+  it("bounds a member suspension exactly by issuance time, whatever the session and process time zones", async () => {
+    const tz = process.env.TZ;
+    await sql`set time zone 'America/New_York'`.execute(h.root);
+    process.env.TZ = "America/New_York";
+    try {
+      let credentialsDown = false;
+      const t = harnessResolvers(h, {
+        relationalDb: {
+          queryNamespace: (ns: string) => {
+            if (credentialsDown && ns !== ORGS_NAMESPACE) throw new Error("read model down");
+            return h.relationalDb.queryNamespace(ns);
+          },
+          createNamespace: (ns: string) => h.relationalDb.createNamespace(ns),
+        } as never,
+      });
+      const { id } = await setup(t);
+      expect((await credentialById(h.relationalDb as never, "c-bob"))?.issuanceDate).toEqual(T0);
+      // Issued one second before the exit: covered.
+      await insertCredential(h, { credentialId: "c-bob-before", issuer: lower(BOB), appDid: APP, issuedAt: new Date(T0.getTime() - 1000) });
+      credentialsDown = true;
+      await t.mutate("removeOrgMember", { orgId: id, address: BOB.address }, ALICE);
+      credentialsDown = false;
+      t.tick(60_000);
+      await join(t, id, BOB, "PUBLISHER");
+      await t.mutate("setOrgMemberAppScope", { orgId: id, address: BOB.address, appScope: { all: true, appDids: [] } }, ALICE);
+      // Issued one minute after the exit: not covered.
+      await insertCredential(h, { credentialId: "c-bob-after", issuer: lower(BOB), appDid: APP, issuedAt: t.clock.now });
+      expect(await status(t, "c-bob-before")).toMatchObject({ reason: "SUSPENDED" });
+      expect(await status(t, "c-bob")).toMatchObject({ reason: "SUSPENDED" });
+      expect(await status(t, "c-bob-after")).toMatchObject({ counts: true, reason: null });
+      // Converting on lift keeps exactly the covered ones.
+      await t.mutate("unsuspendOrgCredential", { orgId: id, credentialId: "c-bob" }, ALICE);
+      expect(await t.store.suspendedCredentialIds(id)).toEqual(["c-bob-before"]);
+    } finally {
+      process.env.TZ = tz;
+      if (tz === undefined) delete process.env.TZ;
+      await sql`set time zone default`.execute(h.root);
+    }
   });
 
   it("never lets a forged credential id suspend another member", async () => {
