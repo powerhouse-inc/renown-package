@@ -1,4 +1,3 @@
-import { sql } from "kysely";
 import { getAddress } from "viem";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { actions as orgActions, type RenownOrganizationDocument } from "../../../document-models/renown-organization/index.js";
@@ -6,6 +5,7 @@ import { createOrgPolicy, type OrgPolicy } from "../../renown-orgs/core/org-poli
 import { KyselyOrgStore } from "../../renown-orgs/store/kysely.js";
 import { migrate as migrateOrgs } from "../../renown-orgs/store/migrations.js";
 import { memberRecord, org } from "../../renown-orgs/tests/store-contract.js";
+import { bootNamespace } from "./host-namespace.js";
 import { CRED_NS, failure, harnessResolvers, OWNER, openHarness, registerApp, relayed, resetHarness, WORKLOAD_NS, type Harness } from "./harness.js";
 
 const APP = "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
@@ -23,8 +23,7 @@ let orgs: KyselyOrgStore;
 
 beforeAll(async () => {
   h = await openHarness();
-  await sql`create schema if not exists "renown-orgs"`.execute(h.root);
-  await migrateOrgs(h.root.withSchema("renown-orgs"));
+  await bootNamespace(h.relationalDb as never, "renown-orgs", migrateOrgs);
   orgs = new KyselyOrgStore(h.root.withSchema("renown-orgs"));
 });
 afterAll(async () => {

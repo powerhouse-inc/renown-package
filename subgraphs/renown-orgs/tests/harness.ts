@@ -1,9 +1,9 @@
-import { PGlite } from "@electric-sql/pglite";
 import type { IRelationalDb } from "@powerhousedao/reactor-browser";
 import type { Action, PHDocument } from "document-model";
 import { GraphQLError } from "graphql";
-import { Kysely, sql } from "kysely";
-import { PGliteDialect } from "kysely-pglite-dialect";
+import { type Kysely, sql } from "kysely";
+import { createRelationalDb } from "@powerhousedao/shared/processors";
+import { bootNamespace, hashedRoot, hostSchema, openPglite } from "../../renown-stats/tests/host-namespace.js";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { expect, vi } from "vitest";
 import {
@@ -68,34 +68,30 @@ export interface Harness {
   relationalDb: IRelationalDb<unknown>;
 }
 
-/** One PGlite with every namespace renown-orgs reads: its own, the user and credential read models. */
+/**
+ * One PGlite with every namespace renown-orgs reads: its own, the user and
+ * credential read models. Namespaces go through the host's real
+ * `createRelationalDb` (hashed schema names) and every migration runs on two
+ * boots; `root.withSchema(name)` resolves the same hashed schema for fixtures.
+ */
 export async function openHarness(): Promise<Harness> {
-  const root = new Kysely<any>({ dialect: new PGliteDialect(new PGlite()) });
-  await sql`create schema ${sql.id(ORGS_NAMESPACE)}`.execute(root);
-  await migrate(root.withSchema(ORGS_NAMESPACE));
-  await sql`create schema ${sql.id(USER_NS)}`.execute(root);
-  await upUser(root.withSchema(USER_NS) as never);
-  await sql`create schema ${sql.id(CRED_NS)}`.execute(root);
-  await upCredential(root.withSchema(CRED_NS) as never);
-  await sql`create schema ${sql.id(WORKLOAD_NS)}`.execute(root);
-  await migrateWorkload(root.withSchema(WORKLOAD_NS));
-  await sql`create schema ${sql.id(STATS_NS)}`.execute(root);
-  await migrateStats(root.withSchema(STATS_NS));
-  await sql`create schema ${sql.id(OIDC_NS)}`.execute(root);
-  await migrateOidc(root.withSchema(OIDC_NS));
+  const raw = openPglite();
+  await bootNamespace(raw, ORGS_NAMESPACE, migrate);
+  await bootNamespace(raw, USER_NS, (db) => upUser(db as never));
+  await bootNamespace(raw, CRED_NS, (db) => upCredential(db as never));
+  await bootNamespace(raw, WORKLOAD_NS, migrateWorkload);
+  await bootNamespace(raw, STATS_NS, migrateStats);
+  await bootNamespace(raw, OIDC_NS, migrateOidc);
   // Like the host: queryNamespace reads, createNamespace hands out a writable handle.
-  const relationalDb = {
-    queryNamespace: (namespace: string) => root.withSchema(namespace),
-    createNamespace: (namespace: string) => Promise.resolve(root.withSchema(namespace)),
-  } as unknown as IRelationalDb<unknown>;
-  return { root, relationalDb };
+  const relationalDb = createRelationalDb(raw as never) as unknown as IRelationalDb<unknown>;
+  return { root: hashedRoot(raw), relationalDb };
 }
 
 /** Empties every table of every namespace the harness created (later phases add tables; this follows). */
 export async function resetHarness(h: Harness): Promise<void> {
   for (const schema of [ORGS_NAMESPACE, USER_NS, CRED_NS, WORKLOAD_NS, STATS_NS, OIDC_NS]) {
     const { rows } = await sql<{ table_name: string }>`
-      select table_name from information_schema.tables where table_schema = ${schema}`.execute(h.root);
+      select table_name from information_schema.tables where table_schema = ${hostSchema(schema)}`.execute(h.root);
     for (const { table_name } of rows) await h.root.withSchema(schema).deleteFrom(table_name).execute();
   }
 }

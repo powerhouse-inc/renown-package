@@ -5,6 +5,7 @@ import { credentialById } from "../store/foreign.js";
 import { migrate } from "../store/migrations.js";
 import { ORGS_NAMESPACE } from "../store/types.js";
 import { ALICE, BOB, CAROL, DAVE, EVE, createOrg, failure, harnessResolvers, insertCredential, join, lower, openHarness, resetHarness, T0, type Harness, type TestResolvers } from "./harness.js";
+import { hostSchema } from "../../renown-stats/tests/host-namespace.js";
 
 vi.mock("../../renown-auth/core/smart-wallet.js", () => ({
   verifyMessageOnChain: () => Promise.resolve(false),
@@ -255,7 +256,7 @@ describe("credential status under organisation rules", () => {
 
   it("fails closed once the app is an org app, even when a later table is missing", async () => {
     const { t } = await setup();
-    await sql`drop table ${sql.id(ORGS_NAMESPACE, "org_credential_suspensions")}`.execute(h.root);
+    await sql`drop table ${sql.id(hostSchema(ORGS_NAMESPACE), "org_credential_suspensions")}`.execute(h.root);
     try {
       expect((await failure(status(t, "c-bob"))).code).toBe("SERVICE_UNAVAILABLE");
       expect(await status(t, "c-person")).toMatchObject({ counts: true });

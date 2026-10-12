@@ -1,6 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
-import { Kysely, sql } from "kysely";
+import { Kysely } from "kysely";
 import { PGliteDialect } from "kysely-pglite-dialect";
+import { bootNamespace } from "./host-namespace.js";
 import { afterAll, describe, expect, it } from "vitest";
 import { KyselyStatsIndex } from "../store/kysely.js";
 import { migrate } from "../store/migrations.js";
@@ -14,10 +15,7 @@ afterAll(async () => {
 async function makeIndex(): Promise<KyselyStatsIndex> {
   const root = new Kysely<StatsDB>({ dialect: new PGliteDialect(new PGlite()) });
   opened.push(root);
-  await sql`create schema "renown-stats"`.execute(root);
-  const db = root.withSchema("renown-stats");
-  await migrate(db);
-  await migrate(db); // idempotent
+  const db = await bootNamespace<StatsDB>(root, "renown-stats", migrate);
   return new KyselyStatsIndex(db);
 }
 
