@@ -64,6 +64,20 @@ export async function workloadOwner(
   return row?.owner_address.toLowerCase();
 }
 
+/** Owner of the registered workload identity `appDid`: lowercase address and owning organisation; undefined when unregistered. */
+export async function workloadIdentityOwner(
+  db: ReadModelDb,
+  appDid: string,
+): Promise<{ ownerAddress: string; ownerOrgId: string | null } | undefined> {
+  const row = await db
+    .queryNamespace<WorkloadDB>(WORKLOAD_NAMESPACE)
+    .selectFrom("workload_identities")
+    .select(["owner_address", "owner_org_id"])
+    .where("did", "=", appDid)
+    .executeTakeFirst();
+  return row && { ownerAddress: row.owner_address.toLowerCase(), ownerOrgId: row.owner_org_id ?? null };
+}
+
 /** What appStats shows of a contributor (Phase 1 read model). */
 export interface ContributorProfile {
   documentId: string;

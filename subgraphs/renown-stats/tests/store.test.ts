@@ -55,6 +55,17 @@ describe("KyselyStatsIndex", () => {
     expect((await index.appProfilesByPublisher(ALICE)).map((e) => e.appDid)).toEqual(["did:a", "did:b"]);
     expect(await index.appProfilesByPublisher("0x0000000000000000000000000000000000000000")).toEqual([]);
   });
+
+  it("records the publishing organisation, lists and pages an organisation's apps", async () => {
+    const index = await makeIndex();
+    await index.claimAppProfile({ appDid: "did:org-app", documentId: "p-1", publisherAddress: ALICE, publisherOrgId: "o1" }, NOW);
+    await index.claimAppProfile({ appDid: "did:person-app", documentId: "p-2", publisherAddress: ALICE }, LATER);
+    expect(await index.appProfile("did:org-app")).toEqual({ appDid: "did:org-app", documentId: "p-1", publisherAddress: ALICE, publisherOrgId: "o1" });
+    expect(await index.appProfile("did:person-app")).toEqual({ appDid: "did:person-app", documentId: "p-2", publisherAddress: ALICE });
+    expect((await index.appProfilesByOrg("o1")).map((e) => e.appDid)).toEqual(["did:org-app"]);
+    expect((await index.appProfilesPage(10, undefined, undefined, "o1")).map((e) => e.appDid)).toEqual(["did:org-app"]);
+    expect((await index.appProfilesPage(10)).map((e) => e.appDid)).toEqual(["did:person-app", "did:org-app"]);
+  });
 });
 
 describe("KyselyStatsIndex app images and listing", () => {

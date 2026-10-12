@@ -15,6 +15,15 @@ import type {
   UserStatsDocumentEntry,
 } from "./types.js";
 
+function entryOf(row: { app_did: string; document_id: string; publisher_address: string; publisher_org_id?: string | null }): AppProfileEntry {
+  return {
+    appDid: row.app_did,
+    documentId: row.document_id,
+    publisherAddress: row.publisher_address,
+    ...(row.publisher_org_id ? { publisherOrgId: row.publisher_org_id } : {}),
+  };
+}
+
 const keyOf = (v: MetricValue) => `${v.appDid}\u0000${v.metric}\u0000${v.userDid}`;
 
 /** Kysely-backed `StatsIndex`. The `db` passed in is already namespace-scoped. */
@@ -44,10 +53,10 @@ export class KyselyStatsIndex implements StatsIndex {
   async appProfile(appDid: string): Promise<AppProfileEntry | undefined> {
     const row = await this.db
       .selectFrom("app_profile_documents")
-      .select(["app_did", "document_id", "publisher_address"])
+      .select(["app_did", "document_id", "publisher_address", "publisher_org_id"])
       .where("app_did", "=", appDid)
       .executeTakeFirst();
-    return row && { appDid: row.app_did, documentId: row.document_id, publisherAddress: row.publisher_address };
+    return row && entryOf(row);
   }
 
   async claimAppProfile(entry: AppProfileEntry, now: Date): Promise<AppProfileEntry> {
@@ -57,6 +66,7 @@ export class KyselyStatsIndex implements StatsIndex {
         app_did: entry.appDid,
         document_id: entry.documentId,
         publisher_address: entry.publisherAddress,
+        publisher_org_id: entry.publisherOrgId ?? null,
         created_at: now,
       })
       .onConflict((oc) => oc.column("app_did").doNothing())
@@ -69,16 +79,23 @@ export class KyselyStatsIndex implements StatsIndex {
   async appProfilesByPublisher(publisherAddress: string): Promise<AppProfileEntry[]> {
     const rows = await this.db
       .selectFrom("app_profile_documents")
-      .select(["app_did", "document_id", "publisher_address"])
+      .select(["app_did", "document_id", "publisher_address", "publisher_org_id"])
       .where("publisher_address", "=", publisherAddress)
       .orderBy("created_at", "asc")
       .orderBy("app_did", "asc")
       .execute();
-    return rows.map((row) => ({
-      appDid: row.app_did,
-      documentId: row.document_id,
-      publisherAddress: row.publisher_address,
-    }));
+    return rows.map(entryOf);
+  }
+
+  async appProfilesByOrg(orgId: string): Promise<AppProfileEntry[]> {
+    const rows = await this.db
+      .selectFrom("app_profile_documents")
+      .select(["app_did", "document_id", "publisher_address", "publisher_org_id"])
+      .where("publisher_org_id", "=", orgId)
+      .orderBy("created_at", "asc")
+      .orderBy("app_did", "asc")
+      .execute();
+    return rows.map(entryOf);
   }
 
   async setAppImages(documentId: string, images: AppImagesPatch, now: Date): Promise<void> {
@@ -109,10 +126,10 @@ export class KyselyStatsIndex implements StatsIndex {
     return field === "logo" ? row.logo_ref : row.cover_ref;
   }
 
-  async appProfilesPage(limit: number, after?: AppProfileCursor, category?: string): Promise<AppProfileListEntry[]> {
+  async appProfilesPage(limit: number, after?: AppProfileCursor, category?: string, orgId?: string): Promise<AppProfileListEntry[]> {
     let query = this.db
       .selectFrom("app_profile_documents")
-      .select(["app_did", "document_id", "publisher_address", "created_at"])
+      .select(["app_did", "document_id", "publisher_address", "publisher_org_id", "created_at"])
       .orderBy("created_at", "desc")
       .orderBy("app_did", "desc")
       .limit(limit);
@@ -127,13 +144,9 @@ export class KyselyStatsIndex implements StatsIndex {
     if (category !== undefined) {
       query = query.where((eb) => eb(eb.fn("lower", ["category"]), "=", eb.fn("lower", [eb.val(category.trim())])));
     }
+    if (orgId !== undefined) query = query.where("publisher_org_id", "=", orgId);
     const rows = await query.execute();
-    return rows.map((row) => ({
-      appDid: row.app_did,
-      documentId: row.document_id,
-      publisherAddress: row.publisher_address,
-      createdAt: new Date(row.created_at),
-    }));
+    return rows.map((row) => ({ ...entryOf(row), createdAt: new Date(row.created_at) }));
   }
 
   async setAppCategory(appDid: string, category: string | null): Promise<void> {

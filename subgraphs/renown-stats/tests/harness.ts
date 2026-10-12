@@ -216,7 +216,7 @@ export interface NetworkStatsOut {
 /** Resolvers over the harness. `now` defaults to a clock that ticks one second per call. */
 export function harnessResolvers(
   h: Harness,
-  options: { now?: () => Date; relationalDb?: IRelationalDb<unknown> } = {},
+  options: { now?: () => Date; relationalDb?: IRelationalDb<unknown>; orgPolicy?: StatsResolverDeps["orgPolicy"] } = {},
 ) {
   const reactor = fakeReactor();
   const index = new KyselyStatsIndex(h.root.withSchema(STATS_NS));
@@ -230,10 +230,12 @@ export function harnessResolvers(
     registrationToken: () => TOKEN,
     media: () => null,
     now: options.now ?? (() => new Date(Date.UTC(2026, 9, 9, 12, 0, tick++))),
+    orgPolicy: options.orgPolicy,
   }) as { Query: Record<string, Resolver>; Mutation: Record<string, Resolver> };
   return {
     reactor,
     index,
+    resolvers,
     /** reportUserStat as the app itself (a host bearer signed by the app DID, for its owner). */
     report: (args: { appDid: string; userDid: string; metric: string; value: number }) =>
       resolvers.Mutation.reportUserStat(null, args, { user: { address: OWNER, appKey: args.appDid } }),
@@ -242,7 +244,7 @@ export function harnessResolvers(
     appProfile: (appDid: string) => resolvers.Query.appProfile(null, { appDid }, {}),
     appStats: (appDid: string) => resolvers.Query.appStats(null, { appDid }, {}),
     userStats: (userDid: string) => resolvers.Query.userStats(null, { userDid }, {}),
-    appProfiles: (args: { limit?: number | null; after?: string | null; category?: string | null }) =>
+    appProfiles: (args: { limit?: number | null; after?: string | null; category?: string | null; orgId?: string | null }) =>
       resolvers.Query.appProfiles(null, args, {}) as Promise<{ items: { appDid: string; category: string | null }[]; next: string | null }>,
     appProfileCategories: () =>
       resolvers.Query.appProfileCategories(null, {}, {}) as Promise<{ category: string; count: number }[]>,

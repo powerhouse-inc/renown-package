@@ -1,4 +1,5 @@
 const DID_PKH = /^did:pkh:eip155:[1-9][0-9]{0,19}:0x[0-9a-fA-F]{40}$/;
+const ORG_DID = /^did:web:[^:]+:org:[A-Za-z0-9_-]{1,128}$/;
 const DID_KEY = /^did:key:z[1-9A-HJ-NP-Za-km-z]{32,128}$/;
 const DATA_IMAGE =
   /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
@@ -27,8 +28,9 @@ export function isAppDid(value: string): boolean {
   return DID_KEY.test(value);
 }
 
+/** A person (did:pkh) or an organisation (did:web:<host>:org:<id>). */
 export function isPublisherDid(value: string): boolean {
-  return DID_PKH.test(value);
+  return DID_PKH.test(value) || ORG_DID.test(value);
 }
 
 export function isWebsite(value: string): boolean {

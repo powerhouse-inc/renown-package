@@ -125,3 +125,13 @@ describe("utils", () => {
     expect(isLogo("nope")).toBe(false);
   });
 });
+
+describe("publisher DIDs", () => {
+  it("accepts organisation did:web publishers", () => {
+    let d = reducer(utils.createDocument(), setPublisherDid({ publisherDid: "did:web:www.renown.id:org:abc-123" }));
+    expect(d.state.global.publisherDid).toBe("did:web:www.renown.id:org:abc-123");
+    d = reducer(d, setPublisherDid({ publisherDid: "did:web:evil.example" }));
+    expect(d.operations.global[1].error).toBe("Invalid publisher DID: did:web:evil.example");
+    expect(isPublisherDid("did:web:localhost%3A3000:org:x")).toBe(true);
+  });
+});
