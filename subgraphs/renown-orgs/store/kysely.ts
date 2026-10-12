@@ -125,6 +125,15 @@ async function replaceTeamMembers(db: OrgsKysely, teamId: string, memberIds: rea
 export class KyselyOrgStore implements OrgStore {
   constructor(readonly db: OrgsKysely) {}
 
+  /** `fn` in a transaction, or inside the current one when this store already runs in a transaction. */
+  private inTransaction<T>(fn: (trx: OrgsKysely) => Promise<T>): Promise<T> {
+    return this.db.isTransaction ? fn(this.db) : this.db.transaction().execute(fn);
+  }
+
+  transaction<T>(fn: (store: OrgStore) => Promise<T>): Promise<T> {
+    return this.inTransaction((trx) => fn(new KyselyOrgStore(trx)));
+  }
+
   async insertOrganization(org: OrgRecord): Promise<boolean> {
     const inserted = await this.db
       .insertInto("organizations")
@@ -151,7 +160,7 @@ export class KyselyOrgStore implements OrgStore {
   }
 
   async insertOrganizationWithOwner(org: OrgRecord, owner: MemberRecord): Promise<boolean> {
-    return this.db.transaction().execute(async (trx) => {
+    return this.inTransaction(async (trx) => {
       const store = new KyselyOrgStore(trx);
       if (!(await store.insertOrganization(org))) return false;
       await store.insertMember(owner);
@@ -160,7 +169,7 @@ export class KyselyOrgStore implements OrgStore {
   }
 
   async deleteOrganization(id: string): Promise<void> {
-    await this.db.transaction().execute(async (trx) => {
+    await this.inTransaction(async (trx) => {
       const teams = trx.selectFrom("org_teams").select("id").where("org_id", "=", id);
       await trx.deleteFrom("org_team_members").where("team_id", "in", teams).execute();
       await trx.deleteFrom("org_teams").where("org_id", "=", id).execute();
@@ -304,6 +313,13 @@ export class KyselyOrgStore implements OrgStore {
     return row && toMember(row);
   }
 
+  async deleteMember(id: string): Promise<void> {
+    await this.inTransaction(async (trx) => {
+      await trx.deleteFrom("org_team_members").where("member_id", "=", id).execute();
+      await trx.deleteFrom("org_members").where("id", "=", id).execute();
+    });
+  }
+
   async members(orgId: string, statuses?: readonly StoredMemberStatus[]): Promise<MemberRecord[]> {
     let query = this.db.selectFrom("org_members").selectAll().where("org_id", "=", orgId);
     if (statuses) query = query.where("status", "in", [...statuses]);
@@ -347,7 +363,7 @@ export class KyselyOrgStore implements OrgStore {
   }
 
   async insertTeam(team: TeamRecord): Promise<void> {
-    await this.db.transaction().execute(async (trx) => {
+    await this.inTransaction(async (trx) => {
       await trx
         .insertInto("org_teams")
         .values({
@@ -394,7 +410,7 @@ export class KyselyOrgStore implements OrgStore {
   }
 
   async deleteTeam(id: string): Promise<boolean> {
-    return this.db.transaction().execute(async (trx) => {
+    return this.inTransaction(async (trx) => {
       await trx.deleteFrom("org_team_members").where("team_id", "=", id).execute();
       const result = await trx.deleteFrom("org_teams").where("id", "=", id).executeTakeFirst();
       return Number(result.numDeletedRows) > 0;
@@ -402,7 +418,7 @@ export class KyselyOrgStore implements OrgStore {
   }
 
   async setTeamMembers(teamId: string, memberIds: readonly string[]): Promise<void> {
-    await this.db.transaction().execute((trx) => replaceTeamMembers(trx, teamId, memberIds));
+    await this.inTransaction((trx) => replaceTeamMembers(trx, teamId, memberIds));
   }
 
   async removeMemberFromTeams(memberId: string): Promise<void> {
@@ -463,6 +479,15 @@ export class KyselyOrgStore implements OrgStore {
       .returning("id")
       .executeTakeFirst();
     return row !== undefined;
+  }
+
+  async releaseInviteLinkUse(id: string): Promise<void> {
+    await this.db
+      .updateTable("org_invite_links")
+      .set((eb) => ({ uses: eb("uses", "-", 1) }))
+      .where("id", "=", id)
+      .where("uses", ">", 0)
+      .execute();
   }
 
   async revokeInviteLink(id: string): Promise<void> {

@@ -254,6 +254,11 @@ export interface OrgSearch {
 }
 
 export interface OrgStore {
+  /**
+   * Runs `fn` against a store bound to one transaction: every write commits
+   * together or not at all. Nested calls join the outer transaction.
+   */
+  transaction<T>(fn: (store: OrgStore) => Promise<T>): Promise<T>;
   insertOrganization(org: OrgRecord): Promise<boolean>;
   /**
    * The organization and its first owner in one transaction: false (nothing
@@ -273,6 +278,8 @@ export interface OrgStore {
   member(id: string): Promise<MemberRecord | undefined>;
   openMember(orgId: string, address: string): Promise<MemberRecord | undefined>;
   updateMember(id: string, patch: MemberPatch): Promise<MemberRecord | undefined>;
+  /** Deletes a member record and its team places (compensation for a join whose document write failed). */
+  deleteMember(id: string): Promise<void>;
   members(orgId: string, statuses?: readonly StoredMemberStatus[]): Promise<MemberRecord[]>;
   membershipsOf(address: string, statuses: readonly StoredMemberStatus[]): Promise<MemberRecord[]>;
   insertTeam(team: TeamRecord): Promise<void>;
@@ -287,6 +294,8 @@ export interface OrgStore {
   inviteLinkByHash(tokenHash: string): Promise<InviteLinkRecord | undefined>;
   inviteLinks(orgId: string): Promise<InviteLinkRecord[]>;
   useInviteLink(id: string, now: Date): Promise<boolean>;
+  /** Gives back one use of an invite link (compensation for a join whose document write failed). */
+  releaseInviteLinkUse(id: string): Promise<void>;
   revokeInviteLink(id: string): Promise<void>;
   orgApps(orgId: string): Promise<OrgAppRecord[]>;
   orgOfApp(appDid: string): Promise<OrgAppRecord | undefined>;

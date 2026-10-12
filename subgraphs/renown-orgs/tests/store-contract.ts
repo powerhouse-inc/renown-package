@@ -151,6 +151,47 @@ export function describeOrgStoreContract(name: string, open: () => Promise<Opene
       expect((await store.inviteLinks("o1")).map((l) => [l.id, l.revoked])).toEqual([["k2", true], ["k1", false]]);
     });
 
+    it("runs several writes in one transaction, rolled back together on failure", async () => {
+      const { store } = await open();
+      await store.insertMember(memberRecord("m1", "o1", ALICE, { status: "INVITED", joinedAt: null }));
+      await expect(
+        store.transaction(async (tx) => {
+          await tx.updateMember("m1", { status: "REVOKED", endedAt: at(1), updatedAt: at(1) });
+          await tx.insertMember(memberRecord("m2", "o1", ALICE));
+          await tx.insertMember(memberRecord("m3", "o1", ALICE));
+        }),
+      ).rejects.toThrow();
+      expect((await store.members("o1")).map((m) => [m.id, m.status])).toEqual([["m1", "INVITED"]]);
+      const result = await store.transaction(async (tx) => {
+        await tx.updateMember("m1", { status: "REVOKED", endedAt: at(1), updatedAt: at(1) });
+        await tx.insertMember(memberRecord("m2", "o1", ALICE));
+        await tx.insertTeam(team("t1", "o1", "core"));
+        await tx.setTeamMembers("t1", ["m2"]);
+        return "done";
+      });
+      expect(result).toBe("done");
+      expect((await store.openMember("o1", ALICE))?.id).toBe("m2");
+      expect((await store.team("t1"))?.memberIds).toEqual(["m2"]);
+    });
+
+    it("deletes a member record with its team places, and gives back an invite-link use", async () => {
+      const { store } = await open();
+      await store.insertMember(memberRecord("m1", "o1", ALICE));
+      await store.insertTeam(team("t1", "o1", "core"));
+      await store.setTeamMembers("t1", ["m1"]);
+      await store.deleteMember("m1");
+      expect(await store.member("m1")).toBeUndefined();
+      expect((await store.team("t1"))?.memberIds).toEqual([]);
+      const link = { id: "k1", orgId: "o1", tokenHash: "h1", role: "MEMBER" as const, maxUses: 1, uses: 0, expiresAt: at(60), revoked: false, createdBy: ALICE, createdAt: T0 };
+      await store.insertInviteLink(link);
+      await store.releaseInviteLinkUse("k1");
+      expect((await store.inviteLink("k1"))?.uses).toBe(0);
+      expect(await store.useInviteLink("k1", at(1))).toBe(true);
+      expect(await store.useInviteLink("k1", at(1))).toBe(false);
+      await store.releaseInviteLinkUse("k1");
+      expect(await store.useInviteLink("k1", at(1))).toBe(true);
+    });
+
     it("reads org apps, verified domains and verified organizations by name", async () => {
       const { store, db } = await open();
       await store.insertOrganization(org("o1", "acme", { name: "Acme" }));

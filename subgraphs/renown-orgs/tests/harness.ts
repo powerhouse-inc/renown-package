@@ -207,3 +207,10 @@ export async function failure(promise: Promise<unknown>): Promise<{ code: unknow
   const e = error as GraphQLError;
   return { code: e.extensions.code, field: e.extensions.field, message: e.message };
 }
+
+/** `who` joins `orgId` with `role`: invited by `by`, then accepted. Returns the member id. */
+export async function join(t: TestResolvers, orgId: string, who: Account, role: string, by: Account = ALICE): Promise<string> {
+  const invite = await t.mutate<{ id: string }>("inviteOrgMember", { orgId, invitee: who.address, role }, by);
+  await t.mutate("respondToOrgInvite", { orgId, inviteId: invite.id, accept: true }, who);
+  return invite.id;
+}
