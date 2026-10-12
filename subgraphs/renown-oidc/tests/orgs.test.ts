@@ -19,6 +19,8 @@ const ACME: OrgClaim = { id: "o1", did: "did:web:renown.test:org:o1", handle: "a
 const REDIRECT = "https://s.example/auth/oidc/callback";
 let h: ReturnType<typeof createOidcHandlers>;
 let keys: NonNullable<Awaited<ReturnType<typeof loadSigningKeys>>>;
+/** Whether `member` is still in ACME (a removal flips it). */
+let stillMember = true;
 
 const client: OidcClient = {
   id: "internal",
@@ -32,6 +34,7 @@ const client: OidcClient = {
 };
 
 beforeEach(async () => {
+  stillMember = true;
   keys = (await loadSigningKeys(await testSigningKeysEnv(), issuer))!;
   h = createOidcHandlers({
     config,
@@ -39,7 +42,7 @@ beforeEach(async () => {
     store: new MemoryOidcStore(),
     clients: { getClient: (id) => Promise.resolve(id === client.id ? client : undefined) },
     profiles: { getProfile: () => Promise.resolve(undefined) },
-    orgs: { orgsOf: (address) => Promise.resolve(address.toLowerCase() === member.address.toLowerCase() ? [ACME] : []) },
+    orgs: { orgsOf: (address) => Promise.resolve(stillMember && address.toLowerCase() === member.address.toLowerCase() ? [ACME] : []) },
     now: () => new Date(),
   });
 });
@@ -76,6 +79,9 @@ describe("OIDC orgs", () => {
     expect(payload.orgs).toEqual([ACME]);
     const info = await (await h.userinfo(new Request(`${issuer}/userinfo`, { headers: { authorization: `Bearer ${body.access_token}` } }))).json();
     expect(info.orgs).toEqual([ACME]);
+    // Removed from the org: the access token stops working at /userinfo at once, not after it expires.
+    stillMember = false;
+    expect((await h.userinfo(new Request(`${issuer}/userinfo`, { headers: { authorization: `Bearer ${body.access_token}` } }))).status).toBe(401);
   });
 
   it("builds the claim only for the orgs scope, and checks minRole", () => {

@@ -1,6 +1,6 @@
 import { GraphQLError } from "graphql";
 import { getAddress } from "viem";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkloadConfig } from "../core/types.js";
 import { createGithubVerifier } from "../core/github.js";
 import { DEFAULT_AUDIENCES } from "../core/config.js";
@@ -15,10 +15,11 @@ const OWNER = getAddress("0xabcdef0123456789abcdef0123456789abcdef01");
 const authorized = { headers: { [REGISTRATION_TOKEN_HEADER]: "right-token" } };
 const config: WorkloadConfig = { encryptionKey: new Uint8Array(32).fill(5), registrationToken: "right-token", audiences: DEFAULT_AUDIENCES };
 let store: MemoryWorkloadStore;
-const policy = { roles: new Map<string, OrgRole>(), frozen: new Set<string>() };
+const policy = { roles: new Map<string, OrgRole>(), frozen: new Set<string>(), down: false };
 const orgPolicy = () => ({
   activeRole: (orgId: string, address: string) => Promise.resolve(policy.roles.get(`${orgId}:${address.toLowerCase()}`) ?? null),
-  orgOfApp: (appDid: string) => Promise.resolve(policy.frozen.has(appDid) ? { orgId: "o1", frozen: true } : null),
+  orgOfApp: (appDid: string) =>
+    policy.down ? Promise.reject(new Error("renown-orgs namespace unreadable")) : Promise.resolve(policy.frozen.has(appDid) ? { orgId: "o1", frozen: true } : null),
 });
 
 function resolver(type: "Query" | "Mutation", field: string): Resolver {
@@ -66,6 +67,7 @@ beforeEach(() => {
   store = new MemoryWorkloadStore();
   policy.roles.clear();
   policy.frozen.clear();
+  policy.down = false;
 });
 
 describe("org-owned workload identities", () => {
@@ -80,6 +82,16 @@ describe("org-owned workload identities", () => {
 
   it("registers person-owned identities without an organization", async () => {
     expect(await register()).toMatchObject({ ownerOrgId: null, disabled: false });
+  });
+
+  it("answers 503, issuing nothing, when organisation rules cannot be read", async () => {
+    await register();
+    policy.down = true;
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const response = await exchangeToken();
+    errors.mockRestore();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: "temporarily_unavailable" });
   });
 
   it("issues no tokens for a disabled identity or a frozen app", async () => {

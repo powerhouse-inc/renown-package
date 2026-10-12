@@ -413,10 +413,19 @@ export function createOidcHandlers(deps: OidcDeps) {
       const token = await store.getAccessToken(await sha256Hex(match[1]));
       if (!token || token.revoked || isExpired(token.expiresAt, deps.now())) return invalidToken();
       // A token outlives neither its client nor the organisation owning it (the directory reads those as DISABLED).
-      if (!isActive(await clients.getClient(token.clientId))) return invalidToken();
+      const client = await clients.getClient(token.clientId);
+      if (!isActive(client)) return invalidToken();
+
+      // Nor the subject's eligibility: one admitted only through an org (allowedOrgs)
+      // who has since left it, or lost the role, is refused at once, as at sign-in.
+      let memberships: OrgClaim[] | undefined;
+      if ((client.allowedOrgs?.length ?? 0) > 0 && !isSubjectAllowed(client, token.address)) {
+        memberships = await orgsOf(token.address);
+        if (!isSubjectAllowedByOrgs(client, memberships)) return invalidToken();
+      }
 
       const profile = await profiles.getProfile(token.address);
-      const orgs = token.scope.split(/\s+/).includes("orgs") ? await orgsOf(token.address) : [];
+      const orgs = token.scope.split(/\s+/).includes("orgs") ? (memberships ?? (await orgsOf(token.address))) : [];
       return json(buildClaims(token.address, profile, token.scope, orgs), 200, { "cache-control": "no-store" });
     },
   };

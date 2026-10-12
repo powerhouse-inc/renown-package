@@ -105,7 +105,15 @@ export function createTokenHandler(
     if (identity.disabled) {
       return denied("The workload identity is disabled by its organisation");
     }
-    if ((await d.orgPolicy?.orgOfApp(identity.did))?.frozen) {
+    // Fail closed, but as "try again" rather than a 500: org rules that cannot be read issue nothing.
+    let frozen: boolean;
+    try {
+      frozen = (await d.orgPolicy?.orgOfApp(identity.did))?.frozen ?? false;
+    } catch (e) {
+      console.error(`[renown-workload] organisation rules unavailable for ${identity.did}: ${e instanceof Error ? e.message : String(e)}`);
+      return error(503, "temporarily_unavailable");
+    }
+    if (frozen) {
       return denied("The app is frozen by its organisation");
     }
     const eventName = claims.event_name ?? "";
