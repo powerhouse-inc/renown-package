@@ -20,12 +20,14 @@ function parseStringArray(json: string): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+export const ORG_ROLES: ReadonlySet<string> = new Set(["OWNER", "ADMIN", "PUBLISHER", "MEMBER"]);
+
 function parseAllowedOrgs(json: string | undefined): OidcAllowedOrg[] {
   const value: unknown = JSON.parse(json ?? "[]");
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry: unknown) => {
     const org = entry as Partial<OidcAllowedOrg> | null;
-    return org && typeof org.orgId === "string" && typeof org.minRole === "string"
+    return org && typeof org.orgId === "string" && typeof org.minRole === "string" && ORG_ROLES.has(org.minRole)
       ? [{ orgId: org.orgId, minRole: org.minRole }]
       : [];
   });

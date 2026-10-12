@@ -9,7 +9,7 @@ import { createOidcHandlers } from "./http/handlers.js";
 import { createResolvers } from "./resolvers.js";
 import { schema } from "./schema.js";
 import { KyselyOidcStore } from "./store/kysely.js";
-import { migrate } from "./store/migrations.js";
+import { migrate, OIDC_NAMESPACE } from "./store/migrations.js";
 import type { OidcKysely } from "./store/types.js";
 
 const CLEANUP_INTERVAL_MS = 300_000;
@@ -55,7 +55,7 @@ export class RenownOidcSubgraph extends BaseSubgraph {
     // one: a failure disables only what depends on it.
     let store: KyselyOidcStore;
     try {
-      const db = (await this.relationalDb.createNamespace("renown-oidc")) as unknown as OidcKysely;
+      const db = (await this.relationalDb.createNamespace(OIDC_NAMESPACE)) as unknown as OidcKysely;
       await migrate(db);
       store = new KyselyOidcStore(db);
     } catch (error) {

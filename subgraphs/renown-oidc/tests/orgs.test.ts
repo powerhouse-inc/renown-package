@@ -2,7 +2,7 @@
 import { createLocalJWKSet, jwtVerify } from "jose";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { createSiweMessage } from "viem/siwe";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildClaims, isSubjectAllowedByOrgs } from "../core/claims.js";
 import { loadSigningKeys } from "../core/keys.js";
 import type { OidcClient, OrgClaim } from "../core/types.js";
@@ -114,5 +114,26 @@ describe("registry allowedOrgs", () => {
     await expect(updateClient(deps, clientId, { allowedOrgs: [{ orgId: " ", minRole: "ADMIN" }] })).rejects.toThrow(/orgId/);
     await updateClient(deps, clientId, { allowedOrgs: [] });
     expect((await deps.store.getClient(clientId))?.allowedOrgs).toBeUndefined();
+  });
+});
+
+describe("orgs lookup failures and stored rows", () => {
+  it("logs a warning and issues an empty claim when the directory fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const failing = createOidcHandlers({
+      config,
+      keys,
+      store: new MemoryOidcStore(),
+      clients: { getClient: () => Promise.resolve(client) },
+      profiles: { getProfile: () => Promise.resolve(undefined) },
+      orgs: { orgsOf: () => Promise.reject(new Error("db down")) },
+      now: () => new Date(),
+    });
+    expect((await failing.userinfo(new Request(`${issuer}/userinfo`, { headers: { authorization: "Bearer nope" } }))).status).toBe(401);
+    // Drive the fallback through login: a non-allowed subject is refused, with the failure logged.
+    h = failing;
+    expect((await login(member, "openid orgs")).status).toBe(403);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("db down"));
+    warn.mockRestore();
   });
 });

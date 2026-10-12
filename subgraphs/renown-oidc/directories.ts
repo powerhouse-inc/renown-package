@@ -43,15 +43,9 @@ export function createProfileDirectory(relationalDb: BaseSubgraph["relationalDb"
   };
 }
 
-/** Organization memberships from the renown-orgs namespace (read-only); [] on any failure. */
+/** Organization memberships from the renown-orgs namespace (read-only). Errors propagate: the handlers log them and fall back to no orgs. */
 export function createOrgDirectory(relationalDb: BaseSubgraph["relationalDb"], didHost: string): OrgDirectory {
   return {
-    async orgsOf(address) {
-      try {
-        return await orgClaimsFor(relationalDb as unknown as ReadModelDb, address, didHost);
-      } catch {
-        return [];
-      }
-    },
+    orgsOf: (address) => orgClaimsFor(relationalDb as unknown as ReadModelDb, address, didHost),
   };
 }

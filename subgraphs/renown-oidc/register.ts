@@ -15,7 +15,7 @@ import type { RenownOidcClientDocument } from "../../document-models/renown-oidc
 import { isValidRedirectUri, normalizeSubject } from "../../document-models/renown-oidc-client/v1/src/utils.js";
 import { hashSecret, randomToken } from "./core/crypto.js";
 import type { OidcAllowedOrg, OidcClient } from "./core/types.js";
-import { withAllowedOrgs } from "./store/kysely.js";
+import { ORG_ROLES, withAllowedOrgs } from "./store/kysely.js";
 import type { OidcClientPatch, OidcStore } from "./store/types.js";
 
 /**
@@ -44,7 +44,7 @@ export class ClientRegistryError extends Error {
   }
 }
 
-const ORG_ROLES = new Set(["OWNER", "ADMIN", "PUBLISHER", "MEMBER"]);
+
 
 function validAllowedOrgs(entries: readonly OidcAllowedOrg[]): OidcAllowedOrg[] {
   const seen = new Map<string, OidcAllowedOrg>();

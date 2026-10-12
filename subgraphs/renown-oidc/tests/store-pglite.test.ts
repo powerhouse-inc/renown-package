@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { Kysely, sql } from "kysely";
 import { PGliteDialect } from "kysely-pglite-dialect";
-import { afterAll } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { KyselyOidcStore } from "../store/kysely.js";
 import { migrate } from "../store/migrations.js";
 import type { OidcDB } from "../store/types.js";
@@ -29,3 +29,13 @@ async function makeKyselyStore(): Promise<KyselyOidcStore> {
 }
 
 describeOidcStoreContract("KyselyOidcStore on PGlite", makeKyselyStore);
+
+describe("stored allowed_orgs", () => {
+  it("drops entries with an unknown role", async () => {
+    const store = await makeKyselyStore();
+    await store.createClient({ id: "c", name: "C", redirectUris: [], allowedSubjects: [], allowAnySubject: false, clientSecretHash: null, status: "ACTIVE" }, new Date());
+    const db = (store as unknown as { db: Kysely<OidcDB> }).db;
+    await db.updateTable("oidc_clients").set({ allowed_orgs: JSON.stringify([{ orgId: "o1", minRole: "ROOT" }, { orgId: "o2", minRole: "ADMIN" }]) }).execute();
+    expect((await store.getClient("c"))?.allowedOrgs).toEqual([{ orgId: "o2", minRole: "ADMIN" }]);
+  });
+});

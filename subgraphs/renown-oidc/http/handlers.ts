@@ -114,7 +114,9 @@ export function createOidcHandlers(deps: OidcDeps) {
   async function orgsOf(address: string): Promise<OrgClaim[]> {
     try {
       return (await deps.orgs?.orgsOf(address)) ?? [];
-    } catch {
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unknown error";
+      console.warn(`[renown-oidc] orgs claim lookup failed for ${subjectFor(address)} (${reason}) - issuing an empty orgs claim`);
       return [];
     }
   }

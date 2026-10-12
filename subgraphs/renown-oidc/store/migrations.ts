@@ -1,4 +1,7 @@
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
+
+/** The relational namespace (Postgres schema) the OIDC tables live in. */
+export const OIDC_NAMESPACE = "renown-oidc";
 
 /** Creates the `oidc_clients`, `login_requests`, `auth_codes` and `access_tokens` tables. Idempotent. */
 export async function migrate(db: Kysely<any>): Promise<void> {
@@ -16,16 +19,12 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("updated_at", "timestamptz", (col) => col.notNull())
     .execute();
 
-  // Probe first: ADD COLUMN takes an ACCESS EXCLUSIVE lock even when the column exists.
-  const hasAllowedOrgs = await db
-    .selectFrom("oidc_clients")
-    .select("allowed_orgs")
-    .limit(0)
-    .execute()
-    .then(
-      () => true,
-      () => false,
-    );
+  // Probe the catalog (a failing SELECT would abort an enclosing Postgres transaction);
+  // ADD COLUMN takes an ACCESS EXCLUSIVE lock even when the column exists.
+  const found = await sql<{ n: number }>`
+    select 1 as n from information_schema.columns
+    where table_schema = ${OIDC_NAMESPACE} and table_name = 'oidc_clients' and column_name = 'allowed_orgs'`.execute(db);
+  const hasAllowedOrgs = found.rows.length > 0;
   if (!hasAllowedOrgs) {
     await db.schema
       .alterTable("oidc_clients")
