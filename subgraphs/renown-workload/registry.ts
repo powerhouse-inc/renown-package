@@ -1,4 +1,6 @@
 import { getAddress, isAddress } from "viem";
+import { roleAtLeast } from "../../sdk/orgs.js";
+import type { OrgPolicy } from "../renown-orgs/core/org-policy.js";
 import { seal } from "./core/crypto.js";
 import { generateWorkloadKey } from "./core/keys.js";
 import type { StoredWorkloadIdentity, WorkloadIdentity } from "./core/types.js";
@@ -7,7 +9,8 @@ import type { WorkloadStore } from "./store/types.js";
 export type WorkloadRegistryErrorCode =
   | "BAD_USER_INPUT"
   | "NOT_FOUND"
-  | "CONFLICT";
+  | "CONFLICT"
+  | "FORBIDDEN";
 
 export class WorkloadRegistryError extends Error {
   constructor(
@@ -24,6 +27,8 @@ export interface RegistryDeps {
   /** Needed only to register (seal a new private key). */
   encryptionKey: Uint8Array | null;
   now(): Date;
+  /** Who may register for an organisation; without it, org registrations are FORBIDDEN. */
+  orgPolicy?: Pick<OrgPolicy, "activeRole">;
 }
 
 export interface RegisterWorkloadIdentityInput {
@@ -32,6 +37,8 @@ export interface RegisterWorkloadIdentityInput {
   productionBranch: string;
   ownerAddress: string;
   chainId: number;
+  /** Register for this organisation: `ownerAddress` must be an active publisher there. */
+  ownerOrgId?: string | null;
 }
 
 const REPOSITORY_ID = /^[1-9][0-9]{0,19}$/;
@@ -90,6 +97,7 @@ function validateInput(
     productionBranch: validateProductionBranch(input.productionBranch),
     ownerAddress: getAddress(input.ownerAddress),
     chainId: input.chainId,
+    ...(input.ownerOrgId?.trim() ? { ownerOrgId: input.ownerOrgId.trim() } : {}),
   };
 }
 
@@ -135,6 +143,15 @@ export async function registerWorkloadIdentity(
   rawInput: RegisterWorkloadIdentityInput,
 ): Promise<WorkloadIdentity> {
   const input = validateInput(rawInput);
+  if (input.ownerOrgId) {
+    const role = await deps.orgPolicy?.activeRole(input.ownerOrgId, input.ownerAddress);
+    if (!role || !roleAtLeast(role, "PUBLISHER")) {
+      throw new WorkloadRegistryError(
+        "ownerAddress must be an active publisher of ownerOrgId",
+        "FORBIDDEN",
+      );
+    }
+  }
 
   const existing = await deps.store.getByRepositoryId(input.repositoryId);
   if (existing) return resolveExisting(existing, input);

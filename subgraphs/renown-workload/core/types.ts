@@ -14,6 +14,10 @@ export interface WorkloadIdentity {
   /** EIP-55 checksummed owner address. */
   ownerAddress: string;
   chainId: number;
+  /** The organisation that owns this identity; absent for person-owned identities. */
+  ownerOrgId?: string | null;
+  /** Set by an org admin: no tokens are issued. Absent means enabled. */
+  disabled?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

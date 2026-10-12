@@ -119,4 +119,26 @@ export const DOMAINS_SDL = `
 `;
 
 /** Every A2 block; later tasks append theirs. */
-export const SECURITY_SDL = [PROPOSALS_SDL, DOMAINS_SDL].join("\n");
+export const WORKLOADS_SDL = `
+  "A service account of the organisation: a renown-workload identity registered for it."
+  type OrgWorkload {
+    did: String!
+    repository: String!
+    productionBranch: String!
+    ownerAddress: String!
+    disabled: Boolean!
+    createdAt: String!
+  }
+
+  extend type Query {
+    "Admins: the organisation's service accounts (workload identities)."
+    orgWorkloads(orgId: String!, auth: OrgAuthInput): [OrgWorkload!]!
+  }
+
+  extend type Mutation {
+    "Admins: a disabled identity gets no tokens."
+    setOrgWorkloadDisabled(orgId: String!, did: String!, disabled: Boolean!, auth: OrgAuthInput): OrgWorkload!
+  }
+`;
+
+export const SECURITY_SDL = [PROPOSALS_SDL, DOMAINS_SDL, WORKLOADS_SDL].join("\n");

@@ -57,6 +57,8 @@ export async function openHarness(): Promise<Harness> {
   await migrateWorkload(root.withSchema(WORKLOAD_NS));
   const relationalDb = {
     queryNamespace: (namespace: string) => root.withSchema(namespace),
+    // Writes to another namespace go through createNamespace, as on the host.
+    createNamespace: (namespace: string) => Promise.resolve(root.withSchema(namespace)),
   } as unknown as IRelationalDb<unknown>;
   return { root, relationalDb };
 }

@@ -21,6 +21,7 @@ import { RenownCredentialProcessor } from "../../../processors/renown-credential
 import { up as upCredential } from "../../../processors/renown-credential/migrations.js";
 import { RenownUserProcessor } from "../../../processors/renown-user/index.js";
 import { up as upUser } from "../../../processors/renown-user/migrations.js";
+import { migrate as migrateWorkload } from "../../renown-workload/store/migrations.js";
 import { orgMessage } from "../../../sdk/orgs.js";
 import type { OrgAuthInput } from "../core/auth.js";
 import type { OrgsConfig } from "../core/config.js";
@@ -43,6 +44,7 @@ export const lower = (account: { address: string }) => account.address.toLowerCa
 export const T0 = new Date("2026-10-12T12:00:00.000Z");
 export const USER_NS = RenownUserProcessor.getNamespace("renown-user");
 export const CRED_NS = RenownCredentialProcessor.getNamespace("renown-credential");
+export const WORKLOAD_NS = "renown-workload";
 export const TEST_CONFIG: OrgsConfig = {
   didHost: "renown.test",
   timelockSeconds: 3600,
@@ -64,13 +66,19 @@ export async function openHarness(): Promise<Harness> {
   await upUser(root.withSchema(USER_NS) as never);
   await sql`create schema ${sql.id(CRED_NS)}`.execute(root);
   await upCredential(root.withSchema(CRED_NS) as never);
-  const relationalDb = { queryNamespace: (namespace: string) => root.withSchema(namespace) } as unknown as IRelationalDb<unknown>;
+  await sql`create schema ${sql.id(WORKLOAD_NS)}`.execute(root);
+  await migrateWorkload(root.withSchema(WORKLOAD_NS));
+  // Like the host: queryNamespace reads, createNamespace hands out a writable handle.
+  const relationalDb = {
+    queryNamespace: (namespace: string) => root.withSchema(namespace),
+    createNamespace: (namespace: string) => Promise.resolve(root.withSchema(namespace)),
+  } as unknown as IRelationalDb<unknown>;
   return { root, relationalDb };
 }
 
 /** Empties every table of every namespace the harness created (later phases add tables; this follows). */
 export async function resetHarness(h: Harness): Promise<void> {
-  for (const schema of [ORGS_NAMESPACE, USER_NS, CRED_NS]) {
+  for (const schema of [ORGS_NAMESPACE, USER_NS, CRED_NS, WORKLOAD_NS]) {
     const { rows } = await sql<{ table_name: string }>`
       select table_name from information_schema.tables where table_schema = ${schema}`.execute(h.root);
     for (const { table_name } of rows) await h.root.withSchema(schema).deleteFrom(table_name).execute();
@@ -94,6 +102,31 @@ export async function insertUser(h: Harness, row: { address: string; handle?: st
       avatar_ref: null,
       created_at: T0,
       updated_at: T0,
+    })
+    .execute();
+}
+
+/** A workload identity row as renown-workload stores it. */
+export async function insertWorkload(
+  h: Harness,
+  row: { did: string; owner: string; ownerOrgId?: string | null; disabled?: boolean; repositoryId?: string },
+): Promise<void> {
+  await h.root
+    .withSchema(WORKLOAD_NS)
+    .insertInto("workload_identities")
+    .values({
+      did: row.did,
+      provider: "github",
+      repository_id: row.repositoryId ?? row.did.slice(-12),
+      repository: "acme/app",
+      production_branch: "main",
+      owner_address: row.owner,
+      chain_id: 1,
+      encrypted_key_pair: "sealed",
+      created_at: T0,
+      updated_at: T0,
+      owner_org_id: row.ownerOrgId ?? null,
+      disabled: row.disabled ?? false,
     })
     .execute();
 }

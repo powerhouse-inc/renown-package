@@ -25,6 +25,8 @@ function toIdentity(
     encryptedKeyPair: row.encrypted_key_pair,
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
+    ...(row.owner_org_id ? { ownerOrgId: row.owner_org_id } : {}),
+    ...(row.disabled ? { disabled: true } : {}),
   };
 }
 
@@ -46,6 +48,8 @@ export class KyselyWorkloadStore implements WorkloadStore {
         encrypted_key_pair: identity.encryptedKeyPair,
         created_at: identity.createdAt,
         updated_at: identity.updatedAt,
+        owner_org_id: identity.ownerOrgId ?? null,
+        disabled: identity.disabled ?? false,
       })
       .onConflict((oc) => oc.doNothing())
       .returning("did")

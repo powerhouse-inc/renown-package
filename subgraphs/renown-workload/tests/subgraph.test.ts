@@ -46,6 +46,10 @@ type Resolver = (
   ctx: unknown,
 ) => Promise<unknown>;
 
+const readModels = new Kysely<any>({
+  dialect: new PGliteDialect(new PGlite()),
+});
+
 function makeSubgraph(createNamespace: () => Promise<unknown>) {
   const routes: Registered[] = [];
   const register =
@@ -63,7 +67,11 @@ function makeSubgraph(createNamespace: () => Promise<unknown>) {
       post: register("POST"),
     },
     reactorClient: {},
-    relationalDb: { createNamespace: vi.fn(createNamespace) },
+    relationalDb: {
+      createNamespace: vi.fn(createNamespace),
+      // Other subgraphs' read models (renown-orgs): absent here, so no organisations.
+      queryNamespace: (namespace: string) => readModels.withSchema(namespace),
+    },
   } as never);
   const resolver = (type: string, field: string) =>
     (subgraph.resolvers as Record<string, Record<string, Resolver>>)[type][
