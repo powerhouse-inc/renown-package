@@ -265,6 +265,21 @@ The site and vetra.io copy-pin the message vectors in tests (as with the profile
 - Nested sub-teams.
 - Achra selling (business details, payouts, billing role, licence issuer, reviews).
 
+### 8.1 Known limitations (security residuals after C1)
+
+Accepted for the C1 rollout; each has an owner and a follow-up. Vetra = vetra-cloud-package.
+
+| # | Residual | Why it remains | Owner / follow-up |
+|---|---|---|---|
+| a | **Unsigned "system" actions by document admins and writers.** The environment reducers treat an action without a user signer as system. A personal env's owner (document ADMIN) can push unsigned actions to their own env; org operators (WRITE) can push unsigned actions of every operation that is not restricted at reactor-api, bypassing signer attribution — including the ungated `SET_SERVICE_CONFIG`, `SET_FUSION_CONFIG`, `MARK_*`, `REPORT_DEPLOYMENT_*`, `SLEEP` / `WAKE`. An unsigned `SET_OWNER_ORG` by a personal owner is reverted; the system-only operations are restricted on owned envs. | reactor-api accepts remote actions without a user signer from anyone allowed to write. | Powerhouse reactor-api: refuse remote actions without a user signer (draft: `vetra-cloud-package/docs/follow-ups/reactor-api-refuse-unsigned-remote-actions.md`). Vetra: `assertOwner` on the two config operations; status reports system-only + restricted. |
+| b | **Protection window on new environments.** A freshly created env is protected by an asynchronous change hook; until it runs (milliseconds), an unsigned `SET_OWNER` on the new (random-id) env could be pushed. | Protection cannot be applied before the document exists. | Closed by (a)'s reactor-api change. |
+| c | **Operators can delete an org env document.** A WRITE grant lets its holder `deleteDocument` at reactor-api. | reactor-api has no separate delete permission. | Powerhouse reactor-api: delete requires document ADMIN (or a restricted delete operation). |
+| d | **Tenant admins stay the creator.** A deployed tenant's `ADMINS` (gitops `switchboardAuthEnv`) and Speckle `allowedSubjects` remain the env `owner` (the creator) after an org hand-over and after they leave the org (C1 Ruling 9). | Org-wide access inside a tenant needs reactor-api org grants (first item of §8). | Vetra + reactor-api: derive tenant admins from org operators once org grants exist. |
+| e | **A hand-over announced by Vetra is reverted after a > 10-minute read outage.** If observability cannot read and protect an env within the 10-minute announcement window, the move is treated as unannounced and reverted to personal. An org app's envs are moved back by the next read of the app (throttled to once per 5 minutes); a standalone env handed over through `setEnvironmentOrg` must be handed over again. | Announcements expire so a stale one cannot cover a later unauthorised move. | Vetra: re-announce standalone hand-overs from a persisted request (later). |
+| f | **Scoped org publishers can grant and revoke licences.** In the licensing publisher surface, every org member whose publisher scope covers an app may issue and revoke its licences and attach Claude keys (C1 Ruling 13, single `canOperate` gate). | Product decision kept for C1. | Product: decide whether licence issuance needs `ADMIN`/`OWNER` or a dedicated role (Achra billing role, §8). |
+| g | **Grants on the shared environments drive cover every env.** reactor-api grants inherit down the drive hierarchy; any user grant on the drive that holds the environment documents reaches every org env. | Inheritance is reactor-api behaviour. | Operations: keep the env drive free of user grants (checked before each promotion). |
+| h | **Renown lag.** Removed members keep request-time access for up to 30 s (cache) and document WRITE until the next operator sync (≤ 5 min); licensing reads app ownership without a lazy sync, so a transfer reaches it on the next vetra-apps read. During a Renown outage org members are refused and nothing is changed. | Caching and fail-closed design (C1 Rulings 2, 3, R1). | — (by design). |
+
 ## 9. Testing and rollout
 - **Testing by sub-project:**
   - A: vitest (reducers ≥ 95%, store contract tests on memory + PGlite, resolver tests with harness, signed-message vectors, SSRF guard tests with a fake resolver, sweeper tests with an injected clock), tsc, oxlint.
