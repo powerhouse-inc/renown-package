@@ -4,7 +4,8 @@ import { Kysely, sql } from "kysely";
 import { PGliteDialect } from "kysely-pglite-dialect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SWEEP_INTERVAL_MS } from "../core/sweeper.js";
-import { PRUNE_INTERVAL_MS, RenownOrgsSubgraph } from "../index.js";
+import { RenownOrgsSubgraph } from "../index.js";
+import { PRUNE_INTERVAL_MS } from "../jobs.js";
 import { KyselyOrgStore } from "../store/kysely.js";
 
 type Resolver = (parent: unknown, args: unknown, ctx: unknown) => Promise<unknown>;
