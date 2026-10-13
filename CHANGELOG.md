@@ -1,3 +1,10 @@
+# [1.12.0-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.12.0-staging.1...v1.12.0-staging.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* **orgs:** subgraph module exports only its class (host instantiates every export) ([ab78dae](https://github.com/powerhouse-inc/renown-package/commit/ab78dae64053cf9404eeff348829cbbfaf05632a))
+
 # [1.12.0-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.11.0...v1.12.0-staging.1) (2026-10-13)
 
 
