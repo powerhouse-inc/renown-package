@@ -1,3 +1,15 @@
+# [1.12.0-staging.3](https://github.com/powerhouse-inc/renown-package/compare/v1.12.0-staging.2...v1.12.0-staging.3) (2026-10-13)
+
+
+### Bug Fixes
+
+* **orgs:** scope Organization.memberCount to members visible to the caller ([af5744f](https://github.com/powerhouse-inc/renown-package/commit/af5744f7253b192297348808f8963fec6f129b74))
+
+
+### Features
+
+* **orgs:** key public read limits on a trusted forwarded client IP ([92cc166](https://github.com/powerhouse-inc/renown-package/commit/92cc16674ccd6fbd64de53e9894dad6e87d62227))
+
 # [1.12.0-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.12.0-staging.1...v1.12.0-staging.2) (2026-10-13)
 
 
