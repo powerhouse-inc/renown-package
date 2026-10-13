@@ -11,7 +11,6 @@ import { KyselyOrgStore } from "./store/kysely.js";
 import { migrate } from "./store/migrations.js";
 import { ORGS_NAMESPACE, type OrgsKysely } from "./store/types.js";
 
-export { PRUNE_INTERVAL_MS } from "./jobs.js";
 
 /**
  * Renown organisations. Every write goes to the organization document (the
