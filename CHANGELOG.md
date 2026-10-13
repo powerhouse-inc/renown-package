@@ -1,3 +1,57 @@
+# [1.12.0-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.11.0...v1.12.0-staging.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **oidc:** catalog probe for allowed_orgs, log orgs lookup failures, validate stored roles ([6e7162f](https://github.com/powerhouse-inc/renown-package/commit/6e7162fb5dd7ff415b7277be45e1d51a9f265dcd))
+* **orgs:** attestation review fixes: issuedAt kept as signed, cached and throttled totals ([8ef89be](https://github.com/powerhouse-inc/renown-package/commit/8ef89beeab25b841f641a3f2b44f8f82bc5115cc))
+* **orgs:** count only current owners' approvals, reserve old handles atomically ([efb9093](https://github.com/powerhouse-inc/renown-package/commit/efb909389a1129f256582ca42be3a8fe800afb8b))
+* **orgs:** domain review fixes: one proof deadline, address fallback, CAS re-checks, recovery guards ([dd2899f](https://github.com/powerhouse-inc/renown-package/commit/dd2899f50bd39fb5560dc4de0728c587bd71dcf1))
+* **orgs:** fair, time-bounded webhook delivery and shared URL vetting ([ecef6a7](https://github.com/powerhouse-inc/renown-package/commit/ecef6a77c40c88616824596685059bf0dfa64aad))
+* **orgs:** harden org-owned OIDC clients ([2993710](https://github.com/powerhouse-inc/renown-package/commit/29937101c799a628c77629c1a2004e28c2fe8950))
+* **orgs:** idempotent, lagged and paged delegation alerts for active members ([37197a1](https://github.com/powerhouse-inc/renown-package/commit/37197a13e370312aba11a4955ebef7696e919a49))
+* **orgs:** isolate and fairly batch sweeper proposals, guard claim release ([7b3dc5b](https://github.com/powerhouse-inc/renown-package/commit/7b3dc5b7ffbe0efc1cd42bac8fa312af97b8c2a4))
+* **orgs:** keep exit suspensions on failures, member-level fallback, fail closed past org_apps, throttle and cap credential calls ([e62b535](https://github.com/powerhouse-inc/renown-package/commit/e62b5350a31aa97a4099ad222cff7628790343e7))
+* **orgs:** lowercase on write, transactional team writes, domain uniqueness tests ([80e9a33](https://github.com/powerhouse-inc/renown-package/commit/80e9a33203c07756bb62e8a0f0978f5f863238ec))
+* **orgs:** member-level suspensions in their own table, time-bounded, audited and liftable ([c3ebbe0](https://github.com/powerhouse-inc/renown-package/commit/c3ebbe016c57a2a63e7651b6c8bd89750f8aedef))
+* **orgs:** never derive stored app scope from role; add effectiveAllScope, guard hidden on open status ([e5cd1c3](https://github.com/powerhouse-inc/renown-package/commit/e5cd1c335dd10baac3cca9f5211da7b9f7eb5c6e))
+* **orgs:** read credential issuance dates as UTC for member suspension bounds ([9db5b7d](https://github.com/powerhouse-inc/renown-package/commit/9db5b7dc45d2e8b7e17bb3efee240e82a013331a))
+* **orgs:** registrable-domain handle claims, paused deliveries, private moderation details ([dc7e38c](https://github.com/powerhouse-inc/renown-package/commit/dc7e38cda359a4007aec764712e260b9d9953427))
+* **orgs:** replay key on signer+message, atomic org create with rollback, read limits ([aec9b03](https://github.com/powerhouse-inc/renown-package/commit/aec9b03c0b51f1e3b7b45fce4c5407459e641954))
+* **orgs:** transfer review fixes: authorise before status, owner-only withdrawal of proposal transfers, expire on touch, cancel stale transfers, person listings exclude org apps ([0e61e9d](https://github.com/powerhouse-inc/renown-package/commit/0e61e9d5d2506107133df547c35414907f1a3b44))
+* **renown-oidc,renown-workload:** re-check org eligibility at userinfo, 503 when org rules are unreadable ([1998174](https://github.com/powerhouse-inc/renown-package/commit/1998174dd148256e492af9ba8578e29fe9b73b09))
+* **renown-oidc:** probe allowed_orgs on the namespaced handle so the migration survives restarts ([ce408f9](https://github.com/powerhouse-inc/renown-package/commit/ce408f925e28e5870d5fa05b95a3baedd11d631a))
+* **renown-orgs:** final-review minors ([f700f4d](https://github.com/powerhouse-inc/renown-package/commit/f700f4d4dad56d31ad1d77377097fd839c6edcdb))
+* **renown-orgs:** serialise app ownership changes with organisation locks and a live-org guard ([4bb3f1e](https://github.com/powerhouse-inc/renown-package/commit/4bb3f1e2eef4e0464a58be12967cf7d9a9cc97ae))
+* **stats:** attach org apps before claiming, repair lost attaches, checked org mirror, host-bound org DIDs, batched org cards ([8eb0102](https://github.com/powerhouse-inc/renown-package/commit/8eb0102e06e50107c45d70a1984e980b2e3b5462))
+
+
+### Features
+
+* **app-profile:** support and security contacts ([d2cb670](https://github.com/powerhouse-inc/renown-package/commit/d2cb6708c27aa73b4487f636ce29282fdd6707aa))
+* **oidc:** orgs scope and claim, org-restricted clients ([2e464a3](https://github.com/powerhouse-inc/renown-package/commit/2e464a357417ed2de4f945800fdb867fc4632a12))
+* **orgs:** app transfers in and out, freeze and unfreeze ([eef3649](https://github.com/powerhouse-inc/renown-package/commit/eef36491ddd2ecf6d4ce54f7ec609f815c3bd65f))
+* **orgs:** delegations count only under organisation rules, with suspensions ([529bea5](https://github.com/powerhouse-inc/renown-package/commit/529bea58e5be050df61731188e7ac1716ed4ca5c))
+* **orgs:** domain verification with SSRF-guarded proofs, daily re-checks and recovery ([974a278](https://github.com/powerhouse-inc/renown-package/commit/974a278f885183e911ebcf904fe9a64750cf42ca))
+* **orgs:** membership and team reducers with last-owner and limit invariants ([dcfbb81](https://github.com/powerhouse-inc/renown-package/commit/dcfbb8110a5d2a18439471f432305f77696fec18))
+* **orgs:** membership lifecycle with invites, invite links, roles, scopes and visibility ([7e17ea7](https://github.com/powerhouse-inc/renown-package/commit/7e17ea7aad4b0214e377871f73f27fb110787483))
+* **orgs:** notification inbox with retention and delegation alerts ([becd4ea](https://github.com/powerhouse-inc/renown-package/commit/becd4ea3f27b11f2a1562649909275d92e9d195c))
+* **orgs:** one handle namespace for users and organizations, memberOf, organization avatars ([94cfb9c](https://github.com/powerhouse-inc/renown-package/commit/94cfb9c1a7dbf38a0a521671f5d97da9bc3b6d70))
+* **orgs:** org policy and org service accounts (owner org, disable, no tokens when frozen) ([af758b2](https://github.com/powerhouse-inc/renown-package/commit/af758b2d580ec69869cb22aaf9168954f310dc25))
+* **orgs:** org signed messages, roles, config and caller resolution ([3589ca8](https://github.com/powerhouse-inc/renown-package/commit/3589ca80f254d632082e5098ce4ca7c41933994e))
+* **orgs:** org-owned OIDC clients restricted to members ([0e28e20](https://github.com/powerhouse-inc/renown-package/commit/0e28e203a272f1736389cc7c9eba2db61c438983))
+* **orgs:** owner proposals with thresholds and timelocks ([2275cb4](https://github.com/powerhouse-inc/renown-package/commit/2275cb4b6c67c945828d9318b8ed08be73450068))
+* **orgs:** powerhouse/renown-organization model with profile, apps, domains and security reducers ([584ae2d](https://github.com/powerhouse-inc/renown-package/commit/584ae2d690c9a3f1fada6a60e749c9086ab45896))
+* **orgs:** release attestations, organisation totals and the org did:web document ([e18f9d3](https://github.com/powerhouse-inc/renown-package/commit/e18f9d32da37f5d0b13352de3e56326484d33bd7))
+* **orgs:** renown-orgs relational store with contract tests ([cb7e82e](https://github.com/powerhouse-inc/renown-package/commit/cb7e82ee3475e599d4adf9b9e89e3d69db5fde2d))
+* **orgs:** renown-orgs subgraph with organization CRUD, directory, handles and audit log ([db364dc](https://github.com/powerhouse-inc/renown-package/commit/db364dcba75dcc5ed10a4f02fbb461666c3e7b5d))
+* **orgs:** reports, platform moderation with handle release, audit export ([b5d6243](https://github.com/powerhouse-inc/renown-package/commit/b5d624301c8f6779637caf3dea2977b9384015fb))
+* **orgs:** signed webhooks with retries, auto-disable and SSRF-guarded delivery ([c32ae30](https://github.com/powerhouse-inc/renown-package/commit/c32ae30e8930e50945be7e5c009b3f98efa03604))
+* **orgs:** single-runner sweeper that runs, expires and re-arms proposals ([f83ce4e](https://github.com/powerhouse-inc/renown-package/commit/f83ce4ec6645a5514a0dd95c25f199a2104fcefb))
+* **orgs:** teams that extend publisher scopes, and the resolver/SDL gate ([e733631](https://github.com/powerhouse-inc/renown-package/commit/e733631f4d7d3bf36ab87a4720f0746e95edf846))
+* **sdk:** organisation helpers exported as @powerhousedao/renown-package/orgs ([ac3e09c](https://github.com/powerhouse-inc/renown-package/commit/ac3e09c1d9f453425fd380364df4393353d2bb1f))
+* **stats:** org-owned apps with publisher orgs, first claims for orgs and frozen apps ([38c5763](https://github.com/powerhouse-inc/renown-package/commit/38c5763f39fc7bcf9b5cebe111e1de8f6d5c6509))
+
 # [1.11.0-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.10.0...v1.11.0-staging.1) (2026-10-11)
 
 
