@@ -138,7 +138,7 @@ describe("organizationDidDocument", () => {
   });
 
   it("uses the configured host (a port is percent-encoded in the DID only) and omits LinkedDomains without verified domains", async () => {
-    const t = harnessResolvers(h, { config: () => ({ didHost: "localhost%3A3000", timelockSeconds: 3600, recoverySeconds: 7200, platformAdmins: new Set<string>() }) });
+    const t = harnessResolvers(h, { config: () => ({ didHost: "localhost%3A3000", timelockSeconds: 3600, recoverySeconds: 7200, platformAdmins: new Set<string>(), trustedReadToken: null }) });
     const { id } = await createOrg(t, ALICE, "acme");
     const doc = JSON.parse(await t.query<string>("organizationDidDocument", { orgId: id })) as { id: string; alsoKnownAs: string[]; service: { type: string; serviceEndpoint: unknown }[] };
     expect(doc.id).toBe(`did:web:localhost%3A3000:org:${id}`);

@@ -13,6 +13,8 @@ export interface OrgsConfig {
   recoverySeconds: number;
   /** Lowercase addresses that resolve organization reports. */
   platformAdmins: ReadonlySet<string>;
+  /** Shared secret of trusted server-side readers (renown.id SSR); null when unset. Only re-keys read limits. */
+  trustedReadToken: string | null;
 }
 
 function positiveSeconds(raw: string | undefined, fallback: number): number {
@@ -38,6 +40,7 @@ export function loadOrgsConfig(env: Record<string, string | undefined>): OrgsCon
     timelockSeconds: positiveSeconds(env.RENOWN_ORG_TIMELOCK_SECONDS, DEFAULT_TIMELOCK_SECONDS),
     recoverySeconds: positiveSeconds(env.RENOWN_ORG_RECOVERY_SECONDS, DEFAULT_RECOVERY_SECONDS),
     platformAdmins: addresses(admins),
+    trustedReadToken: env.RENOWN_TRUSTED_READ_TOKEN?.trim() || null,
   };
 }
 

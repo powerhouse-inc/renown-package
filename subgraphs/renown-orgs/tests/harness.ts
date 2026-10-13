@@ -61,6 +61,7 @@ export const TEST_CONFIG: OrgsConfig = {
   timelockSeconds: 3600,
   recoverySeconds: 7200,
   platformAdmins: new Set([lower(EVE)]),
+  trustedReadToken: null,
 };
 
 export interface Harness {
