@@ -324,6 +324,34 @@ describe("roles, app scopes and hiding", () => {
   });
 });
 
+describe("memberCount visibility", () => {
+  const count = async (t: TestResolvers, id: string, who?: Parameters<typeof t.query>[2]) =>
+    (await t.query<OrganizationOutput>("organization", { id }, who)).memberCount;
+
+  it("counts only publicly visible members for outsiders and everyone for members", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme", { membersPublic: true });
+    await join(t, id, BOB, "MEMBER");
+    await join(t, id, CAROL, "MEMBER");
+    await t.mutate("setMyOrgMembershipHidden", { orgId: id, hidden: true }, CAROL);
+    expect(await count(t, id)).toBe(2);
+    expect(await count(t, id, DAVE)).toBe(2);
+    expect(await count(t, id, BOB)).toBe(3);
+    expect(await count(t, id, CAROL)).toBe(3);
+  });
+
+  it("reports 0 to outsiders of a private org and the full count to members", async () => {
+    const t = harnessResolvers(h);
+    const { id } = await createOrg(t, ALICE, "acme", { membersPublic: false, listed: true });
+    await join(t, id, BOB, "MEMBER");
+    expect(await count(t, id)).toBe(0);
+    expect(await count(t, id, DAVE)).toBe(0);
+    expect(await count(t, id, BOB)).toBe(2);
+    const search = await t.query<{ items: OrganizationOutput[] }>("organizationSearch", { query: "acme" });
+    expect(search.items.map((o) => o.memberCount)).toEqual([0]);
+  });
+});
+
 describe("visibility", () => {
   it("shows private member lists to members only and inactive records to admins only", async () => {
     const t = harnessResolvers(h);

@@ -220,6 +220,8 @@ export async function organizationOutput(rt: OrgRuntime, org: OrgRecord, viewer:
   const ownerCount = active.filter((member) => member.role === "OWNER").length;
   const mine = viewer ? active.find((member) => member.address === viewer) : undefined;
   const teams = mine ? await store.teams(org.id) : [];
+  // Same visibility as organizationMembers: members see everyone active, others only the public list.
+  const memberCount = mine ? active.length : org.membersPublic ? active.filter((member) => !member.hidden).length : 0;
   return {
     ...base,
     bio: org.bio,
@@ -229,7 +231,7 @@ export async function organizationOutput(rt: OrgRuntime, org: OrgRecord, viewer:
     verifiedDomains,
     notAffiliatedWith,
     ownerCount,
-    memberCount: active.length,
+    memberCount,
     securityWarnings: ownerCount === 1 ? ["SINGLE_OWNER"] : [],
     apps: apps.map((app) => ({ appDid: app.appDid, addedAt: iso(app.addedAt), frozen: app.frozen })),
     teams: teams.map((team) => teamOutput(team, active)),
