@@ -365,6 +365,21 @@ describe("authorisation order and read limits", () => {
   });
 });
 
+describe("trusted read token", () => {
+  const config = { didHost: "renown.test", timelockSeconds: 3600, recoverySeconds: 7200, platformAdmins: new Set<string>(), trustedReadToken: "tok" };
+  const ctx = (token: string, ip: string) => ({ headers: { "x-forwarded-for": "10.0.0.1", "x-renown-read-token": token, "x-renown-client-ip": ip } });
+
+  it("gives each forwarded client IP its own bucket, still limited", async () => {
+    const t = harnessResolvers(h, { config: () => config, readLimiter: createRateLimiter(1, 60_000) });
+    const call = (c: unknown) => t.resolvers.Query.orgHandleAvailability(null, { handle: "fresh" }, c);
+    await call(ctx("tok", "1.1.1.1"));
+    await call(ctx("tok", "2.2.2.2"));
+    expect((await failure(call(ctx("tok", "1.1.1.1")))).code).toBe("RATE_LIMITED");
+    await call(ctx("bad", "3.3.3.3"));
+    expect((await failure(call(ctx("bad", "4.4.4.4")))).code).toBe("RATE_LIMITED");
+  });
+});
+
 describe("organizationSearch visibility", () => {
   it("excludes archived and taken-down organizations even when listed", async () => {
     const t = harnessResolvers(h);

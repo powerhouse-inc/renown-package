@@ -76,6 +76,7 @@ describe("config", () => {
       timelockSeconds: 172800,
       recoverySeconds: 604800,
       platformAdmins: new Set(),
+      trustedReadToken: null,
     });
     const config = loadOrgsConfig({
       RENOWN_ORG_DID_HOST: " Renown-Staging.vetra.io ",

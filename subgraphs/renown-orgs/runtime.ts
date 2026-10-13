@@ -3,6 +3,8 @@ import { generateId, type Action, type PHDocument } from "document-model";
 import type { MediaBackend } from "../../media/backend.js";
 import { mediaBackend } from "../../media/slot.js";
 import { orgMessage, sha256Hex } from "../../sdk/orgs.js";
+import { timingSafeEqual } from "node:crypto";
+import { isIP } from "node:net";
 import { createRateLimiter } from "../renown-auth/core/rate-limit.js";
 import { KyselyOidcStore } from "../renown-oidc/store/kysely.js";
 import { OIDC_NAMESPACE } from "../renown-oidc/store/migrations.js";
@@ -122,12 +124,28 @@ function header(ctx: OrgContext, name: string): string | undefined {
   return (Array.isArray(value) ? value[0] : value)?.trim() || undefined;
 }
 
+function tokenMatches(given: string | undefined, expected: string): boolean {
+  if (!given) return false;
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** The client IP a trusted reader (X-Renown-Read-Token) forwards, or null; it never lifts a limit, only re-keys it. */
+function trustedClientIp(ctx: OrgContext, token: string | null): string | null {
+  if (!token || !tokenMatches(header(ctx, "x-renown-read-token"), token)) return null;
+  const ip = header(ctx, "x-renown-client-ip");
+  return ip && isIP(ip) ? ip.toLowerCase() : null;
+}
+
 /**
  * The rate-limit key of an unauthenticated read: the bearer's address, else
  * the client IP (first X-Forwarded-For hop, then X-Real-IP), else one shared
  * anonymous bucket. Forwarding headers are only as trustworthy as the proxy.
  */
-export function clientKey(ctx: OrgContext): string {
+export function clientKey(ctx: OrgContext, trustedReadToken: string | null = null): string {
+  const forwarded = trustedClientIp(ctx, trustedReadToken);
+  if (forwarded) return `ip:${forwarded}`;
   const bearer = ctx.user?.address;
   if (bearer && ADDRESS_RE.test(bearer)) return `address:${bearer.toLowerCase()}`;
   const ip = header(ctx, "x-forwarded-for")?.split(",")[0]?.trim() || header(ctx, "x-real-ip");
@@ -199,7 +217,7 @@ export function createRuntime(deps: OrgsResolverDeps): OrgRuntime {
     caller: (ctx, field, args) => requireAddress(ctx, field, args, now()),
     viewer: (ctx, field, args) => provenAddress(ctx, field, args, now()),
     throttleRead(ctx) {
-      if (!readLimiter.take(clientKey(ctx), now().getTime())) throw rateLimited();
+      if (!readLimiter.take(clientKey(ctx, deps.config().trustedReadToken), now().getTime())) throw rateLimited();
     },
     takeInvite(orgId) {
       if (!inviteLimiter.take(orgId, now().getTime())) throw rateLimited();

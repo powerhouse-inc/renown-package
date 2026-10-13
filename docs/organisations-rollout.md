@@ -9,6 +9,7 @@
 | `RENOWN_ORG_TIMELOCK_SECONDS` | default `172800` (48 h) | Delay of ADD_OWNER, REMOVE_OWNER, TRANSFER_APP_OUT, CHANGE_HANDLE and DELETE_ORG proposals. |
 | `RENOWN_ORG_RECOVERY_SECONDS` | default `604800` (7 d) | Delay of RECOVER proposals. |
 | `RENOWN_WORKLOAD_KEY_ENCRYPTION_KEY` | base64 of 32 bytes | Required for webhooks (it seals the signing secrets); without it webhooks are unavailable. Already used by renown-workload. |
+| `RENOWN_TRUSTED_READ_TOKEN` | random secret (e.g. `openssl rand -hex 32`) | Lets renown.id's server-side renders send `X-Renown-Read-Token` plus `X-Renown-Client-IP` so public read limits are keyed per visitor instead of sharing the renown.id pod's bucket. It only changes the limiter key, never bypasses limits. Unset disables it. Set the same value on renown.id as a server-only env (never `NEXT_PUBLIC_*`). |
 | `RENOWN_OIDC_DRIVE_ID` | the OIDC client drive | Where org-owned OIDC clients are created. |
 
 ## Requirements

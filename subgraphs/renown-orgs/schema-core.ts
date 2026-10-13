@@ -121,6 +121,7 @@ export const CORE_SDL = `
     "Another organization with a verified domain and the same name (case-insensitive), shown when this one has none."
     notAffiliatedWith: OrgSummary
     ownerCount: Int!
+    "Active members visible to the caller: everyone active for members of the org, otherwise only the public list (0 when members are private)."
     memberCount: Int!
     securityWarnings: [OrgSecurityWarning!]!
     apps: [OrgApp!]!
