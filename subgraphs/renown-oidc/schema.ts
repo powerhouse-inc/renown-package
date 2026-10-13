@@ -11,10 +11,22 @@ export const schema: DocumentNode = gql`
     DISABLED
   }
 
+  "Members of orgId with at least minRole (OWNER, ADMIN, PUBLISHER or MEMBER) may sign in."
+  input OidcAllowedOrgInput {
+    orgId: String!
+    minRole: String!
+  }
+
+  type OidcAllowedOrg {
+    orgId: String!
+    minRole: String!
+  }
+
   input RegisterOidcClientInput {
     name: String!
     redirectUris: [String!]!
     allowedSubjects: [String!]!
+    allowedOrgs: [OidcAllowedOrgInput!]
     confidential: Boolean = true
   }
 
@@ -25,6 +37,8 @@ export const schema: DocumentNode = gql`
     addAllowedSubjects: [String!]
     removeAllowedSubjects: [String!]
     allowAnySubject: Boolean
+    "Replaces the list."
+    allowedOrgs: [OidcAllowedOrgInput!]
     status: OidcClientStatus
   }
 
@@ -37,6 +51,7 @@ export const schema: DocumentNode = gql`
     clientId: String!
     name: String
     redirectUris: [String!]!
+    allowedOrgs: [OidcAllowedOrg!]!
     status: String!
   }
 

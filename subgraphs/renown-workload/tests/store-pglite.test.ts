@@ -1,6 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
-import { Kysely, sql } from "kysely";
+import { Kysely } from "kysely";
 import { PGliteDialect } from "kysely-pglite-dialect";
+import { bootNamespace } from "../../renown-stats/tests/host-namespace.js";
 import { afterAll } from "vitest";
 import { KyselyWorkloadStore } from "../store/kysely.js";
 import { migrate } from "../store/migrations.js";
@@ -23,10 +24,7 @@ async function makeKyselyStore(): Promise<KyselyWorkloadStore> {
     dialect: new PGliteDialect(new PGlite()),
   });
   opened.push(root);
-  await sql`create schema "renown-workload"`.execute(root);
-  const db = root.withSchema("renown-workload");
-  await migrate(db);
-  await migrate(db);
+  const db = await bootNamespace<WorkloadDB>(root, "renown-workload", migrate);
   return new KyselyWorkloadStore(db);
 }
 

@@ -33,6 +33,7 @@ import {
   revokeMessage,
   verifySignedMessage,
 } from "./core/signed-message.js";
+import { orgHandleStatus } from "../renown-orgs/store/lookups.js";
 import { findCredentialDocs, findHandleOwner, findNewestProfileDoc, type ReadModelDb } from "./lookups.js";
 import { verifyMessageOnChain, verifyTypedDataOnChain } from "./core/smart-wallet.js";
 
@@ -254,12 +255,20 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
     }
   }
 
-  /** HANDLE_TAKEN unless `handle` is free or already this profile's. */
+  /** HANDLE_TAKEN unless `handle` is free or already this profile's; users and organizations share one namespace. */
   async function assertHandleFree(handle: string, documentId: string | undefined): Promise<void> {
     const owner = await findHandleOwner(relationalDb, handle);
     if (owner !== undefined && owner !== documentId) {
       throw fieldError("HANDLE_TAKEN", "handle", `The handle "${handle}" is taken`);
     }
+    let orgStatus: "TAKEN" | "RESERVED" | null;
+    try {
+      orgStatus = await orgHandleStatus(relationalDb, handle, now());
+    } catch {
+      throw new GraphQLError("Handles cannot be checked right now", { extensions: { code: "SERVICE_UNAVAILABLE" } });
+    }
+    if (orgStatus === "TAKEN") throw fieldError("HANDLE_TAKEN", "handle", `The handle "${handle}" belongs to an organization`);
+    if (orgStatus === "RESERVED") throw fieldError("HANDLE_TAKEN", "handle", `The handle "${handle}" is reserved`);
   }
 
   /** INVALID_AVATAR unless `ref` is a stored image within the avatar limits. */

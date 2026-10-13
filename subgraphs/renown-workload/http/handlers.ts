@@ -4,6 +4,7 @@ import { GithubTokenError, type GithubVerifier } from "../core/github.js";
 import { issueWorkloadToken } from "../core/keys.js";
 import { classifyRun, isAudienceAllowed } from "../core/refs.js";
 import type { JwkKeyPair, VetraWorkloadClaim } from "../core/types.js";
+import type { OrgPolicy } from "../../renown-orgs/core/org-policy.js";
 import type { WorkloadStore } from "../store/types.js";
 
 /** Lifetime of an issued workload token, in seconds. */
@@ -15,6 +16,8 @@ export interface ExchangeDeps {
   encryptionKey: Uint8Array;
   audiences: readonly string[];
   verifier: GithubVerifier;
+  /** Which apps their organisation froze (no tokens for those). */
+  orgPolicy?: Pick<OrgPolicy, "orgOfApp">;
   log?: (message: string) => void;
 }
 
@@ -98,6 +101,20 @@ export function createTokenHandler(
     }
     if (identity.repository.toLowerCase() !== claims.repository.toLowerCase()) {
       return denied("The repository does not match the registered identity");
+    }
+    if (identity.disabled) {
+      return denied("The workload identity is disabled by its organisation");
+    }
+    // Fail closed, but as "try again" rather than a 500: org rules that cannot be read issue nothing.
+    let frozen: boolean;
+    try {
+      frozen = (await d.orgPolicy?.orgOfApp(identity.did))?.frozen ?? false;
+    } catch (e) {
+      console.error(`[renown-workload] organisation rules unavailable for ${identity.did}: ${e instanceof Error ? e.message : String(e)}`);
+      return error(503, "temporarily_unavailable");
+    }
+    if (frozen) {
+      return denied("The app is frozen by its organisation");
     }
     const eventName = claims.event_name ?? "";
     const ref = classifyRun(eventName, claims.ref, identity.productionBranch);

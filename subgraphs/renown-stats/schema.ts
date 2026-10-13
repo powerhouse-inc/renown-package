@@ -86,6 +86,15 @@ export const schema: DocumentNode = gql`
     public: Boolean!
   }
 
+  "The organisation publishing an org-owned app."
+  type AppPublisherOrg {
+    id: String!
+    did: String!
+    handle: String!
+    name: String!
+    verifiedDomains: [String!]!
+  }
+
   type AppProfile {
     appDid: String!
     "The profile document; its images are at <renown>/media/<documentId>/logo and /cover."
@@ -101,8 +110,16 @@ export const schema: DocumentNode = gql`
     category: String
     logoRef: String
     coverRef: String
+    "An email address or an https URL; render emails as mailto: links."
+    supportContact: String
+    "Where to report vulnerabilities: an email address or an https URL."
+    securityContact: String
     links: [AppProfileLink!]!
     metrics: [AppMetric!]!
+    "Set for org-owned apps (publisherDid is then the org's did:web)."
+    publisherOrg: AppPublisherOrg
+    "Frozen by its organisation: no profile writes, tokens or counting delegations."
+    frozen: Boolean!
   }
 
   type AppProfilePage {
@@ -155,13 +172,20 @@ export const schema: DocumentNode = gql`
   type Query {
     userStats(userDid: String!): [UserStat!]!
     appProfile(appDid: String!): AppProfile
+    "publisherDid: a did:pkh or an address (that person's own apps, never org-owned ones), or an organisation's did:web"
     appProfilesByPublisher(publisherDid: String!): [AppProfile!]!
     """
     Every app profile, newest first. limit 1-50 (default 20). category: only
     profiles whose category equals it case-insensitively (trimmed); blank or
-    absent = all. Pass the same category with after.
+    absent = all. Pass the same category (and orgId) with after.
     """
-    appProfiles(limit: Int, after: String, category: String): AppProfilePage!
+    appProfiles(
+      limit: Int
+      after: String
+      category: String
+      "Only apps published by this organisation"
+      orgId: String
+    ): AppProfilePage!
     "Non-empty categories of app profiles: count desc, then name."
     appProfileCategories: [AppProfileCategory!]!
     "Network-wide counts; SERVICE_UNAVAILABLE when a read model cannot be read."
@@ -196,9 +220,15 @@ export const schema: DocumentNode = gql`
       category: String
       logoRef: String
       coverRef: String
+      "Support contact: at most 200 characters, an email address or an https URL; empty clears."
+      supportContact: String
+      "Security contact: at most 200 characters, an email address or an https URL; empty clears."
+      securityContact: String
       links: [AppProfileLinkInput!]
       "The whole metric list (at most 16); [] clears."
       metrics: [AppMetricInput!]
+      "First write of an org-owned app: the organisation its workload identity was registered for. Errors also APP_FROZEN."
+      publisherOrgId: String
     ): Boolean!
   }
 `;

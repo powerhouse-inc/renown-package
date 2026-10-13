@@ -1,8 +1,9 @@
 import { PGlite } from "@electric-sql/pglite";
 import type { IReactorClient } from "@powerhousedao/reactor";
 import type { PHDocument } from "document-model";
-import { Kysely, sql } from "kysely";
+import { Kysely } from "kysely";
 import { PGliteDialect } from "kysely-pglite-dialect";
+import { bootNamespace } from "./host-namespace.js";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { reducer, setStat, setUserDid, utils } from "../../../document-models/renown-user-stats/index.js";
 import { backfillAppMetricValues, METRIC_BACKFILL_JOB } from "../core/backfill.js";
@@ -24,9 +25,7 @@ afterAll(async () => {
 async function makeIndex() {
   const root = new Kysely<StatsDB>({ dialect: new PGliteDialect(new PGlite()) });
   opened.push(root);
-  await sql`create schema "renown-stats"`.execute(root);
-  const db = root.withSchema("renown-stats");
-  await migrate(db);
+  const db = await bootNamespace<StatsDB>(root, "renown-stats", migrate);
   return { index: new KyselyStatsIndex(db), db };
 }
 

@@ -26,6 +26,10 @@
     {
       "name": "RenownAppProfile",
       "id": "powerhouse/renown-app-profile"
+    },
+    {
+      "name": "RenownOrganization",
+      "id": "powerhouse/renown-organization"
     }
   ],
   "apps": [],
@@ -33,23 +37,17 @@
     {
       "id": "renown-credential-editor",
       "name": "Renown Credential Editor",
-      "documentTypes": [
-        "powerhouse/renown-credential"
-      ]
+      "documentTypes": ["powerhouse/renown-credential"]
     },
     {
       "id": "renown-user-editor",
       "name": "Renown User Editor",
-      "documentTypes": [
-        "powerhouse/renown-user"
-      ]
+      "documentTypes": ["powerhouse/renown-user"]
     },
     {
       "name": "Renown OIDC Client Editor",
       "id": "renown-oidc-client-editor",
-      "documentTypes": [
-        "renown/oidc-client"
-      ]
+      "documentTypes": ["renown/oidc-client"]
     }
   ],
   "processors": [
@@ -86,6 +84,10 @@
     {
       "id": "renown-stats",
       "name": "renown-stats"
+    },
+    {
+      "id": "renown-orgs",
+      "name": "renown-orgs"
     }
   ],
   "config": []

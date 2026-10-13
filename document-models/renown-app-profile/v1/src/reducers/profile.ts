@@ -10,6 +10,7 @@ import {
   DescriptionTooLongError,
   DuplicateLinkIdError,
   InvalidAppDidError,
+  InvalidContactError,
   InvalidImageRefError,
   InvalidLinkError,
   InvalidLogoError,
@@ -21,6 +22,7 @@ import {
 import {
   isAppDid,
   isAppImageRef,
+  isContact,
   isLogo,
   isPublisherDid,
   isValidLinkLabel,
@@ -116,6 +118,13 @@ export const renownAppProfileProfileOperations: RenownAppProfileProfileOperation
       const category = patchValue(action.input.category);
       const logoRef = imageRefPatch(action.input.logoRef);
       const coverRef = imageRefPatch(action.input.coverRef);
+      const supportContact = patchValue(action.input.supportContact);
+      const securityContact = patchValue(action.input.securityContact);
+      for (const contact of [supportContact, securityContact]) {
+        if (contact && !isContact(contact)) {
+          throw new InvalidContactError(`Invalid contact: ${contact}`);
+        }
+      }
       if (website && !isWebsite(website)) {
         throw new InvalidWebsiteError(`Invalid website: ${website}`);
       }
@@ -142,6 +151,10 @@ export const renownAppProfileProfileOperations: RenownAppProfileProfileOperation
       if (category !== undefined) state.category = category;
       if (logoRef !== undefined) state.logoRef = logoRef;
       if (coverRef !== undefined) state.coverRef = coverRef;
+      if (supportContact !== undefined) state.supportContact = supportContact;
+      if (securityContact !== undefined) {
+        state.securityContact = securityContact;
+      }
     },
     addLinkOperation(state, action) {
       const { id, label, url } = action.input;

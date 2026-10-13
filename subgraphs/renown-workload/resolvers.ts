@@ -1,5 +1,6 @@
 import { GraphQLError } from "graphql";
 import { constantTimeEqual } from "../renown-oidc/core/crypto.js";
+import type { OrgPolicy } from "../renown-orgs/core/org-policy.js";
 import { statsAudience } from "../renown-stats/core/config.js";
 import { open } from "./core/crypto.js";
 import { issueAppToken } from "./core/keys.js";
@@ -27,6 +28,8 @@ export interface ResolverDeps {
   now?: () => Date;
   /** The audience app stats tokens are minted for (defaults to RENOWN_STATS_AUDIENCE / renown-stats default). */
   statsAudience?: () => string;
+  /** Organisations: who may register for one, and which apps they froze. */
+  orgPolicy?: () => Pick<OrgPolicy, "activeRole" | "orgOfApp">;
 }
 
 interface ResolverContext {
@@ -41,14 +44,27 @@ export const APP_STATS_TOKEN_TTL_SEC = 600;
 
 interface WorkloadIdentityOutput extends Omit<
   WorkloadIdentity,
-  "createdAt" | "updatedAt"
+  "createdAt" | "updatedAt" | "ownerOrgId" | "disabled"
 > {
+  ownerOrgId: string | null;
+  disabled: boolean;
   createdAt: string;
 }
 
 function output(identity: WorkloadIdentity): WorkloadIdentityOutput {
-  const { createdAt, updatedAt: _updatedAt, ...rest } = identity;
-  return { ...rest, createdAt: createdAt.toISOString() };
+  const {
+    createdAt,
+    updatedAt: _updatedAt,
+    ownerOrgId,
+    disabled,
+    ...rest
+  } = identity;
+  return {
+    ...rest,
+    ownerOrgId: ownerOrgId ?? null,
+    disabled: disabled === true,
+    createdAt: createdAt.toISOString(),
+  };
 }
 
 function notConfigured(what: string): GraphQLError {
@@ -96,6 +112,7 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
       store,
       encryptionKey: config.encryptionKey,
       now: deps.now ?? (() => new Date()),
+      orgPolicy: deps.orgPolicy?.(),
     };
   }
 
@@ -168,6 +185,15 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
         const identity = await registry.store.getByDid(args.did);
         if (!identity) {
           // Same answer as a bad registration token: nothing to tell apart.
+          throw new GraphQLError("Forbidden", {
+            extensions: { code: "FORBIDDEN" },
+          });
+        }
+        // A disabled service account, or an app its organisation froze, gets no tokens.
+        if (
+          identity.disabled ||
+          (await deps.orgPolicy?.().orgOfApp(identity.did))?.frozen
+        ) {
           throw new GraphQLError("Forbidden", {
             extensions: { code: "FORBIDDEN" },
           });

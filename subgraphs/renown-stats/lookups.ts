@@ -2,6 +2,8 @@ import { sql } from "kysely";
 import { RenownCredentialProcessor } from "../../processors/renown-credential/index.js";
 import type { DB as RenownCredentialDB } from "../../processors/renown-credential/schema.js";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
+import type { OrgPolicy } from "../renown-orgs/core/org-policy.js";
+import { issuedAtUtc } from "../renown-orgs/store/foreign.js";
 import type { WorkloadDB } from "../renown-workload/store/types.js";
 import { RenownUserProcessor } from "../../processors/renown-user/index.js";
 import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js";
@@ -9,26 +11,26 @@ import type { DB as RenownUserDB } from "../../processors/renown-user/schema.js"
 /**
  * True when `address` holds an unrevoked, unexpired Renown credential
  * delegating to `appDid`: the same fact the host checks before it accepts a
- * bearer issued by `appDid` for `address`.
+ * bearer issued by `appDid` for `address`. With `policy`, only a credential
+ * that counts under organisation rules qualifies (derived revocation for org
+ * apps; person apps always count). Throws when a read fails.
  */
 export async function hasDelegation(
   db: ReadModelDb,
   address: string,
   appDid: string,
   now: Date,
+  policy?: Pick<OrgPolicy, "credentialStatus">,
 ): Promise<boolean> {
-  const row = await RenownCredentialProcessor.query<RenownCredentialDB>(
+  const issuer = address.toLowerCase();
+  const rows = await RenownCredentialProcessor.query<RenownCredentialDB>(
     "renown-credential",
     db,
   )
     .selectFrom("renown_credential")
-    .select("document_id")
+    .select(["credential_id", issuedAtUtc().as("issued_at")])
     .where((eb) =>
-      eb(
-        eb.fn("LOWER", ["issuer_ethereum_address"]),
-        "=",
-        address.toLowerCase(),
-      ),
+      eb(eb.fn("LOWER", ["issuer_ethereum_address"]), "=", issuer),
     )
     .where("credential_subject_id", "=", appDid)
     .where("revoked", "=", false)
@@ -38,8 +40,14 @@ export async function hasDelegation(
         eb("expiration_date", ">", now),
       ]),
     )
-    .executeTakeFirst();
-  return row !== undefined;
+    .execute();
+  if (rows.length === 0) return false;
+  if (!policy) return true;
+  for (const row of rows) {
+    const issuedAt = new Date(row.issued_at);
+    if ((await policy.credentialStatus({ credentialId: row.credential_id, appDid, issuer, issuedAt })).counts) return true;
+  }
+  return false;
 }
 
 /** The relational namespace renown-workload keeps its identities in (read-only here). */
@@ -62,6 +70,20 @@ export async function workloadOwner(
     .where("did", "=", appDid)
     .executeTakeFirst();
   return row?.owner_address.toLowerCase();
+}
+
+/** Owner of the registered workload identity `appDid`: lowercase address and owning organisation; undefined when unregistered. */
+export async function workloadIdentityOwner(
+  db: ReadModelDb,
+  appDid: string,
+): Promise<{ ownerAddress: string; ownerOrgId: string | null } | undefined> {
+  const row = await db
+    .queryNamespace<WorkloadDB>(WORKLOAD_NAMESPACE)
+    .selectFrom("workload_identities")
+    .select(["owner_address", "owner_org_id"])
+    .where("did", "=", appDid)
+    .executeTakeFirst();
+  return row && { ownerAddress: row.owner_address.toLowerCase(), ownerOrgId: row.owner_org_id ?? null };
 }
 
 /** What appStats shows of a contributor (Phase 1 read model). */

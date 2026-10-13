@@ -600,8 +600,12 @@ describe("upsertAppProfile", () => {
       category: null,
       logoRef: null,
       coverRef: null,
+      supportContact: null,
+      securityContact: null,
       links: [],
       metrics: [],
+      publisherOrg: null,
+      frozen: false,
     };
     expect(await appProfile(app.did)).toEqual(expected);
     expect(await byPublisher(`did:pkh:eip155:137:${OWNER}`)).toEqual([

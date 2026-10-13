@@ -74,5 +74,13 @@ export function describeWorkloadStoreContract(
       expect(await store.delete("did:key:a")).toBe(false);
       expect(await store.getByRepositoryId("1")).toBeUndefined();
     });
+
+    it("keeps the owning organization and the disabled flag, omitting them when unset", async () => {
+      const store = await makeStore();
+      await store.insert({ ...identity("did:key:org", "9"), ownerOrgId: "o1", disabled: true });
+      expect(await store.getByDid("did:key:org")).toEqual({ ...identity("did:key:org", "9"), ownerOrgId: "o1", disabled: true });
+      await store.insert(identity("did:key:plain", "10"));
+      expect(await store.getByDid("did:key:plain")).toEqual(identity("did:key:plain", "10"));
+    });
   });
 }

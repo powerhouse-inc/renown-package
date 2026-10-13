@@ -56,6 +56,8 @@ export interface OidcClientRow {
   /** JSON array of lowercase 0x addresses. */
   allowed_subjects: string;
   allow_any: ColumnType<boolean, boolean | undefined, boolean>;
+  /** JSON array of {orgId, minRole}; '[]' when none. */
+  allowed_orgs: ColumnType<string, string | undefined, string>;
   secret_hash: string | null;
   status: "ACTIVE" | "DISABLED";
   created_at: Timestamp;

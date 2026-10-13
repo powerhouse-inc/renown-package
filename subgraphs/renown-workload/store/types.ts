@@ -17,6 +17,10 @@ export interface WorkloadIdentityRow {
   encrypted_key_pair: string;
   created_at: Timestamp;
   updated_at: Timestamp;
+  /** The organisation that owns this service account, or null. */
+  owner_org_id: ColumnType<string | null, string | null | undefined, string | null>;
+  /** Set by an org admin: no tokens are issued. */
+  disabled: ColumnType<boolean, boolean | undefined, boolean>;
 }
 
 export interface WorkloadDB {

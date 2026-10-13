@@ -131,6 +131,10 @@ export type RenownAppProfileState = {
   metrics: Array<RenownAppMetric>;
   name: Maybe<Scalars["String"]["output"]>;
   publisherDid: Maybe<Scalars["String"]["output"]>;
+  /** Security contact (vulnerability reports): an email address or an https URL, at most 200 characters */
+  securityContact: Maybe<Scalars["String"]["output"]>;
+  /** Support contact: an email address or an https URL, at most 200 characters */
+  supportContact: Maybe<Scalars["String"]["output"]>;
   tagline: Maybe<Scalars["String"]["output"]>;
   website: Maybe<Scalars["String"]["output"]>;
 };
@@ -160,6 +164,10 @@ export type SetProfileInput = {
   /** attachment://v1:<sha256>; empty clears */
   logoRef?: InputMaybe<Scalars["String"]["input"]>;
   name?: InputMaybe<Scalars["String"]["input"]>;
+  /** An email address or an https URL, at most 200 characters; empty clears */
+  securityContact?: InputMaybe<Scalars["String"]["input"]>;
+  /** An email address or an https URL, at most 200 characters; empty clears */
+  supportContact?: InputMaybe<Scalars["String"]["input"]>;
   tagline?: InputMaybe<Scalars["String"]["input"]>;
   website?: InputMaybe<Scalars["String"]["input"]>;
 };

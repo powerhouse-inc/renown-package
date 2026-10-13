@@ -1,3 +1,12 @@
+/** A client restricted to members of an organization with at least `minRole`. */
+export interface OidcAllowedOrg {
+  orgId: string;
+  minRole: "OWNER" | "ADMIN" | "PUBLISHER" | "MEMBER";
+}
+
+/** One entry of the `orgs` claim (renown-orgs `orgClaimsFor`); defined once, in the SDK. */
+export type { OrgClaim } from "../../../sdk/orgs.js";
+
 export interface OidcClient {
   id: string;
   name: string;
@@ -6,6 +15,8 @@ export interface OidcClient {
   allowAnySubject: boolean;
   clientSecretHash: string | null;
   status: "ACTIVE" | "DISABLED";
+  /** Members of these organizations may sign in too; absent means none. */
+  allowedOrgs?: OidcAllowedOrg[];
 }
 
 export interface LoginRequest {

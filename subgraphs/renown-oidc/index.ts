@@ -3,12 +3,13 @@ import type { DocumentNode } from "graphql";
 import { loadConfig } from "./core/config.js";
 import { loadSigningKeys, type SigningKeys } from "./core/keys.js";
 import type { OidcConfig } from "./core/types.js";
-import { createClientDirectory, createProfileDirectory } from "./directories.js";
+import { loadOrgsConfig } from "../renown-orgs/core/config.js";
+import { createClientDirectory, createOrgClientOwners, createOrgDirectory, createProfileDirectory } from "./directories.js";
 import { createOidcHandlers } from "./http/handlers.js";
 import { createResolvers } from "./resolvers.js";
 import { schema } from "./schema.js";
 import { KyselyOidcStore } from "./store/kysely.js";
-import { migrate } from "./store/migrations.js";
+import { migrate, OIDC_NAMESPACE } from "./store/migrations.js";
 import type { OidcKysely } from "./store/types.js";
 
 const CLEANUP_INTERVAL_MS = 300_000;
@@ -30,6 +31,7 @@ export class RenownOidcSubgraph extends BaseSubgraph {
     config: () => this.#getConfig(),
     store: () => this.#store,
     reactorClient: this.reactorClient,
+    orgClients: createOrgClientOwners(this.relationalDb),
   });
   additionalContextFields = {};
 
@@ -54,7 +56,7 @@ export class RenownOidcSubgraph extends BaseSubgraph {
     // one: a failure disables only what depends on it.
     let store: KyselyOidcStore;
     try {
-      const db = (await this.relationalDb.createNamespace("renown-oidc")) as unknown as OidcKysely;
+      const db = (await this.relationalDb.createNamespace(OIDC_NAMESPACE)) as unknown as OidcKysely;
       await migrate(db);
       store = new KyselyOidcStore(db);
     } catch (error) {
@@ -86,8 +88,9 @@ export class RenownOidcSubgraph extends BaseSubgraph {
       config,
       keys,
       store,
-      clients: createClientDirectory(store),
+      clients: createClientDirectory(store, createOrgClientOwners(this.relationalDb)),
       profiles: createProfileDirectory(this.relationalDb),
+      orgs: createOrgDirectory(this.relationalDb, loadOrgsConfig(process.env).didHost),
       now: () => new Date(),
     });
 

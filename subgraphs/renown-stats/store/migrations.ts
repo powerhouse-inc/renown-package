@@ -85,4 +85,27 @@ export async function migrate(db: Kysely<any>): Promise<void> {
       .addColumn("category", "text", (col) => col.ifNotExists())
       .execute();
   }
+
+  // Organisations: the org that publishes an org-owned app (null for person-owned apps).
+  const hasPublisherOrg = await db
+    .selectFrom("app_profile_documents")
+    .select("publisher_org_id")
+    .limit(0)
+    .execute()
+    .then(
+      () => true,
+      () => false,
+    );
+  if (!hasPublisherOrg) {
+    await db.schema
+      .alterTable("app_profile_documents")
+      .addColumn("publisher_org_id", "text", (col) => col.ifNotExists())
+      .execute();
+  }
+  await db.schema
+    .createIndex("app_profile_documents_publisher_org")
+    .ifNotExists()
+    .on("app_profile_documents")
+    .column("publisher_org_id")
+    .execute();
 }

@@ -55,6 +55,8 @@ describe("RenownAppProfile profile module", () => {
       category: null,
       logoRef: null,
       coverRef: null,
+      supportContact: null,
+      securityContact: null,
       links: [],
       metrics: [],
     });
@@ -123,5 +125,33 @@ describe("utils", () => {
     expect(isLogo("https://cdn.example/l.png")).toBe(true);
     expect(isLogo("http://cdn.example/l.png")).toBe(false);
     expect(isLogo("nope")).toBe(false);
+  });
+});
+
+describe("publisher DIDs", () => {
+  it("accepts organisation did:web publishers", () => {
+    let d = reducer(utils.createDocument(), setPublisherDid({ publisherDid: "did:web:www.renown.id:org:abc-123" }));
+    expect(d.state.global.publisherDid).toBe("did:web:www.renown.id:org:abc-123");
+    d = reducer(d, setPublisherDid({ publisherDid: "did:web:evil.example" }));
+    expect(d.operations.global[1].error).toBe("Invalid publisher DID: did:web:evil.example");
+    expect(isPublisherDid("did:web:localhost%3A3000:org:x")).toBe(true);
+  });
+});
+
+describe("contacts", () => {
+  it("sets, validates and clears the support and security contacts", () => {
+    let d = reducer(utils.createDocument(), setAppDid({ appDid: APP }));
+    d = reducer(d, setProfile({ supportContact: " help@acme.example ", securityContact: "https://acme.example/security" }));
+    expect(d.state.global).toMatchObject({ supportContact: "help@acme.example", securityContact: "https://acme.example/security" });
+    d = reducer(d, setProfile({ supportContact: "http://acme.example" }));
+    d = reducer(d, setProfile({ securityContact: "mailto:security@acme.example" }));
+    d = reducer(d, setProfile({ securityContact: `https://acme.example/${"x".repeat(200)}` }));
+    expect(d.operations.global.slice(-3).map((op) => op.error)).toEqual([
+      "Invalid contact: http://acme.example",
+      "Invalid contact: mailto:security@acme.example",
+      `Invalid contact: https://acme.example/${"x".repeat(200)}`,
+    ]);
+    d = reducer(d, setProfile({ supportContact: "", securityContact: null }));
+    expect(d.state.global).toMatchObject({ supportContact: null, securityContact: "https://acme.example/security" });
   });
 });

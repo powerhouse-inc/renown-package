@@ -1,9 +1,9 @@
-import { PGlite } from "@electric-sql/pglite";
 import type { IRelationalDb } from "@powerhousedao/reactor-browser";
 import { generateId, type Action, type PHDocument } from "document-model";
 import { GraphQLError } from "graphql";
-import { Kysely, sql } from "kysely";
-import { PGliteDialect } from "kysely-pglite-dialect";
+import type { Kysely } from "kysely";
+import { createRelationalDb } from "@powerhousedao/shared/processors";
+import { bootNamespace, hashedRoot, openPglite } from "./host-namespace.js";
 import { getAddress } from "viem";
 import { expect, vi } from "vitest";
 import {
@@ -11,6 +11,12 @@ import {
   renownAppProfileDocumentType,
   utils as profileUtils,
 } from "../../../document-models/renown-app-profile/index.js";
+import {
+  actions as orgActions,
+  reducer as orgReducer,
+  renownOrganizationDocumentType,
+  utils as orgUtils,
+} from "../../../document-models/renown-organization/index.js";
 import {
   reducer as statsReducer,
   renownUserStatsDocumentType,
@@ -45,20 +51,20 @@ export interface Harness {
   relationalDb: IRelationalDb<unknown>;
 }
 
+/**
+ * Every namespace renown-stats touches, opened through the host's real
+ * `createRelationalDb` (hashed schema names) and migrated on two boots;
+ * `root.withSchema(name)` resolves the same hashed schema for fixtures.
+ */
 export async function openHarness(): Promise<Harness> {
-  const root = new Kysely<any>({ dialect: new PGliteDialect(new PGlite()) });
-  await sql`create schema ${sql.id(CRED_NS)}`.execute(root);
-  await upCredential(root.withSchema(CRED_NS) as never);
-  await sql`create schema ${sql.id(USER_NS)}`.execute(root);
-  await upUser(root.withSchema(USER_NS) as never);
-  await sql`create schema ${sql.id(STATS_NS)}`.execute(root);
-  await migrate(root.withSchema(STATS_NS));
-  await sql`create schema ${sql.id(WORKLOAD_NS)}`.execute(root);
-  await migrateWorkload(root.withSchema(WORKLOAD_NS));
-  const relationalDb = {
-    queryNamespace: (namespace: string) => root.withSchema(namespace),
-  } as unknown as IRelationalDb<unknown>;
-  return { root, relationalDb };
+  const raw = openPglite();
+  await bootNamespace(raw, CRED_NS, (db) => upCredential(db as never));
+  await bootNamespace(raw, USER_NS, (db) => upUser(db as never));
+  await bootNamespace(raw, STATS_NS, migrate);
+  await bootNamespace(raw, WORKLOAD_NS, migrateWorkload);
+  // Writes to another namespace go through createNamespace, as on the host.
+  const relationalDb = createRelationalDb(raw as never) as unknown as IRelationalDb<unknown>;
+  return { root: hashedRoot(raw), relationalDb };
 }
 
 export async function resetHarness(h: Harness): Promise<void> {
@@ -164,10 +170,12 @@ export function fakeReactor() {
   const reducers: Record<string, (doc: PHDocument, action: Action) => PHDocument> = {
     [renownUserStatsDocumentType]: statsReducer as never,
     [renownAppProfileDocumentType]: profileReducer as never,
+    [renownOrganizationDocumentType]: orgReducer as never,
   };
   const creators: Record<string, () => PHDocument> = {
     [renownUserStatsDocumentType]: () => statsUtils.createDocument() as never,
     [renownAppProfileDocumentType]: () => profileUtils.createDocument() as never,
+    [renownOrganizationDocumentType]: () => orgUtils.createDocument() as never,
   };
   return {
     docs,
@@ -183,6 +191,13 @@ export function fakeReactor() {
       docs.set(id, doc);
       return Promise.resolve(doc);
     }),
+    /** An organisation document with id `orgId`, initialised as createOrganization does. */
+    seedOrganization(orgId: string, handle: string, createdBy = OWNER): void {
+      const doc = orgUtils.createDocument() as unknown as PHDocument;
+      docs.set(orgId, { ...doc, header: { ...doc.header, id: orgId } });
+      const init = orgActions.initOrganization({ handle, name: handle, createdBy });
+      docs.set(orgId, orgReducer(docs.get(orgId) as never, init) as unknown as PHDocument);
+    },
     get: vi.fn((id: string) => {
       const doc = docs.get(id);
       return doc ? Promise.resolve(doc) : Promise.reject(new Error(`no document ${id}`));
@@ -214,7 +229,7 @@ export interface NetworkStatsOut {
 /** Resolvers over the harness. `now` defaults to a clock that ticks one second per call. */
 export function harnessResolvers(
   h: Harness,
-  options: { now?: () => Date; relationalDb?: IRelationalDb<unknown> } = {},
+  options: { now?: () => Date; relationalDb?: IRelationalDb<unknown>; orgPolicy?: StatsResolverDeps["orgPolicy"] } = {},
 ) {
   const reactor = fakeReactor();
   const index = new KyselyStatsIndex(h.root.withSchema(STATS_NS));
@@ -228,10 +243,12 @@ export function harnessResolvers(
     registrationToken: () => TOKEN,
     media: () => null,
     now: options.now ?? (() => new Date(Date.UTC(2026, 9, 9, 12, 0, tick++))),
+    orgPolicy: options.orgPolicy,
   }) as { Query: Record<string, Resolver>; Mutation: Record<string, Resolver> };
   return {
     reactor,
     index,
+    resolvers,
     /** reportUserStat as the app itself (a host bearer signed by the app DID, for its owner). */
     report: (args: { appDid: string; userDid: string; metric: string; value: number }) =>
       resolvers.Mutation.reportUserStat(null, args, { user: { address: OWNER, appKey: args.appDid } }),
@@ -240,7 +257,7 @@ export function harnessResolvers(
     appProfile: (appDid: string) => resolvers.Query.appProfile(null, { appDid }, {}),
     appStats: (appDid: string) => resolvers.Query.appStats(null, { appDid }, {}),
     userStats: (userDid: string) => resolvers.Query.userStats(null, { userDid }, {}),
-    appProfiles: (args: { limit?: number | null; after?: string | null; category?: string | null }) =>
+    appProfiles: (args: { limit?: number | null; after?: string | null; category?: string | null; orgId?: string | null }) =>
       resolvers.Query.appProfiles(null, args, {}) as Promise<{ items: { appDid: string; category: string | null }[]; next: string | null }>,
     appProfileCategories: () =>
       resolvers.Query.appProfileCategories(null, {}, {}) as Promise<{ category: string; count: number }[]>,

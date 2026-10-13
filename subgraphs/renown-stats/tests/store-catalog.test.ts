@@ -1,6 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
-import { Kysely, sql } from "kysely";
+import { Kysely } from "kysely";
 import { PGliteDialect } from "kysely-pglite-dialect";
+import { bootNamespace } from "./host-namespace.js";
 import { afterAll, describe, expect, it } from "vitest";
 import { KyselyStatsIndex } from "../store/kysely.js";
 import { migrate } from "../store/migrations.js";
@@ -14,10 +15,7 @@ afterAll(async () => {
 async function makeIndex(): Promise<{ index: KyselyStatsIndex; db: Kysely<StatsDB> }> {
   const root = new Kysely<StatsDB>({ dialect: new PGliteDialect(new PGlite()) });
   opened.push(root);
-  await sql`create schema "renown-stats"`.execute(root);
-  const db = root.withSchema("renown-stats");
-  await migrate(db);
-  await migrate(db); // idempotent, also for the added category column
+  const db = await bootNamespace<StatsDB>(root, "renown-stats", migrate);
   return { index: new KyselyStatsIndex(db), db };
 }
 
@@ -32,20 +30,22 @@ async function profile(index: KyselyStatsIndex, appDid: string, minute: number, 
 describe("KyselyStatsIndex app catalog", () => {
   it("adds the category column to a table created before it existed", async () => {
     const root = new Kysely<any>({ dialect: new PGliteDialect(new PGlite()) });
-    await sql`create schema "renown-stats"`.execute(root);
-    const db = root.withSchema("renown-stats");
-    await db.schema
-      .createTable("app_profile_documents")
-      .addColumn("app_did", "text", (col) => col.primaryKey())
-      .addColumn("document_id", "text", (col) => col.notNull())
-      .addColumn("publisher_address", "text", (col) => col.notNull())
-      .addColumn("created_at", "timestamptz", (col) => col.notNull())
-      .execute();
+    // Boot 0: the table as main created it, before the category column.
+    const db = await bootNamespace<any>(root, "renown-stats", (old) =>
+      old.schema
+        .createTable("app_profile_documents")
+        .addColumn("app_did", "text", (col) => col.primaryKey())
+        .addColumn("document_id", "text", (col) => col.notNull())
+        .addColumn("publisher_address", "text", (col) => col.notNull())
+        .addColumn("created_at", "timestamptz", (col) => col.notNull())
+        .execute(),
+      1,
+    );
     await db
       .insertInto("app_profile_documents")
       .values({ app_did: "did:key:zOld", document_id: "doc-old", publisher_address: "0xabc", created_at: at(0) })
       .execute();
-    await migrate(db);
+    await bootNamespace(root, "renown-stats", migrate); // two later boots
     const rows = await db.selectFrom("app_profile_documents").select(["app_did", "category"]).execute();
     expect(rows).toEqual([{ app_did: "did:key:zOld", category: null }]);
     await root.destroy();
@@ -149,11 +149,9 @@ describe("migrate on an already-migrated schema", () => {
         statements.push(event.query.sql);
       },
     });
-    await sql`create schema "renown-stats"`.execute(root);
-    const db = root.withSchema("renown-stats");
-    await migrate(db); // a fresh table gets its column once
+    await bootNamespace(root, "renown-stats", migrate, 1); // a fresh table gets its column once
     statements.length = 0;
-    await migrate(db);
+    await bootNamespace(root, "renown-stats", migrate, 1);
     expect(statements.some((s) => /alter table/i.test(s))).toBe(false);
     await root.destroy();
   });

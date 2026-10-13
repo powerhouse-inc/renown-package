@@ -9,6 +9,7 @@ import {
 import { PGlite } from "@electric-sql/pglite";
 import { PGliteDialect } from "kysely-pglite-dialect";
 import type { RouteContext, RouteHandler, RouteOptions } from "@powerhousedao/reactor-api";
+import { createRelationalDb } from "@powerhousedao/shared/processors";
 import { RenownOidcSubgraph } from "../index.js";
 import { testSigningKeysEnv } from "./signing-key.js";
 
@@ -56,7 +57,8 @@ function makeSubgraph() {
   const subgraph = new RenownOidcSubgraph({
     http,
     reactorClient,
-    relationalDb: { createNamespace },
+    // queryNamespace: renown-orgs' read-only view (an empty dummy: no client is org-owned).
+    relationalDb: { createNamespace, queryNamespace: () => dummyDb() },
   } as never);
   return { subgraph, routes, createNamespace, reactorClient };
 }
@@ -308,6 +310,7 @@ describe("RenownOidcSubgraph", () => {
       expect(updated).toEqual({
         clientId: "doc-1",
         name: "Speckle",
+        allowedOrgs: [],
         redirectUris: ["https://a.example/cb", "https://b.example/cb"],
         status: "DISABLED",
       });
@@ -350,5 +353,26 @@ describe("RenownOidcSubgraph", () => {
       ).rejects.toMatchObject({ extensions: { code: "NOT_FOUND" } });
       await subgraph.onDisconnect();
     });
+  });
+});
+
+describe("RenownOidcSubgraph across restarts on the host's relational db", () => {
+  it("keeps OIDC routes and the client registry on the second boot (hashed namespace)", async () => {
+    process.env.RENOWN_OIDC_SIGNING_KEYS = await signingKeysEnv();
+    const raw = new Kysely<any>({ dialect: new PGliteDialect(new PGlite()) });
+    try {
+      for (let boot = 1; boot <= 2; boot++) {
+        // A fresh process per boot: a new subgraph and a new relationalDb over the same database.
+        const relationalDb = createRelationalDb(raw as never);
+        const { routes, http } = stubHttp();
+        const subgraph = new RenownOidcSubgraph({ http, reactorClient: {}, relationalDb } as never);
+        await subgraph.onSetup();
+        expect(error).not.toHaveBeenCalled();
+        expect(routes, `boot ${boot}`).toHaveLength(9);
+        await subgraph.onDisconnect();
+      }
+    } finally {
+      await raw.destroy();
+    }
   });
 });

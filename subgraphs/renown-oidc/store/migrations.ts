@@ -1,5 +1,8 @@
 import type { Kysely } from "kysely";
 
+/** The relational namespace (Postgres schema) the OIDC tables live in. */
+export const OIDC_NAMESPACE = "renown-oidc";
+
 /** Creates the `oidc_clients`, `login_requests`, `auth_codes` and `access_tokens` tables. Idempotent. */
 export async function migrate(db: Kysely<any>): Promise<void> {
   await db.schema
@@ -15,6 +18,26 @@ export async function migrate(db: Kysely<any>): Promise<void> {
     .addColumn("created_at", "timestamptz", (col) => col.notNull())
     .addColumn("updated_at", "timestamptz", (col) => col.notNull())
     .execute();
+
+  // Probe the namespaced handle itself, as renown-stats and renown-workload do:
+  // the host hashes namespace names, so a catalog lookup by the logical name
+  // ("renown-oidc") never matches. migrate() runs outside any transaction, so a
+  // failing probe aborts nothing. ADD COLUMN IF NOT EXISTS is the backstop.
+  const hasAllowedOrgs = await db
+    .selectFrom("oidc_clients")
+    .select("allowed_orgs")
+    .limit(0)
+    .execute()
+    .then(
+      () => true,
+      () => false,
+    );
+  if (!hasAllowedOrgs) {
+    await db.schema
+      .alterTable("oidc_clients")
+      .addColumn("allowed_orgs", "text", (col) => col.notNull().defaultTo("[]").ifNotExists())
+      .execute();
+  }
 
   await db.schema
     .createTable("login_requests")

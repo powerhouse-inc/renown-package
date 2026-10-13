@@ -12,6 +12,10 @@ overrides:
 importers:
 
   .:
+    dependencies:
+      tldts:
+        specifier: 7.4.16
+        version: 7.4.16
     devDependencies:
       '@aws-sdk/client-s3':
         specifier: 3.1087.0
@@ -10379,6 +10383,13 @@ packages:
 
   title-case@3.0.3:
     resolution: {integrity: sha512-e1zGYRvbffpcHIrnuqT0Dh+gEJtDaxDSoG4JAIpq4oDFyooziLBIiYQv0GBT4FUAnUop5uZ1hiIAj7oAF6sOCA==}
+
+  tldts-core@7.4.18:
+    resolution: {integrity: sha512-KI2PKvCmvQI/xD6ypPqkU0i7oxNXR/O58RLRaHR4svsgVUQ2JE/XC8BtMbG6PSehD27I8sZJRcC1ASnCy6lp3g==}
+
+  tldts@7.4.16:
+    resolution: {integrity: sha512-QwBER5KMR86IIjpIiO7H/Z3IMJPsZ1A6RKPAqzTTgOyUQUSt9FdnKcqhTaJmkY6HVrgouZHZR0ncK5QxvmnQeg==}
+    hasBin: true
 
   tmp@0.0.33:
     resolution: {integrity: sha512-jRCJlojKnZ3addtTOjdIqoRuPEKBvNXcGYqzO6zWZX8KfKEpnGY5jfggJQ3EjKuu8D4bJRr0y+cYJFmYbImXGw==}
@@ -26168,6 +26179,12 @@ snapshots:
   title-case@3.0.3:
     dependencies:
       tslib: 2.8.1
+
+  tldts-core@7.4.18: {}
+
+  tldts@7.4.16:
+    dependencies:
+      tldts-core: 7.4.18
 
   tmp@0.0.33:
     dependencies:

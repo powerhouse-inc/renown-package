@@ -17,6 +17,8 @@ export interface AppProfileDocumentRow {
   created_at: Timestamp;
   /** The profile's category as last saved (trimmed); null when none. Absent on insert. */
   category?: string | null;
+  /** The publishing organisation of an org-owned app; null for person-owned apps. Absent on insert. */
+  publisher_org_id?: string | null;
 }
 
 /** The uploaded images of one app-profile document (refs as stored on the document). */
@@ -122,6 +124,8 @@ export interface AppProfileEntry {
   appDid: string;
   documentId: string;
   publisherAddress: string;
+  /** The publishing organisation of an org-owned app; absent for person-owned apps. */
+  publisherOrgId?: string;
 }
 
 /** Which document holds each user's stats and each app's profile. */
@@ -132,6 +136,7 @@ export interface StatsIndex {
   appProfile(appDid: string): Promise<AppProfileEntry | undefined>;
   /** Records `entry` unless the app DID is recorded; returns the recorded entry. */
   claimAppProfile(entry: AppProfileEntry, now: Date): Promise<AppProfileEntry>;
+  /** Person-owned apps (no publisher_org_id) recorded for `publisherAddress`, oldest first. */
   appProfilesByPublisher(publisherAddress: string): Promise<AppProfileEntry[]>;
   /** Records the given image refs of a profile document; others are kept. */
   setAppImages(documentId: string, images: AppImagesPatch, now: Date): Promise<void>;
@@ -139,9 +144,12 @@ export interface StatsIndex {
   appImageRef(documentId: string, field: AppImageField): Promise<string | null>;
   /**
    * Up to `limit` profiles, newest first, strictly after `after`; with
-   * `category`, only profiles whose category equals it case-insensitively.
+   * `category`, only profiles whose category equals it case-insensitively;
+   * with `orgId`, only apps that organisation publishes.
    */
-  appProfilesPage(limit: number, after?: AppProfileCursor, category?: string): Promise<AppProfileListEntry[]>;
+  appProfilesPage(limit: number, after?: AppProfileCursor, category?: string, orgId?: string): Promise<AppProfileListEntry[]>;
+  /** The apps organisation `orgId` publishes, oldest first. */
+  appProfilesByOrg(orgId: string): Promise<AppProfileEntry[]>;
   /** Records a profile's category ("" or blank stores null); a DID without a profile is ignored. */
   setAppCategory(appDid: string, category: string | null): Promise<void>;
   /** Non-empty categories with their profile counts: count desc, then name. */

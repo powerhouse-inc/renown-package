@@ -1,5 +1,7 @@
 import { BaseSubgraph } from "@powerhousedao/reactor-api";
 import type { DocumentNode } from "graphql";
+import { loadOrgsConfig } from "../renown-orgs/core/config.js";
+import { createOrgPolicy, type OrgPolicy } from "../renown-orgs/core/org-policy.js";
 import { loadConfig } from "./core/config.js";
 import { createGithubVerifier, type GithubVerifier } from "./core/github.js";
 import type { WorkloadConfig } from "./core/types.js";
@@ -29,6 +31,7 @@ export class RenownWorkloadSubgraph extends BaseSubgraph {
   resolvers: Record<string, unknown> = createResolvers({
     config: () => this.#getConfig(),
     store: () => this.#store,
+    orgPolicy: () => this.#getOrgPolicy(),
   });
   additionalContextFields = {};
 
@@ -37,6 +40,15 @@ export class RenownWorkloadSubgraph extends BaseSubgraph {
   #store: KyselyWorkloadStore | undefined;
   #verifier: GithubVerifier | undefined;
   #routes: { dispose(): void }[] = [];
+  #orgPolicy: OrgPolicy | undefined;
+
+  /** Organisations as renown-orgs stores them (read lazily: no organisations until it is set up). */
+  #getOrgPolicy(): OrgPolicy {
+    return (this.#orgPolicy ??= createOrgPolicy(
+      this.relationalDb,
+      loadOrgsConfig(process.env).didHost,
+    ));
+  }
 
   #getConfig(): WorkloadConfig {
     if (this.#config === undefined) {
@@ -57,6 +69,7 @@ export class RenownWorkloadSubgraph extends BaseSubgraph {
       encryptionKey: config.encryptionKey,
       audiences: config.audiences,
       verifier: this.#verifier,
+      orgPolicy: this.#getOrgPolicy(),
     };
   }
 

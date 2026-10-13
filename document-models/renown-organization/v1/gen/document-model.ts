@@ -1,0 +1,571 @@
+import type { DocumentModelGlobalState } from "document-model";
+
+export const documentModel: DocumentModelGlobalState = {
+  id: "powerhouse/renown-organization",
+  name: "RenownOrganization",
+  author: {
+    name: "Powerhouse Inc.",
+    website: "https://www.powerhouse.inc",
+  },
+  extension: "rorg",
+  description:
+    "A Renown organisation: profile, members and roles, teams, apps, domains and credential suspensions; the signed record mirror of the renown-orgs store",
+  specifications: [
+    {
+      state: {
+        global: {
+          schema:
+            'type RenownOrganizationState {\n  "Lowercase; unique across users and organizations (enforced by the write path)"\n  handle: String\n  "1-64 characters"\n  name: String\n  "At most 280 characters"\n  bio: String\n  "An http(s) URL"\n  website: String\n  "attachment://v1:<sha256>"\n  avatar: String\n  "At most 8, in display order"\n  links: [RenownOrgLink!]!\n  "Opted in to the organization directory"\n  listed: Boolean!\n  "Active, non-hidden members are shown publicly"\n  membersPublic: Boolean!\n  archived: Boolean!\n  takenDown: Boolean!\n  "Lowercase address of the creator; set once by INIT_ORGANIZATION"\n  createdBy: EthereumAddress\n  "Every membership record ever created (rows are never removed)"\n  members: [RenownOrgMember!]!\n  "At most 50 flat teams"\n  teams: [RenownOrgTeam!]!\n  apps: [RenownOrgApp!]!\n  domains: [RenownOrgDomain!]!\n  "Delegation credential ids suspended by the organization"\n  suspendedCredentialIds: [String!]!\n}\n\ntype RenownOrgLink {\n  id: OID!\n  label: String!\n  url: String!\n}\n\nenum RenownOrgRole {\n  OWNER\n  ADMIN\n  PUBLISHER\n  MEMBER\n}\n\nenum RenownOrgMemberStatus {\n  INVITED\n  ACTIVE\n  DECLINED\n  LEFT\n  REMOVED\n  REVOKED\n}\n\ntype RenownOrgAppScope {\n  all: Boolean!\n  appDids: [String!]!\n}\n\ntype RenownOrgMember {\n  id: OID!\n  "Lowercase"\n  address: EthereumAddress!\n  role: RenownOrgRole!\n  status: RenownOrgMemberStatus!\n  appScope: RenownOrgAppScope!\n  hidden: Boolean!\n  joinedAt: DateTime\n  updatedAt: DateTime!\n}\n\ntype RenownOrgTeam {\n  id: OID!\n  slug: String!\n  name: String!\n  appDids: [String!]!\n  memberIds: [OID!]!\n}\n\ntype RenownOrgApp {\n  appDid: String!\n  addedAt: DateTime!\n  frozen: Boolean!\n}\n\nenum RenownOrgDomainStatus {\n  PENDING\n  VERIFIED\n  LAPSED\n}\n\ntype RenownOrgDomain {\n  id: OID!\n  domain: String!\n  status: RenownOrgDomainStatus!\n  verifiedAt: DateTime\n}',
+          initialValue:
+            '{\n  "handle": null,\n  "name": null,\n  "bio": null,\n  "website": null,\n  "avatar": null,\n  "links": [],\n  "listed": false,\n  "membersPublic": false,\n  "archived": false,\n  "takenDown": false,\n  "createdBy": null,\n  "members": [],\n  "teams": [],\n  "apps": [],\n  "domains": [],\n  "suspendedCredentialIds": []\n}',
+          examples: [],
+        },
+        local: {
+          schema: "",
+          initialValue: "",
+          examples: [],
+        },
+      },
+      modules: [
+        {
+          id: "renown-org-profile",
+          name: "profile",
+          description: "",
+          operations: [
+            {
+              id: "init-organization",
+              name: "INIT_ORGANIZATION",
+              description:
+                "Sets handle, name and creator once, when the organization is created",
+              schema:
+                "input InitOrganizationInput {\n  handle: String!\n  name: String!\n  createdBy: EthereumAddress!\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "already-initialized-error",
+                  name: "AlreadyInitializedError",
+                  code: "ALREADY_INITIALIZED",
+                  description: "INIT_ORGANIZATION already ran",
+                  template: "",
+                },
+                {
+                  id: "invalid-handle-error",
+                  name: "InvalidHandleError",
+                  code: "INVALID_HANDLE",
+                  description:
+                    "The handle does not match ^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$",
+                  template: "",
+                },
+                {
+                  id: "name-length-error",
+                  name: "NameLengthError",
+                  code: "NAME_LENGTH",
+                  description:
+                    "The name is not 1-64 characters without surrounding whitespace",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-org-profile",
+              name: "SET_ORG_PROFILE",
+              description:
+                "Patches the profile: null or absent keeps a field, an empty string clears bio/website/avatar, links replaces the whole list",
+              schema:
+                "input SetOrgProfileInput {\n  name: String\n  bio: String\n  website: String\n  avatar: String\n  links: [SetOrgProfileLinkInput!]\n}\n\ninput SetOrgProfileLinkInput {\n  id: OID!\n  label: String!\n  url: String!\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "bio-too-long-error",
+                  name: "BioTooLongError",
+                  code: "BIO_TOO_LONG",
+                  description: "The bio is longer than 280 characters",
+                  template: "",
+                },
+                {
+                  id: "invalid-website-error",
+                  name: "InvalidWebsiteError",
+                  code: "INVALID_WEBSITE",
+                  description:
+                    "The website is not an http(s) URL of at most 2048 characters",
+                  template: "",
+                },
+                {
+                  id: "invalid-avatar-error",
+                  name: "InvalidAvatarError",
+                  code: "INVALID_AVATAR",
+                  description:
+                    "The avatar is not an attachment://v1:<sha256> reference",
+                  template: "",
+                },
+                {
+                  id: "too-many-links-error",
+                  name: "TooManyLinksError",
+                  code: "TOO_MANY_LINKS",
+                  description: "More than 8 links",
+                  template: "",
+                },
+                {
+                  id: "invalid-link-error",
+                  name: "InvalidLinkError",
+                  code: "INVALID_LINK",
+                  description:
+                    "A link has a duplicate id, a label outside 1-40 characters or a non-http(s) URL",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-org-handle",
+              name: "SET_ORG_HANDLE",
+              description:
+                "Changes the handle (uniqueness is checked by the write path)",
+              schema: "input SetOrgHandleInput {\n  handle: String!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-org-listed",
+              name: "SET_ORG_LISTED",
+              description: "Opts in to or out of the organization directory",
+              schema: "input SetOrgListedInput {\n  listed: Boolean!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-members-public",
+              name: "SET_MEMBERS_PUBLIC",
+              description: "Shows or hides the member list publicly",
+              schema:
+                "input SetMembersPublicInput {\n  membersPublic: Boolean!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "archive-org",
+              name: "ARCHIVE_ORG",
+              description:
+                "Archives the organization: unlisted, open invites revoked, active members removed",
+              schema: "input ArchiveOrgInput {\n  archivedAt: DateTime!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-taken-down",
+              name: "SET_TAKEN_DOWN",
+              description:
+                "Platform moderation: takes the organization down or restores it",
+              schema: "input SetTakenDownInput {\n  takenDown: Boolean!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+          ],
+        },
+        {
+          id: "renown-org-members",
+          name: "members",
+          description: "",
+          operations: [
+            {
+              id: "invite-member",
+              name: "INVITE_MEMBER",
+              description: "Creates an INVITED membership record",
+              schema:
+                "input InviteMemberInput {\n  id: OID!\n  address: EthereumAddress!\n  role: RenownOrgRole!\n  invitedAt: DateTime!\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "duplicate-member-error",
+                  name: "DuplicateMemberError",
+                  code: "DUPLICATE_MEMBER",
+                  description:
+                    "The id is used, or the address already has an INVITED or ACTIVE record",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-member-status",
+              name: "SET_MEMBER_STATUS",
+              description: "Moves a membership record through its lifecycle",
+              schema:
+                "input SetMemberStatusInput {\n  id: OID!\n  status: RenownOrgMemberStatus!\n  at: DateTime!\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "member-not-found-error",
+                  name: "MemberNotFoundError",
+                  code: "MEMBER_NOT_FOUND",
+                  description: "No membership record with this id",
+                  template: "",
+                },
+                {
+                  id: "invalid-status-transition-error",
+                  name: "InvalidStatusTransitionError",
+                  code: "INVALID_STATUS_TRANSITION",
+                  description:
+                    "Only INVITED to ACTIVE/DECLINED/REVOKED and ACTIVE to LEFT/REMOVED are allowed",
+                  template: "",
+                },
+                {
+                  id: "last-owner-error",
+                  name: "LastOwnerError",
+                  code: "LAST_OWNER",
+                  description:
+                    "The change would leave the organization without an active owner",
+                  template: "",
+                },
+                {
+                  id: "too-many-members-error",
+                  name: "TooManyMembersError",
+                  code: "TOO_MANY_MEMBERS",
+                  description:
+                    "The organization already has 500 active members",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-member-role",
+              name: "SET_MEMBER_ROLE",
+              description: "Changes the role of an INVITED or ACTIVE member",
+              schema:
+                "input SetMemberRoleInput {\n  id: OID!\n  role: RenownOrgRole!\n  at: DateTime!\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "member-not-active-error",
+                  name: "MemberNotActiveError",
+                  code: "MEMBER_NOT_ACTIVE",
+                  description:
+                    "The membership record is not INVITED or ACTIVE (not ACTIVE for team membership)",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-member-app-scope",
+              name: "SET_MEMBER_APP_SCOPE",
+              description: "Sets the apps a publisher or member acts for",
+              schema:
+                "input SetMemberAppScopeInput {\n  id: OID!\n  all: Boolean!\n  appDids: [String!]!\n  at: DateTime!\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "invalid-app-did-error",
+                  name: "InvalidAppDidError",
+                  code: "INVALID_APP_DID",
+                  description:
+                    "An app DID is not a did:key, or there are more than 200",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-member-hidden",
+              name: "SET_MEMBER_HIDDEN",
+              description:
+                "The member hides or shows their membership publicly",
+              schema:
+                "input SetMemberHiddenInput {\n  id: OID!\n  hidden: Boolean!\n  at: DateTime!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "add-team",
+              name: "ADD_TEAM",
+              description: "Adds a flat team",
+              schema:
+                "input AddTeamInput {\n  id: OID!\n  slug: String!\n  name: String!\n  appDids: [String!]!\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "duplicate-team-id-error",
+                  name: "DuplicateTeamIdError",
+                  code: "DUPLICATE_TEAM_ID",
+                  description: "The team id is used",
+                  template: "",
+                },
+                {
+                  id: "too-many-teams-error",
+                  name: "TooManyTeamsError",
+                  code: "TOO_MANY_TEAMS",
+                  description: "The organization already has 50 teams",
+                  template: "",
+                },
+                {
+                  id: "invalid-team-error",
+                  name: "InvalidTeamError",
+                  code: "INVALID_TEAM",
+                  description: "The slug or name is malformed",
+                  template: "",
+                },
+                {
+                  id: "duplicate-team-slug-error",
+                  name: "DuplicateTeamSlugError",
+                  code: "DUPLICATE_TEAM_SLUG",
+                  description: "Another team has this slug",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "update-team",
+              name: "UPDATE_TEAM",
+              description: "Patches a team: null or absent keeps a field",
+              schema:
+                "input UpdateTeamInput {\n  id: OID!\n  slug: String\n  name: String\n  appDids: [String!]\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "team-not-found-error",
+                  name: "TeamNotFoundError",
+                  code: "TEAM_NOT_FOUND",
+                  description: "No team with this id",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "remove-team",
+              name: "REMOVE_TEAM",
+              description: "Removes a team",
+              schema: "input RemoveTeamInput {\n  id: OID!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-team-members",
+              name: "SET_TEAM_MEMBERS",
+              description: "Replaces a team's members (ACTIVE membership ids)",
+              schema:
+                "input SetTeamMembersInput {\n  id: OID!\n  memberIds: [OID!]!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+          ],
+        },
+        {
+          id: "renown-org-apps",
+          name: "apps",
+          description: "",
+          operations: [
+            {
+              id: "add-org-app",
+              name: "ADD_ORG_APP",
+              description: "Records an app the organization owns",
+              schema:
+                "input AddOrgAppInput {\n  appDid: String!\n  addedAt: DateTime!\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "invalid-app-did-error",
+                  name: "InvalidAppDidError",
+                  code: "INVALID_APP_DID",
+                  description: "The app DID is not a did:key",
+                  template: "",
+                },
+                {
+                  id: "duplicate-app-error",
+                  name: "DuplicateAppError",
+                  code: "DUPLICATE_APP",
+                  description: "The app already belongs to the organization",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "remove-org-app",
+              name: "REMOVE_ORG_APP",
+              description: "Removes an app (transferred out)",
+              schema: "input RemoveOrgAppInput {\n  appDid: String!\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "app-not-found-error",
+                  name: "AppNotFoundError",
+                  code: "APP_NOT_FOUND",
+                  description: "The app does not belong to the organization",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-app-frozen",
+              name: "SET_APP_FROZEN",
+              description: "Freezes or unfreezes an org app",
+              schema:
+                "input SetAppFrozenInput {\n  appDid: String!\n  frozen: Boolean!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+          ],
+        },
+        {
+          id: "renown-org-domains",
+          name: "domains",
+          description: "",
+          operations: [
+            {
+              id: "add-domain",
+              name: "ADD_DOMAIN",
+              description: "Adds a PENDING domain",
+              schema:
+                "input AddDomainInput {\n  id: OID!\n  domain: String!\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "invalid-domain-error",
+                  name: "InvalidDomainError",
+                  code: "INVALID_DOMAIN",
+                  description:
+                    "Not a lowercase DNS name with at least two labels",
+                  template: "",
+                },
+                {
+                  id: "duplicate-domain-error",
+                  name: "DuplicateDomainError",
+                  code: "DUPLICATE_DOMAIN",
+                  description: "The id or the domain is already present",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "set-domain-status",
+              name: "SET_DOMAIN_STATUS",
+              description: "Records a verification result",
+              schema:
+                "input SetDomainStatusInput {\n  id: OID!\n  status: RenownOrgDomainStatus!\n  verifiedAt: DateTime\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "domain-not-found-error",
+                  name: "DomainNotFoundError",
+                  code: "DOMAIN_NOT_FOUND",
+                  description: "No domain with this id",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "remove-domain",
+              name: "REMOVE_DOMAIN",
+              description: "Removes a domain",
+              schema: "input RemoveDomainInput {\n  id: OID!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+          ],
+        },
+        {
+          id: "renown-org-security",
+          name: "security",
+          description: "",
+          operations: [
+            {
+              id: "suspend-credentials",
+              name: "SUSPEND_CREDENTIALS",
+              description: "Suspends delegation credentials for org apps",
+              schema:
+                "input SuspendCredentialsInput {\n  credentialIds: [String!]!\n}",
+              template: "",
+              reducer: "",
+              errors: [],
+              examples: [],
+              scope: "global",
+            },
+            {
+              id: "unsuspend-credential",
+              name: "UNSUSPEND_CREDENTIAL",
+              description: "Lifts one suspension",
+              schema:
+                "input UnsuspendCredentialInput {\n  credentialId: String!\n}",
+              template: "",
+              reducer: "",
+              errors: [
+                {
+                  id: "credential-not-suspended-error",
+                  name: "CredentialNotSuspendedError",
+                  code: "CREDENTIAL_NOT_SUSPENDED",
+                  description: "The credential is not suspended",
+                  template: "",
+                },
+              ],
+              examples: [],
+              scope: "global",
+            },
+          ],
+        },
+      ],
+      version: 1,
+      changeLog: [],
+    },
+  ],
+};

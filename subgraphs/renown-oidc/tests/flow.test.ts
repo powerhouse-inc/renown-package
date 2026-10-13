@@ -20,13 +20,14 @@ let clock = new Date("2026-09-26T12:00:00Z");
 let h: ReturnType<typeof createOidcHandlers>;
 const SECRET = "s3cr3t-s3cr3t-s3cr3t";
 let confidential: OidcClient, publicClient: OidcClient;
+let clients: Map<string, OidcClient>;
 
 beforeEach(async () => {
   clock = new Date("2026-09-26T12:00:00Z");
   const keys = (await loadSigningKeys(await testSigningKeysEnv(), issuer))!;
   confidential = { id: "conf", name: "Speckle", redirectUris: ["https://s.example/auth/oidc/callback"], allowedSubjects: [user.address.toLowerCase()], allowAnySubject: false, clientSecretHash: await hashSecret(SECRET), status: "ACTIVE" };
   publicClient = { ...confidential, id: "pub", clientSecretHash: null };
-  const clients = new Map([[confidential.id, confidential], [publicClient.id, publicClient]]);
+  clients = new Map([[confidential.id, confidential], [publicClient.id, publicClient]]);
   h = createOidcHandlers({ config, keys, store: new MemoryOidcStore(), clients: { getClient: async (id) => clients.get(id) }, profiles: { getProfile: async () => ({ username: "frank", userImage: null }) }, now: () => clock });
 });
 
@@ -194,6 +195,24 @@ describe("OIDC hardening", () => {
     clock = new Date(clock.getTime() + 3600_000);
     const u = await h.userinfo(new Request(`${issuer}/userinfo`, { headers: { authorization: `Bearer ${tok.access_token}` } }));
     expect(u.status).toBe(401); expect(u.headers.get("www-authenticate")).toBe('Bearer error="invalid_token"');
+  });
+
+  it("userinfo rejects the tokens of a client that is now disabled or unknown", async () => {
+    const issue = async () => {
+      const code = await codeOf(await login("conf"));
+      return (await (await h.token(tokenReq({ grant_type: "authorization_code", code, redirect_uri: cb }, `conf:${SECRET}`))).json()).access_token as string;
+    };
+    const userinfo = (token: string) => h.userinfo(new Request(`${issuer}/userinfo`, { headers: { authorization: `Bearer ${token}` } }));
+    const token = await issue();
+    expect((await userinfo(token)).status).toBe(200);
+    confidential.status = "DISABLED";
+    const disabled = await userinfo(token);
+    expect(disabled.status).toBe(401);
+    expect(disabled.headers.get("www-authenticate")).toBe('Bearer error="invalid_token"');
+    confidential.status = "ACTIVE";
+    expect((await userinfo(token)).status).toBe(200);
+    clients.delete("conf");
+    expect((await userinfo(token)).status).toBe(401);
   });
 
   it("authorize accepts a form-encoded POST (OIDC Core §3.1.2.1) and nothing else as a POST body", async () => {

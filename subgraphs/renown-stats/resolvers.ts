@@ -16,12 +16,18 @@ import {
   renownUserStatsDocumentType,
   type RenownUserStatsDocument,
 } from "../../document-models/renown-user-stats/index.js";
+import {
+  actions as orgActions,
+  type RenownOrganizationDocument,
+} from "../../document-models/renown-organization/index.js";
 import type { MediaBackend } from "../../media/backend.js";
 import { mediaBackend } from "../../media/slot.js";
 import { storedImageProblem } from "../../media/stored-image.js";
 import { createRateLimiter } from "../renown-auth/core/rate-limit.js";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
 import { constantTimeEqual } from "../renown-oidc/core/crypto.js";
+import { loadOrgsConfig } from "../renown-orgs/core/config.js";
+import { createOrgPolicy, type OrgPolicy, type OrgPublisherSummary } from "../renown-orgs/core/org-policy.js";
 import {
   AppProfileInputError,
   appLinkActions,
@@ -49,13 +55,13 @@ import {
   canonicalUserDid,
   pkhDidFor,
 } from "./core/dids.js";
-import { createKeyedLock } from "./core/keyed-lock.js";
+import { sharedKeyedLock } from "./core/keyed-lock.js";
 import {
   activeCredentialCount,
   contributorProfiles,
   hasDelegation,
   identityCount,
-  workloadOwner,
+  workloadIdentityOwner,
   type ContributorProfile,
 } from "./lookups.js";
 import type {
@@ -123,6 +129,8 @@ export interface StatsResolverDeps {
   now?: () => Date;
   reportRateLimiter?: RateLimiter;
   profileRateLimiter?: RateLimiter;
+  /** Organisation rules; defaults to a policy over the host's relational db. */
+  orgPolicy?: () => OrgPolicy;
 }
 
 interface ReportUserStatArgs {
@@ -143,6 +151,8 @@ interface UpsertAppProfileArgs extends ProfileFields, RichProfileFields {
   appDid: string;
   /** The whole desired metric list; absent or null leaves it unchanged. */
   metrics?: readonly AppMetricInput[] | null;
+  /** First write of an org-owned app: the organisation its workload identity was registered for. */
+  publisherOrgId?: string | null;
 }
 
 interface UserStatOutput {
@@ -228,12 +238,24 @@ interface AppProfileOutput {
   category: string | null;
   logoRef: string | null;
   coverRef: string | null;
+  supportContact: string | null;
+  securityContact: string | null;
   links: AppProfileLink[];
   metrics: AppMetric[];
+  publisherOrg: OrgPublisherSummary | null;
+  frozen: boolean;
 }
 
 const forbidden = () =>
   new GraphQLError("Forbidden", { extensions: { code: "FORBIDDEN" } });
+interface OrgView {
+  publisherOrg: OrgPublisherSummary | null;
+  frozen: boolean;
+}
+const NO_ORG: OrgView = { publisherOrg: null, frozen: false };
+
+const appFrozen = () =>
+  new GraphQLError("The app is frozen by its organisation", { extensions: { code: "APP_FROZEN" } });
 const invalidRequest = (message: string) =>
   new GraphQLError(message, { extensions: { code: "BAD_USER_INPUT" } });
 /** A profile argument the caller must fix; `field` lets a form show it inline. */
@@ -312,7 +334,11 @@ export function createResolvers(
     deps.profileRateLimiter ?? createRateLimiter(PROFILE_LIMIT, WINDOW_MS);
   const registrationToken = deps.registrationToken ?? (() => null);
   const media = deps.media ?? mediaBackend;
-  const lock = createKeyedLock();
+  // Shared with renown-orgs: its app:<did> lock must exclude this one.
+  const lock = sharedKeyedLock;
+  let defaultPolicy: OrgPolicy | undefined;
+  const orgPolicy =
+    deps.orgPolicy ?? (() => (defaultPolicy ??= createOrgPolicy(relationalDb, loadOrgsConfig(process.env).didHost)));
   /** The last renownNetworkStats answer, until expiresAt (ms); failures are never cached. */
   let networkStats: { value: NetworkStatsOutput; expiresAt: number } | undefined;
   let networkStatsLoad: Promise<NetworkStatsOutput> | undefined;
@@ -351,27 +377,97 @@ export function createResolvers(
     console.warn(`[renown-stats] ${what} failed (${reason}); refusing`);
   }
 
-  /** The lowercase owner of the registered workload identity `appDid`; undefined if none or on error. */
-  async function ownerOf(appDid: string): Promise<string | undefined> {
+  /** The owner (address and organisation) of the registered workload identity `appDid`; undefined if none or on error. */
+  async function identityOwnerOf(appDid: string) {
     try {
-      return await workloadOwner(relationalDb, appDid);
+      return await workloadIdentityOwner(relationalDb, appDid);
     } catch (error) {
       warn("workload identity lookup", error);
       return undefined;
     }
   }
 
+  /** An organisation read or write; a failure (other than no organisations at all) is SERVICE_UNAVAILABLE. */
+  async function orgCall<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[renown-stats] organisation lookup failed (${reason})`);
+      throw new GraphQLError("Organisations are temporarily unavailable", {
+        extensions: { code: "SERVICE_UNAVAILABLE" },
+      });
+    }
+  }
+
+  /** Removes an attach whose profile claim failed; a failure is logged (the profile write fails anyway). */
+  async function undoAttach(orgId: string, appDid: string, actor: string): Promise<void> {
+    try {
+      await orgPolicy().detachApp(orgId, appDid, actor, now());
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.error(`[renown-stats] undo of attaching ${appDid} to ${orgId} failed (${reason})`);
+    }
+  }
+
+  /** Mirrors a new org app onto the organisation document; org_apps stays the source of truth. */
+  async function mirrorOrgApp(orgId: string, appDid: string, at: Date): Promise<void> {
+    try {
+      // A repair re-attaches an app the document may already list.
+      const org = await reactorClient.get<RenownOrganizationDocument>(orgId);
+      if (org.state.global.apps.some((app) => app.appDid === appDid)) return;
+      await execute(orgId, [orgActions.addOrgApp({ appDid, addedAt: at.toISOString() })]);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[renown-stats] organisation document mirror failed (${reason})`);
+    }
+  }
+
+  /** Each entry's publishing org card and frozen flag, in two or three queries; null/false when they cannot be read. */
+  async function orgViews(entries: readonly AppProfileEntry[]): Promise<Map<string, OrgView>> {
+    const out = new Map<string, OrgView>();
+    try {
+      const policy = orgPolicy();
+      const orgIds = entries.flatMap((entry) => (entry.publisherOrgId ? [entry.publisherOrgId] : []));
+      const [cards, owning] = await Promise.all([
+        policy.orgSummaries(orgIds),
+        policy.orgsOfApps(entries.map((entry) => entry.appDid)),
+      ]);
+      for (const entry of entries) {
+        out.set(entry.appDid, {
+          publisherOrg: (entry.publisherOrgId && cards.get(entry.publisherOrgId)) || null,
+          frozen: owning.get(entry.appDid)?.frozen ?? false,
+        });
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[renown-stats] organisation lookup failed (${reason})`);
+    }
+    return out;
+  }
+
   /**
-   * True when `address` may act as `appDid`: `appDid` is a registered workload
-   * identity owned by `address`, and `address` holds a live delegation to it.
-   * A delegation alone proves nothing (anyone can self-publish one to any
-   * did:key). Never throws.
+   * True when `address` may act as `appDid`: `appDid` is a registered
+   * workload identity, owned by `address` (person) or by an organisation
+   * whose rules let `address` publish it (coversApp), and `address` holds a
+   * live delegation to it. A delegation alone proves nothing (anyone can
+   * self-publish one to any did:key). For org identities the delegation must
+   * also count under organisation rules (spec 3.7), and any organisation read
+   * failure refuses (fail closed); person identities never read organisation
+   * data, so an organisation outage cannot affect them. Never throws.
    */
   async function actsFor(address: string, appDid: string): Promise<boolean> {
-    const owner = await ownerOf(appDid);
-    if (owner === undefined || owner !== address.toLowerCase()) return false;
+    const caller = address.toLowerCase();
+    const identity = await identityOwnerOf(appDid);
+    if (!identity) return false;
     try {
-      return await hasDelegation(relationalDb, address, appDid, now());
+      if (identity.ownerOrgId === null) {
+        if (identity.ownerAddress !== caller) return false;
+        return await hasDelegation(relationalDb, caller, appDid, now());
+      }
+      const policy = orgPolicy();
+      if (!(await policy.coversApp(identity.ownerOrgId, caller, appDid))) return false;
+      return await hasDelegation(relationalDb, caller, appDid, now(), policy);
     } catch (error) {
       warn("delegation lookup", error);
       return false;
@@ -501,6 +597,8 @@ export function createResolvers(
       category: patch.category,
       logoRef: patch.logoRef,
       coverRef: patch.coverRef,
+      supportContact: patch.supportContact,
+      securityContact: patch.securityContact,
     };
     const actions: Action[] = [];
     if (Object.values(scalars).some((value) => value != null)) {
@@ -542,6 +640,7 @@ export function createResolvers(
 
   async function profileOutput(
     entry: AppProfileEntry,
+    view?: OrgView,
   ): Promise<AppProfileOutput> {
     const doc = await reactorClient.get<RenownAppProfileDocument>(
       entry.documentId,
@@ -562,12 +661,15 @@ export function createResolvers(
       category: state.category ?? null,
       logoRef: state.logoRef ?? null,
       coverRef: state.coverRef ?? null,
+      supportContact: state.supportContact ?? null,
+      securityContact: state.securityContact ?? null,
       links: (state.links ?? []).map(({ id, label, url }) => ({
         id,
         label,
         url,
       })),
       metrics: (state.metrics ?? []).map(toAppMetric),
+      ...(view ?? (await orgViews([entry])).get(entry.appDid) ?? NO_ORG),
     };
   }
 
@@ -575,7 +677,10 @@ export function createResolvers(
   async function profileOutputs(
     entries: readonly AppProfileEntry[],
   ): Promise<AppProfileOutput[]> {
-    const settled = await Promise.allSettled(entries.map(profileOutput));
+    const views = await orgViews(entries);
+    const settled = await Promise.allSettled(
+      entries.map((entry) => profileOutput(entry, views.get(entry.appDid) ?? NO_ORG)),
+    );
     const out: AppProfileOutput[] = [];
     settled.forEach((result, i) => {
       if (result.status === "fulfilled") {
@@ -767,10 +872,12 @@ export function createResolvers(
         _: unknown,
         args: { publisherDid: string },
       ): Promise<AppProfileOutput[]> => {
+        const orgId = orgPolicy().orgIdOfDid(args.publisherDid);
+        if (orgId) return profileOutputs(await requireIndex().appProfilesByOrg(orgId));
         const address = addressOf(args.publisherDid);
         if (address === null)
           throw invalidRequest(
-            "publisherDid must be a did:pkh:eip155 DID or an address",
+            "publisherDid must be a did:pkh:eip155 DID, an address or an organisation DID of this host",
           );
         const entries = await requireIndex().appProfilesByPublisher(address);
         return profileOutputs(entries);
@@ -782,6 +889,7 @@ export function createResolvers(
           limit?: number | null;
           after?: string | null;
           category?: string | null;
+          orgId?: string | null;
         },
       ): Promise<{ items: AppProfileOutput[]; next: string | null }> => {
         const limit = args.limit ?? DEFAULT_PAGE;
@@ -795,6 +903,7 @@ export function createResolvers(
           limit + 1,
           after,
           category,
+          args.orgId?.trim() || undefined,
         );
         const page = entries.slice(0, limit);
         const last = page.at(-1);
@@ -1040,30 +1149,95 @@ export function createResolvers(
 
         await lock(`app:${appDid}`, async () => {
           let entry = await index.appProfile(appDid);
-          // Only the registered identity's owner may claim a profile, and only
-          // its publisher may edit one. A delegation is no proof: anyone can
-          // self-publish one to any did:key.
-          const allowed = entry
-            ? entry.publisherAddress === caller
-            : (await ownerOf(appDid)) === caller;
+          const policy = orgPolicy();
+          // The organisation owning the app (org_apps), if any: every org
+          // capability check also requires the app to belong to that org.
+          const owning = await orgCall(() => policy.orgOfApp(appDid));
+          if (owning?.frozen) throw appFrozen();
+          const requestedOrg = args.publisherOrgId?.trim() || null;
+          /** The organisation this write attaches the app to (first org claim or repair). */
+          let attachTo: string | null = null;
+          let allowed: boolean;
+          if (entry) {
+            if (requestedOrg && requestedOrg !== (entry.publisherOrgId ?? null)) {
+              throw fieldError("BAD_USER_INPUT", "publisherOrgId", "An existing app changes publisher through a transfer");
+            }
+            const publisherOrg = entry.publisherOrgId;
+            if (publisherOrg && owning === null) {
+              // Repair: the claim recorded the org but its org_apps row is gone
+              // (a crash between the writes). A covered publisher of that org
+              // re-attaches it while the workload is still registered for it.
+              const identity = await identityOwnerOf(appDid);
+              allowed =
+                identity?.ownerOrgId === publisherOrg &&
+                (await orgCall(() => policy.coversApp(publisherOrg, caller, appDid)));
+              attachTo = publisherOrg;
+            } else if (publisherOrg) {
+              // Org apps: a publisher of the owning org whose scope covers the app now.
+              allowed =
+                owning?.orgId === publisherOrg &&
+                (await orgCall(() => policy.coversApp(publisherOrg, caller, appDid)));
+            } else {
+              // Person apps: the recorded publisher, while no org owns it.
+              allowed = owning === null && entry.publisherAddress === caller;
+            }
+          } else {
+            // Only the registered identity's owner (person) or a covered
+            // publisher of the organisation it was registered for may claim it.
+            // A delegation is no proof: anyone can self-publish one to any did:key.
+            const identity = await identityOwnerOf(appDid);
+            allowed = requestedOrg
+              ? identity?.ownerOrgId === requestedOrg &&
+                (owning === null || owning.orgId === requestedOrg) &&
+                (await orgCall(() => policy.coversApp(requestedOrg, caller, appDid)))
+              : owning === null &&
+                identity !== undefined &&
+                identity.ownerOrgId === null &&
+                identity.ownerAddress === caller;
+            attachTo = requestedOrg;
+          }
           if (!allowed) throw forbidden();
           await assertImages(patch);
-          if (!entry) {
-            const created = (
-              await reactorClient.createEmpty(renownAppProfileDocumentType)
-            ).header.id;
-            await execute(created, [
-              profileActions.setAppDid({ appDid }),
-              profileActions.setPublisherDid({
-                publisherDid: pkhDidFor(caller),
-              }),
-            ]);
-            entry = await index.claimAppProfile(
-              { appDid, documentId: created, publisherAddress: caller },
-              now(),
-            );
-            if (entry.publisherAddress !== caller) throw forbidden();
+          // Attach before claiming: org_apps is the conditional arbiter across
+          // processes, so a profile never records an org that does not own the app.
+          let attachedAt: Date | null = null;
+          if (attachTo !== null) {
+            const orgId = attachTo;
+            const at = now();
+            if (await orgCall(() => policy.attachApp(orgId, appDid, caller, at))) {
+              attachedAt = at;
+            } else if ((await orgCall(() => policy.orgOfApp(appDid)))?.orgId !== orgId) {
+              throw forbidden();
+            }
           }
+          if (!entry) {
+            try {
+              const created = (
+                await reactorClient.createEmpty(renownAppProfileDocumentType)
+              ).header.id;
+              await execute(created, [
+                profileActions.setAppDid({ appDid }),
+                profileActions.setPublisherDid({
+                  publisherDid: requestedOrg ? policy.orgDid(requestedOrg) : pkhDidFor(caller),
+                }),
+              ]);
+              entry = await index.claimAppProfile(
+                {
+                  appDid,
+                  documentId: created,
+                  publisherAddress: caller,
+                  ...(requestedOrg ? { publisherOrgId: requestedOrg } : {}),
+                },
+                now(),
+              );
+              if (entry.publisherAddress !== caller || (entry.publisherOrgId ?? null) !== requestedOrg) throw forbidden();
+            } catch (error) {
+              // The claim lost or failed: undo the attach this call made.
+              if (attachedAt && requestedOrg) await undoAttach(requestedOrg, appDid, caller);
+              throw error;
+            }
+          }
+          if (attachedAt && attachTo !== null) await mirrorOrgApp(attachTo, appDid, attachedAt);
           const actions = await profileWrite(
             entry.documentId,
             fields,

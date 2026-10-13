@@ -20,6 +20,10 @@
     "/dist"
   ],
   "exports": {
+    "./orgs": {
+      "types": "./dist/sdk/orgs.d.ts",
+      "default": "./dist/sdk/orgs.js"
+    },
     ".": {
       "types": "./dist/types/index.d.ts",
       "browser": "./dist/browser/index.js",
@@ -99,7 +103,8 @@
   "scripts": {
     "lint": "oxlint --type-aware --type-check",
     "lint:fix": "oxlint --type-aware --type-check --fix",
-    "build": "ph-cli build",
+    "build": "ph-cli build && pnpm build:sdk",
+    "build:sdk": "tsc -p sdk/tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build",
@@ -175,5 +180,8 @@
     "react-dom": "^19",
     "zod": "^4"
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "dependencies": {
+    "tldts": "7.4.16"
+  }
 }

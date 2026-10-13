@@ -1,8 +1,10 @@
 import type { AccessToken, AuthCode, LoginRequest, OidcClient } from "../core/types.js";
+import { withAllowedOrgs } from "./kysely.js";
 import { AUTH_CODE_RETENTION_MS, type OidcClientPatch, type OidcStore } from "./types.js";
 
 function cloneClient(c: OidcClient): OidcClient {
-  return { ...c, redirectUris: [...c.redirectUris], allowedSubjects: [...c.allowedSubjects] };
+  const { allowedOrgs, ...rest } = c;
+  return { ...rest, redirectUris: [...c.redirectUris], allowedSubjects: [...c.allowedSubjects], ...withAllowedOrgs(allowedOrgs) };
 }
 
 /** In-memory `OidcStore`, backed by Maps. For tests and local dev only. */

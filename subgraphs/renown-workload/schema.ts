@@ -15,6 +15,10 @@ export const schema: DocumentNode = gql`
     productionBranch: String!
     ownerAddress: String!
     chainId: Int!
+    "The owning organisation, when registered for one"
+    ownerOrgId: String
+    "Disabled by an organisation admin: no tokens"
+    disabled: Boolean!
     createdAt: String!
   }
 
@@ -30,6 +34,8 @@ export const schema: DocumentNode = gql`
     productionBranch: String!
     ownerAddress: String!
     chainId: Int!
+    "Register for this organisation (ownerAddress must be a publisher there)"
+    ownerOrgId: String
   }
 
   type Query {

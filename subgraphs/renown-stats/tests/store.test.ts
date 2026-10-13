@@ -1,6 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
-import { Kysely, sql } from "kysely";
+import { Kysely } from "kysely";
 import { PGliteDialect } from "kysely-pglite-dialect";
+import { bootNamespace } from "./host-namespace.js";
 import { afterAll, describe, expect, it } from "vitest";
 import { KyselyStatsIndex } from "../store/kysely.js";
 import { migrate } from "../store/migrations.js";
@@ -15,10 +16,7 @@ afterAll(async () => {
 async function makeIndex(): Promise<KyselyStatsIndex> {
   const root = new Kysely<StatsDB>({ dialect: new PGliteDialect(new PGlite()) });
   opened.push(root);
-  await sql`create schema "renown-stats"`.execute(root);
-  const db = root.withSchema("renown-stats");
-  await migrate(db);
-  await migrate(db);
+  const db = await bootNamespace<StatsDB>(root, "renown-stats", migrate);
   return new KyselyStatsIndex(db);
 }
 
@@ -54,6 +52,17 @@ describe("KyselyStatsIndex", () => {
     await index.claimAppProfile({ appDid: "did:c", documentId: "p-c", publisherAddress: BOB }, NOW);
     expect((await index.appProfilesByPublisher(ALICE)).map((e) => e.appDid)).toEqual(["did:a", "did:b"]);
     expect(await index.appProfilesByPublisher("0x0000000000000000000000000000000000000000")).toEqual([]);
+  });
+
+  it("records the publishing organisation, lists and pages an organisation's apps", async () => {
+    const index = await makeIndex();
+    await index.claimAppProfile({ appDid: "did:org-app", documentId: "p-1", publisherAddress: ALICE, publisherOrgId: "o1" }, NOW);
+    await index.claimAppProfile({ appDid: "did:person-app", documentId: "p-2", publisherAddress: ALICE }, LATER);
+    expect(await index.appProfile("did:org-app")).toEqual({ appDid: "did:org-app", documentId: "p-1", publisherAddress: ALICE, publisherOrgId: "o1" });
+    expect(await index.appProfile("did:person-app")).toEqual({ appDid: "did:person-app", documentId: "p-2", publisherAddress: ALICE });
+    expect((await index.appProfilesByOrg("o1")).map((e) => e.appDid)).toEqual(["did:org-app"]);
+    expect((await index.appProfilesPage(10, undefined, undefined, "o1")).map((e) => e.appDid)).toEqual(["did:org-app"]);
+    expect((await index.appProfilesPage(10)).map((e) => e.appDid)).toEqual(["did:person-app", "did:org-app"]);
   });
 });
 
