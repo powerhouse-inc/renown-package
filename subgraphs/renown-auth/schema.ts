@@ -46,8 +46,10 @@ export const schema: DocumentNode = gql`
     ): String
 
     """
-    Revokes a credential by its VC id. Authorized by a login token for the
-    issuer address, or by the issuer's personal_sign of
+    Revokes a credential by its VC id, and with it the app key it delegates
+    to: every live credential the same issuer gave the same app DID is
+    revoked too. Authorized by a login token for the issuer address whose own
+    app key still holds a live delegation, or by the issuer's personal_sign of
     "Revoke Renown credential <credentialId> at <timestamp>".
     """
     renown_revokeCredential(credentialId: String!, signature: String, timestamp: String): Boolean

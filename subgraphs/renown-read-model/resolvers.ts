@@ -9,6 +9,9 @@ import type { DB as RenownCredentialDB } from "../../processors/renown-credentia
 import { orgHandleStatus, publicMembershipsOf } from "../renown-orgs/store/lookups.js";
 import type { ReadModelDb } from "../renown-auth/lookups.js";
 import { parseUserSearch, searchListedUsers, type UserSearchArgs } from "./search.js";
+import { createOrgPolicy, type OrgPolicy } from "../renown-orgs/core/org-policy.js";
+import { loadOrgsConfig } from "../renown-orgs/core/config.js";
+import { issuedAtUtc } from "../renown-orgs/store/foreign.js";
 
 interface RenownUserInput {
   driveId?: string;
@@ -188,9 +191,58 @@ const getDriveId = (driveId?: string): string => {
   return resolvedDriveId;
 };
 
+/**
+ * The rows that count under organisation rules (spec 3.7, derived
+ * revocation): a delegation to an org app drops out when its issuer is no
+ * longer an ACTIVE publisher covering the app, it is suspended, or the app is
+ * frozen. Person-app delegations always count and cost one org_apps read per
+ * call; with no organisations namespace every row counts. Any other
+ * organisation read failure throws SERVICE_UNAVAILABLE (fail closed).
+ */
+async function countingRows<
+  T extends {
+    credential_id: string;
+    credential_subject_id: string | null;
+    issuer_ethereum_address: string;
+    /** issuance_date read as UTC (issuedAtUtc), as the organisation suspensions compare it. */
+    issued_at_utc: Date;
+  },
+>(
+  policy: Pick<OrgPolicy, "orgsOfApps" | "credentialStatus">,
+  rows: T[],
+): Promise<T[]> {
+  const appDids = [...new Set(rows.map((row) => row.credential_subject_id).filter((did): did is string => !!did))];
+  try {
+    const orgApps = await policy.orgsOfApps(appDids);
+    if (orgApps.size === 0) return rows;
+    const kept: T[] = [];
+    for (const row of rows) {
+      const appDid = row.credential_subject_id;
+      if (!appDid || !orgApps.has(appDid)) {
+        kept.push(row);
+        continue;
+      }
+      const verdict = await policy.credentialStatus({
+        credentialId: row.credential_id,
+        appDid,
+        issuer: row.issuer_ethereum_address.toLowerCase(),
+        issuedAt: new Date(row.issued_at_utc),
+      });
+      if (verdict.counts) kept.push(row);
+    }
+    return kept;
+  } catch (error) {
+    console.warn(`[renown-read-model] organisation rules unreadable: ${error instanceof Error ? error.message : String(error)}`);
+    throw new GraphQLError("Credentials cannot be checked right now", { extensions: { code: "SERVICE_UNAVAILABLE" } });
+  }
+}
+
 export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
    
   const db: any = subgraph.relationalDb;
+  let orgPolicy: OrgPolicy | undefined;
+  const policy = (): OrgPolicy =>
+    (orgPolicy ??= createOrgPolicy(db as ReadModelDb, loadOrgsConfig(process.env).didHost));
 
   return {
     ReadRenownUser: {
@@ -442,9 +494,12 @@ export const getResolvers = (subgraph: ISubgraph): Record<string, unknown> => {
           query = query.where("renown_credential.revoked", "=", false);
         }
 
-        const results = await query.selectAll().execute();
+        const results = await query.selectAll().select(issuedAtUtc().as("issued_at_utc")).execute();
 
-        return results.map(mapToCredential);
+        // Live results are what a host's credential check reads: a
+        // delegation that organisation rules no longer count is not live.
+        const live = includeRevoked ? results : await countingRows(policy(), results);
+        return live.map(mapToCredential);
       },
     },
   };

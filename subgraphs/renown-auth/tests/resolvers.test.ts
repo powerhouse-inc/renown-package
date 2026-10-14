@@ -43,11 +43,13 @@ const MALLORY = privateKeyToAccount(
   "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
 );
 const APP_DID = "did:key:z6MkApp";
+const OTHER_APP_DID = "did:key:z6MkOtherApp";
 const MINUTE = 60_000;
 
 function signCredential(
   account: PrivateKeyAccount,
   app = "test-app",
+  appId = APP_DID,
 ): Promise<PowerhouseVerifiableCredential> {
   const sign: SignCredentialTypedData = (args) =>
     account.signTypedData(args as Parameters<typeof account.signTypedData>[0]);
@@ -56,7 +58,7 @@ function signCredential(
     address: account.address,
     chainId: 1,
     app,
-    appId: APP_DID,
+    appId,
     expiresInDays: 7,
   });
 }
@@ -180,7 +182,7 @@ const relationalDb = {
   queryNamespace: (namespace: string) => root.withSchema(namespace),
 } as unknown as IRelationalDb<unknown>;
 
-type Ctx = { user?: { address?: string } };
+type Ctx = { user?: { address?: string; appKey?: string } };
 type Resolver<A, R> = (parent: unknown, args: A, ctx: Ctx) => Promise<R>;
 interface Mutations {
   renown_issueCredential: Resolver<
@@ -203,11 +205,14 @@ interface Mutations {
   >;
 }
 
-function setup(options: { issuanceLimit?: number; profileLimit?: number } = {}) {
+function setup(
+  options: { issuanceLimit?: number; profileLimit?: number; orgPolicy?: ResolverDeps["orgPolicy"] } = {},
+) {
   const reactor = fakeReactor();
   const resolvers = createResolvers({
     reactorClient: reactor as unknown as ResolverDeps["reactorClient"],
     relationalDb,
+    ...(options.orgPolicy ? { orgPolicy: options.orgPolicy } : {}),
     ...(options.issuanceLimit !== undefined
       ? { issuanceRateLimiter: createRateLimiter(options.issuanceLimit, MINUTE) }
       : {}),
@@ -219,7 +224,8 @@ function setup(options: { issuanceLimit?: number; profileLimit?: number } = {}) 
 }
 
 const ANON: Ctx = {};
-const tokenFor = (address: string): Ctx => ({ user: { address } });
+/** A login token the host resolved: `address`, signed by the app key `appKey`. */
+const tokenFor = (address: string, appKey: string = APP_DID): Ctx => ({ user: { address, appKey } });
 
 async function profileRows(address: string) {
   return root
@@ -667,13 +673,15 @@ describe("renown_revokeCredential", () => {
   });
 
   it("returns true for an already revoked credential without revoking again", async () => {
-    const { reactor, renown_revokeCredential, credentialId, documentId } = await issued();
+    const { reactor, renown_revokeCredential, renown_issueCredential, credentialId, documentId } = await issued();
+    // A second, still live key of Alice's makes the second call.
+    await renown_issueCredential(null, { input: toInput(await signCredential(ALICE, "other", OTHER_APP_DID)) }, ANON);
     await renown_revokeCredential(null, { credentialId }, tokenFor(ALICE.address));
     const executeCalls = reactor.execute.mock.calls.length;
 
-    await expect(renown_revokeCredential(null, { credentialId }, tokenFor(ALICE.address))).resolves.toBe(
-      true,
-    );
+    await expect(
+      renown_revokeCredential(null, { credentialId }, tokenFor(ALICE.address, OTHER_APP_DID)),
+    ).resolves.toBe(true);
     expect(reactor.execute.mock.calls.length).toBe(executeCalls);
     expect(reactor.appliedTypes(documentId)).toEqual(["INIT", "REVOKE"]);
   });
@@ -721,7 +729,10 @@ describe("renown_revokeCredential", () => {
     // Mallory, "issuer" of the junk copy, can only ever touch her own copy.
     const byMallory = await signRevoke(MALLORY, credentialId, new Date());
     await renown_revokeCredential(null, { credentialId, ...byMallory }, ANON);
-    await renown_revokeCredential(null, { credentialId }, tokenFor(MALLORY.address));
+    // Her token's app key holds no live delegation of hers, so it proves nothing.
+    await expect(renown_revokeCredential(null, { credentialId }, tokenFor(MALLORY.address))).rejects.toMatchObject(
+      FORBIDDEN,
+    );
     expect((await revokedDocs())[documentId]).toBe(false);
     expect(reactor.appliedTypes(documentId)).toEqual(["INIT"]);
 
@@ -765,6 +776,124 @@ describe("renown_revokeCredential", () => {
     await expect(
       renown_revokeCredential(null, { credentialId: "urn:uuid:nope" }, tokenFor(ALICE.address)),
     ).rejects.toMatchObject({ message: "Not found", extensions: { code: "NOT_FOUND" } });
+  });
+
+  describe("app key semantics", () => {
+    async function store(account: PrivateKeyAccount, appId: string, ctx = setup()) {
+      const input = toInput(await signCredential(account, "test-app", appId));
+      await ctx.renown_issueCredential(null, { input }, ANON);
+      return input.id;
+    }
+    async function live(credentialId: string) {
+      return (await credentialRows(credentialId)).some((row) => !row.revoked);
+    }
+
+    it("revoking one credential revokes every live credential from the issuer to the same app key", async () => {
+      const ctx = setup();
+      const first = await store(ALICE, APP_DID, ctx);
+      const second = await store(ALICE, APP_DID, ctx);
+      const otherKey = await store(ALICE, OTHER_APP_DID, ctx);
+      const mallorys = await store(MALLORY, APP_DID, ctx);
+
+      const signed = await signRevoke(ALICE, first, new Date());
+      await expect(ctx.renown_revokeCredential(null, { credentialId: first, ...signed }, ANON)).resolves.toBe(true);
+
+      expect(await live(first)).toBe(false);
+      expect(await live(second)).toBe(false);
+      expect(await live(otherKey)).toBe(true);
+      expect(await live(mallorys)).toBe(true);
+    });
+
+    it("revoking an already revoked credential still revokes the key's other live credentials", async () => {
+      const ctx = setup();
+      const first = await store(ALICE, APP_DID, ctx);
+      await ctx.renown_revokeCredential(null, { credentialId: first, ...(await signRevoke(ALICE, first, new Date())) }, ANON);
+      const later = await store(ALICE, APP_DID, ctx);
+
+      await expect(
+        ctx.renown_revokeCredential(null, { credentialId: first, ...(await signRevoke(ALICE, first, new Date())) }, ANON),
+      ).resolves.toBe(true);
+      expect(await live(later)).toBe(false);
+    });
+
+    it("a bearer whose own app key is revoked can no longer revoke the owner's other credentials", async () => {
+      const ctx = setup();
+      const stolenKey = await store(ALICE, OTHER_APP_DID, ctx);
+      const kept = await store(ALICE, APP_DID, ctx);
+      await ctx.renown_revokeCredential(null, { credentialId: stolenKey, ...(await signRevoke(ALICE, stolenKey, new Date())) }, ANON);
+
+      await expect(
+        ctx.renown_revokeCredential(null, { credentialId: kept }, tokenFor(ALICE.address, OTHER_APP_DID)),
+      ).rejects.toMatchObject(FORBIDDEN);
+      expect(await live(kept)).toBe(true);
+
+      // The wallet's own signature still works alongside that bearer.
+      const signed = await signRevoke(ALICE, kept, new Date());
+      await expect(
+        ctx.renown_revokeCredential(null, { credentialId: kept, ...signed }, tokenFor(ALICE.address, OTHER_APP_DID)),
+      ).resolves.toBe(true);
+      expect(await live(kept)).toBe(false);
+    });
+
+    it("a bearer with a live app key may revoke the owner's credential for another key", async () => {
+      const ctx = setup();
+      await store(ALICE, OTHER_APP_DID, ctx);
+      const target = await store(ALICE, APP_DID, ctx);
+
+      await expect(
+        ctx.renown_revokeCredential(null, { credentialId: target }, tokenFor(ALICE.address, OTHER_APP_DID)),
+      ).resolves.toBe(true);
+      expect(await live(target)).toBe(false);
+    });
+
+    it("a bearer whose org app key no longer counts under organisation rules is not enough", async () => {
+      const verdicts: Record<string, boolean> = { [APP_DID]: true, [OTHER_APP_DID]: false };
+      const ctx = setup({
+        orgPolicy: () => ({
+          credentialStatus: ({ appDid }) =>
+            Promise.resolve({ orgId: "org-1", counts: verdicts[appDid] ?? true, reason: verdicts[appDid] ? null : "ISSUER_NOT_MEMBER" }),
+        }),
+      });
+      await store(ALICE, OTHER_APP_DID, ctx);
+      const target = await store(ALICE, APP_DID, ctx);
+
+      await expect(
+        ctx.renown_revokeCredential(null, { credentialId: target }, tokenFor(ALICE.address, OTHER_APP_DID)),
+      ).rejects.toMatchObject(FORBIDDEN);
+      expect(await live(target)).toBe(true);
+    });
+
+    it("an organisation read failure refuses the bearer (fail closed)", async () => {
+      const ctx = setup({ orgPolicy: () => ({ credentialStatus: () => Promise.reject(new Error("db down")) }) });
+      const target = await store(ALICE, APP_DID, ctx);
+      await expect(ctx.renown_revokeCredential(null, { credentialId: target }, tokenFor(ALICE.address))).rejects.toMatchObject(
+        FORBIDDEN,
+      );
+    });
+
+    it("a bearer without an app key is not enough", async () => {
+      const ctx = setup();
+      const target = await store(ALICE, APP_DID, ctx);
+      await expect(
+        ctx.renown_revokeCredential(null, { credentialId: target }, { user: { address: ALICE.address } }),
+      ).rejects.toMatchObject(FORBIDDEN);
+      expect(await live(target)).toBe(true);
+    });
+
+    it("a bearer whose app key's delegation has expired is not enough", async () => {
+      const ctx = setup();
+      const target = await store(ALICE, APP_DID, ctx);
+      await store(ALICE, OTHER_APP_DID, ctx);
+      await root
+        .withSchema(CRED_NS)
+        .updateTable("renown_credential")
+        .set({ expiration_date: new Date(Date.now() - MINUTE) })
+        .where("credential_subject_id", "=", OTHER_APP_DID)
+        .execute();
+      await expect(
+        ctx.renown_revokeCredential(null, { credentialId: target }, tokenFor(ALICE.address, OTHER_APP_DID)),
+      ).rejects.toMatchObject(FORBIDDEN);
+    });
   });
 
   it("throws when the reactor rejects the REVOKE operation", async () => {

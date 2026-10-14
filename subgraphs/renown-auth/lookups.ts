@@ -10,6 +10,8 @@ export interface CredentialDoc {
   documentId: string;
   /** The credential's issuer address, lowercased. */
   issuerAddress: string;
+  /** The delegated app key (credentialSubject.id), or null when the row has none. */
+  appDid: string | null;
   revoked: boolean;
 }
 
@@ -29,7 +31,7 @@ export async function findCredentialDocs(
   credentialId: string,
 ): Promise<CredentialDoc[]> {
   const rows = await credentials(db)
-    .select(["document_id", "issuer_ethereum_address", "revoked"])
+    .select(["document_id", "issuer_ethereum_address", "credential_subject_id", "revoked"])
     .where("credential_id", "=", credentialId)
     .orderBy("revoked", "asc")
     .orderBy("created_at", "asc")
@@ -38,8 +40,31 @@ export async function findCredentialDocs(
   return rows.map((row) => ({
     documentId: row.document_id,
     issuerAddress: row.issuer_ethereum_address.toLowerCase(),
+    appDid: row.credential_subject_id,
     revoked: row.revoked,
   }));
+}
+
+/**
+ * The documents of every unrevoked credential `issuer` (lowercase) issued to
+ * one of `appDids`: all the live delegations of those app keys, whatever
+ * their VC ids. Revoking an app key revokes each of them.
+ */
+export async function findLiveAppKeyDocs(
+  db: ReadModelDb,
+  issuer: string,
+  appDids: readonly string[],
+): Promise<string[]> {
+  if (appDids.length === 0) return [];
+  const rows = await credentials(db)
+    .select("document_id")
+    .where((eb) => eb(eb.fn("LOWER", ["issuer_ethereum_address"]), "=", issuer))
+    .where("credential_subject_id", "in", [...appDids])
+    .where("revoked", "=", false)
+    .orderBy("created_at", "asc")
+    .orderBy("document_id", "asc")
+    .execute();
+  return rows.map((row) => row.document_id);
 }
 
 /**
