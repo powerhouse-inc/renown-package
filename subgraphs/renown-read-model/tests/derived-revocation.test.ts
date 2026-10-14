@@ -5,7 +5,7 @@
 // bearer stops authenticating; person-app delegations are unaffected.
 import { PGlite } from "@electric-sql/pglite";
 import type { ISubgraph } from "@powerhousedao/reactor-api";
-import { Kysely, sql } from "kysely";
+import { Kysely, sql, type KyselyPlugin } from "kysely";
 import { PGliteDialect } from "kysely-pglite-dialect";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { RenownCredentialProcessor } from "../../../processors/renown-credential/index.js";
@@ -149,6 +149,33 @@ describe("renownCredentials(includeRevoked: false) applies organisation rules", 
     await store.updateMember("m-alice", { status: "REMOVED", updatedAt: T0 });
     const rows = (await query.renownCredentials(null, { input: { issuer: ALICE, includeRevoked: false } })) as Row[];
     expect(rows.map((row) => row.credentialId)).toEqual(["urn:uuid:person-alice"]);
+  });
+});
+
+describe("renownCredentials organisation cost", () => {
+  it("reads organisations in a bounded number of queries, however many org-app rows", async () => {
+    let queries = 0;
+    const counting: KyselyPlugin = {
+      transformQuery: (args) => {
+        queries++;
+        return args.node;
+      },
+      transformResult: (args) => Promise.resolve(args.result),
+    };
+    const subgraph = {
+      relationalDb: { queryNamespace: (ns: string) => root.withSchema(ns).withPlugin(counting) },
+    } as unknown as ISubgraph;
+    const q = (getResolvers(subgraph) as { Query: Record<string, Field> }).Query;
+    const cost = async () => {
+      queries = 0;
+      await q.renownCredentials(null, { input: { did: ORG_APP, includeRevoked: false } });
+      return queries;
+    };
+    const few = await cost();
+    for (let i = 0; i < 40; i++) await credential(`urn:uuid:extra-${i}`, i % 2 ? ALICE : BOB, ORG_APP);
+    expect(await cost()).toBe(few);
+    // The credentials read, org_apps, then at most four organisation reads.
+    expect(few).toBeLessThanOrEqual(6);
   });
 });
 

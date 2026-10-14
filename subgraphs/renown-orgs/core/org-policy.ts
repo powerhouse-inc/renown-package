@@ -26,6 +26,14 @@ export interface OrgPublisherSummary {
 
 export type OrgCredentialReason = "ISSUER_NOT_MEMBER" | "ISSUER_NOT_PUBLISHER" | "SUSPENDED" | "APP_FROZEN";
 
+/** One delegation to judge: its VC id, delegated app key, issuer address (any case) and issuance time. */
+export interface CredentialStatusInput {
+  credentialId: string;
+  appDid: string;
+  issuer: string;
+  issuedAt: Date;
+}
+
 export interface CredentialVerdict {
   /** The organisation owning the delegated app, or null for person-owned apps. */
   orgId: string | null;
@@ -55,7 +63,17 @@ export interface OrgPolicy {
    * member-level suspension for delegations issued at or before it. Only a missing namespace on the org_apps read
    * means "person app"; any other failure throws: callers fail closed.
    */
-  credentialStatus(input: { credentialId: string; appDid: string; issuer: string; issuedAt: Date }): Promise<CredentialVerdict>;
+  credentialStatus(input: CredentialStatusInput): Promise<CredentialVerdict>;
+  /**
+   * credentialStatus for many delegations, verdicts in input order, in at
+   * most five queries whatever the count: org_apps (skipped when `apps`, an
+   * orgsOfApps result for every input app, is given), credential
+   * suspensions, member suspensions, active memberships, team scopes.
+   */
+  credentialStatuses(
+    inputs: readonly CredentialStatusInput[],
+    apps?: ReadonlyMap<string, OrgAppInfo>,
+  ): Promise<CredentialVerdict[]>;
   /** Public card of a live organisation, null when unknown or taken down. */
   orgSummary(orgId: string): Promise<OrgPublisherSummary | null>;
   /** orgOfApp for many apps in one query; apps without an organisation are absent. */
@@ -196,6 +214,102 @@ export function createOrgPolicy(db: ReadModelDb, didHost: string): OrgPolicy {
       if (memberSuspended) return verdict("SUSPENDED");
       if (!(await activeMember(app.org_id, issuer))) return verdict("ISSUER_NOT_MEMBER");
       return verdict((await covers(app.org_id, issuer, appDid)) ? null : "ISSUER_NOT_PUBLISHER");
+    },
+    credentialStatuses: async (inputs, known) => {
+      if (inputs.length === 0) return [];
+      const appDids = [...new Set(inputs.map((input) => input.appDid))];
+      const apps =
+        known ??
+        (await orEmpty(new Map<string, OrgAppInfo>(), async () => {
+          const rows = await orgs().selectFrom("org_apps").select(["app_did", "org_id", "frozen"]).where("app_did", "in", appDids).execute();
+          return new Map(rows.map((row) => [row.app_did, { orgId: row.org_id, frozen: row.frozen }]));
+        }));
+      const key = (...parts: string[]) => parts.join("\n");
+      // Only delegations to unfrozen org apps need member data.
+      const open = inputs.filter((input) => {
+        const app = apps.get(input.appDid);
+        return app !== undefined && !app.frozen;
+      });
+      const orgIds = [...new Set(open.map((input) => apps.get(input.appDid)!.orgId))];
+      const issuers = [...new Set(open.map((input) => input.issuer.toLowerCase()))];
+      const credentialIds = [...new Set(open.map((input) => input.credentialId))];
+
+      const suspendedCredentials = new Set<string>();
+      const memberSuspensions = new Map<string, Date[]>();
+      const members = new Map<string, { id: string; role: OrgRole; app_scope_all: boolean; app_dids: unknown }>();
+      const teamApps = new Map<string, string[]>();
+      if (open.length > 0) {
+        for (const row of await orgs()
+          .selectFrom("org_credential_suspensions")
+          .select(["org_id", "credential_id"])
+          .where("org_id", "in", orgIds)
+          .where("credential_id", "in", credentialIds)
+          .execute()) {
+          suspendedCredentials.add(key(row.org_id, row.credential_id));
+        }
+        for (const row of await orgs()
+          .selectFrom("org_member_suspensions")
+          .select(["org_id", "address", "suspended_at"])
+          .where("org_id", "in", orgIds)
+          .where("address", "in", issuers)
+          .execute()) {
+          const list = memberSuspensions.get(key(row.org_id, row.address)) ?? [];
+          list.push(new Date(row.suspended_at));
+          memberSuspensions.set(key(row.org_id, row.address), list);
+        }
+        for (const row of await orgs()
+          .selectFrom("org_members")
+          .innerJoin("organizations", "organizations.id", "org_members.org_id")
+          .select(["org_members.id", "org_members.org_id", "org_members.address", "org_members.role", "org_members.app_scope_all", "org_members.app_dids"])
+          .where("org_members.org_id", "in", orgIds)
+          .where("org_members.address", "in", issuers)
+          .where("org_members.status", "=", "ACTIVE")
+          .where("organizations.archived", "=", false)
+          .where("organizations.taken_down", "=", false)
+          .execute()) {
+          const k = key(row.org_id, row.address);
+          if (!members.has(k)) members.set(k, row);
+        }
+        // Team scopes only matter for publishers without an all or explicit scope.
+        const needTeams = new Set<string>();
+        for (const input of open) {
+          const member = members.get(key(apps.get(input.appDid)!.orgId, input.issuer.toLowerCase()));
+          if (!member || !roleAtLeast(member.role, "PUBLISHER")) continue;
+          if (effectiveAllScope({ role: member.role, appScope: { all: member.app_scope_all } })) continue;
+          if (!stringList(member.app_dids).includes(input.appDid)) needTeams.add(member.id);
+        }
+        if (needTeams.size > 0) {
+          for (const row of await orgs()
+            .selectFrom("org_team_members")
+            .innerJoin("org_teams", "org_teams.id", "org_team_members.team_id")
+            .select(["org_team_members.member_id", "org_teams.app_dids"])
+            .where("org_team_members.member_id", "in", [...needTeams])
+            .execute()) {
+            teamApps.set(row.member_id, [...(teamApps.get(row.member_id) ?? []), ...stringList(row.app_dids)]);
+          }
+        }
+      }
+
+      return inputs.map((input): CredentialVerdict => {
+        const app = apps.get(input.appDid);
+        if (!app) return { orgId: null, counts: true, reason: null };
+        const verdict = (reason: OrgCredentialReason | null): CredentialVerdict => ({ orgId: app.orgId, counts: reason === null, reason });
+        if (app.frozen) return verdict("APP_FROZEN");
+        const issuer = input.issuer.toLowerCase();
+        if (suspendedCredentials.has(key(app.orgId, input.credentialId))) return verdict("SUSPENDED");
+        const issuedAt = input.issuedAt.getTime();
+        if ((memberSuspensions.get(key(app.orgId, issuer)) ?? []).some((suspendedAt) => suspendedAt.getTime() >= issuedAt)) {
+          return verdict("SUSPENDED");
+        }
+        const member = members.get(key(app.orgId, issuer));
+        if (!member) return verdict("ISSUER_NOT_MEMBER");
+        const covered =
+          roleAtLeast(member.role, "PUBLISHER") &&
+          (effectiveAllScope({ role: member.role, appScope: { all: member.app_scope_all } }) ||
+            stringList(member.app_dids).includes(input.appDid) ||
+            (teamApps.get(member.id) ?? []).includes(input.appDid));
+        return verdict(covered ? null : "ISSUER_NOT_PUBLISHER");
+      });
     },
     orgSummary: async (orgId) => (await summaries([orgId])).get(orgId) ?? null,
     orgsOfApps: (appDids) =>

@@ -195,9 +195,10 @@ const getDriveId = (driveId?: string): string => {
  * The rows that count under organisation rules (spec 3.7, derived
  * revocation): a delegation to an org app drops out when its issuer is no
  * longer an ACTIVE publisher covering the app, it is suspended, or the app is
- * frozen. Person-app delegations always count and cost one org_apps read per
- * call; with no organisations namespace every row counts. Any other
- * organisation read failure throws SERVICE_UNAVAILABLE (fail closed).
+ * frozen. Person-app delegations always count. Set-based: one org_apps read,
+ * plus at most four more when any row is an org app, however many rows. With
+ * no organisations namespace every row counts; any other organisation read
+ * failure throws SERVICE_UNAVAILABLE (fail closed).
  */
 async function countingRows<
   T extends {
@@ -207,30 +208,23 @@ async function countingRows<
     /** issuance_date read as UTC (issuedAtUtc), as the organisation suspensions compare it. */
     issued_at_utc: Date;
   },
->(
-  policy: Pick<OrgPolicy, "orgsOfApps" | "credentialStatus">,
-  rows: T[],
-): Promise<T[]> {
+>(policy: Pick<OrgPolicy, "orgsOfApps" | "credentialStatuses">, rows: T[]): Promise<T[]> {
   const appDids = [...new Set(rows.map((row) => row.credential_subject_id).filter((did): did is string => !!did))];
   try {
     const orgApps = await policy.orgsOfApps(appDids);
     if (orgApps.size === 0) return rows;
-    const kept: T[] = [];
-    for (const row of rows) {
-      const appDid = row.credential_subject_id;
-      if (!appDid || !orgApps.has(appDid)) {
-        kept.push(row);
-        continue;
-      }
-      const verdict = await policy.credentialStatus({
+    const judged = rows.filter((row) => !!row.credential_subject_id && orgApps.has(row.credential_subject_id));
+    const verdicts = await policy.credentialStatuses(
+      judged.map((row) => ({
         credentialId: row.credential_id,
-        appDid,
-        issuer: row.issuer_ethereum_address.toLowerCase(),
+        appDid: row.credential_subject_id!,
+        issuer: row.issuer_ethereum_address,
         issuedAt: new Date(row.issued_at_utc),
-      });
-      if (verdict.counts) kept.push(row);
-    }
-    return kept;
+      })),
+      orgApps,
+    );
+    const dropped = new Set(judged.filter((_, index) => !verdicts[index].counts));
+    return rows.filter((row) => !dropped.has(row));
   } catch (error) {
     console.warn(`[renown-read-model] organisation rules unreadable: ${error instanceof Error ? error.message : String(error)}`);
     throw new GraphQLError("Credentials cannot be checked right now", { extensions: { code: "SERVICE_UNAVAILABLE" } });
