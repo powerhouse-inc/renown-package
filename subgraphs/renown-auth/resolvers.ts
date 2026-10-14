@@ -34,7 +34,16 @@ import {
   verifySignedMessage,
 } from "./core/signed-message.js";
 import { orgHandleStatus } from "../renown-orgs/store/lookups.js";
-import { findCredentialDocs, findHandleOwner, findNewestProfileDoc, type ReadModelDb } from "./lookups.js";
+import {
+  findCredentialDocs,
+  findHandleOwner,
+  findLiveAppKeyDocs,
+  findNewestProfileDoc,
+  type ReadModelDb,
+} from "./lookups.js";
+import { hasDelegation } from "../renown-stats/lookups.js";
+import { createOrgPolicy, type OrgPolicy } from "../renown-orgs/core/org-policy.js";
+import { loadOrgsConfig } from "../renown-orgs/core/config.js";
 import { verifyMessageOnChain, verifyTypedDataOnChain } from "./core/smart-wallet.js";
 
 // Signed revoke/profile messages carry no chain; smart-wallet signatures over
@@ -52,9 +61,12 @@ const MAX_USER_IMAGE_LENGTH = 524_288;
 const REVOCATION_REASON = "revoked by owner";
 const ETHEREUM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
-/** The host's resolver context: `user` is set only when the host resolved a login token. */
+/**
+ * The host's resolver context: `user` is set only when the host resolved a
+ * login token; `appKey` is the did:key that signed it.
+ */
 interface ResolverContext {
-  user?: { address?: string };
+  user?: { address?: string; appKey?: string };
 }
 
 interface SignedMessage {
@@ -72,6 +84,8 @@ export interface ResolverDeps {
   /** Where avatar uploads are checked; defaults to the backend the media processor published. */
   media?: () => MediaBackend | null;
   handleClaims?: HandleClaims;
+  /** Organisation rules for the revoke bearer check; defaults to the host's. */
+  orgPolicy?: () => Pick<OrgPolicy, "credentialStatus">;
 }
 
 type RateLimiter = { take(key: string, now?: number): boolean };
@@ -173,12 +187,12 @@ async function authorizeAddress(
  * many candidates there are.
  */
 async function provenAddress(
-  ctx: ResolverContext,
+  bearer: string | undefined,
   candidates: string[],
   signed: SignedMessage,
   now: Date,
 ): Promise<string | undefined> {
-  if (ctx.user?.address) return ctx.user.address.toLowerCase();
+  if (bearer !== undefined && candidates.includes(bearer)) return bearer;
   if (!signed.signature || !signed.timestamp || !isFreshTimestamp(signed.timestamp, now)) {
     return undefined;
   }
@@ -244,6 +258,27 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
   const profileRateLimiter = deps.profileRateLimiter ?? createRateLimiter(WRITE_LIMIT, WRITE_WINDOW_MS);
   const media = deps.media ?? mediaBackend;
   const handleClaims = deps.handleClaims ?? createHandleClaims();
+  let defaultPolicy: OrgPolicy | undefined;
+  const orgPolicy =
+    deps.orgPolicy ?? (() => (defaultPolicy ??= createOrgPolicy(relationalDb, loadOrgsConfig(process.env).didHost)));
+
+  /**
+   * The login token's address, but only while the app key that signed the
+   * token still holds a live delegation that counts (checked here, uncached:
+   * the host may cache its own check). A revoked or derived-revoked key can
+   * therefore never revoke its owner's other credentials; the owner's wallet
+   * signature still can. Undefined when there is no usable token.
+   */
+  async function liveBearer(ctx: ResolverContext): Promise<string | undefined> {
+    const address = ctx.user?.address?.toLowerCase();
+    const appKey = ctx.user?.appKey;
+    if (!address || !appKey) return undefined;
+    try {
+      return (await hasDelegation(relationalDb, address, appKey, now(), orgPolicy())) ? address : undefined;
+    } catch {
+      return undefined;
+    }
+  }
 
   /** Validates the raw identity fields into a patch, as BAD_USER_INPUT naming the field. */
   function identityPatch(args: UpsertProfileArgs): IdentityPatch {
@@ -378,7 +413,7 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
         // exactly the copies issued by the address they prove, and nothing else.
         const issuers = [...new Set(docs.map((doc) => doc.issuerAddress))];
         const caller = await provenAddress(
-          ctx,
+          await liveBearer(ctx),
           issuers,
           { message: revokeMessage(credentialId, timestamp ?? ""), signature, timestamp },
           now(),
@@ -386,11 +421,17 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
         const own = docs.filter((doc) => doc.issuerAddress === caller);
         if (caller === undefined || own.length === 0) throw forbidden();
 
+        // Revoking a credential revokes its app key: every live delegation
+        // the caller issued to the same app DID, whatever its VC id (a
+        // re-login with a kept key issues a new one).
+        const appDids = [...new Set(own.map((doc) => doc.appDid).filter((did): did is string => !!did))];
+        const targets = new Set([
+          ...own.filter((doc) => !doc.revoked).map((doc) => doc.documentId),
+          ...(await findLiveAppKeyDocs(relationalDb, caller, appDids)),
+        ]);
         const revokedAt = now().toISOString();
-        for (const doc of own.filter((d) => !d.revoked)) {
-          await execute(doc.documentId, [
-            credentialActions.revoke({ revokedAt, reason: REVOCATION_REASON }),
-          ]);
+        for (const documentId of targets) {
+          await execute(documentId, [credentialActions.revoke({ revokedAt, reason: REVOCATION_REASON })]);
         }
         return true;
       },
