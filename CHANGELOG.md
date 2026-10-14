@@ -1,3 +1,16 @@
+## [1.12.1-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.12.0...v1.12.1-staging.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **renown-auth:** revoking a credential revokes its app key ([1f63eb4](https://github.com/powerhouse-inc/renown-package/commit/1f63eb4f3dd0f350e375e2140f240b31db0466f2))
+* **renown-read-model:** live credentials follow organisation rules ([2652cba](https://github.com/powerhouse-inc/renown-package/commit/2652cba8f28ebbe6a0bc0405eac3389c74f485d5))
+
+
+### Performance Improvements
+
+* **orgs:** judge credential statuses set-based ([094a84a](https://github.com/powerhouse-inc/renown-package/commit/094a84a89fe22d6f354598fc3cd140d0e40d020f))
+
 # [1.12.0-staging.3](https://github.com/powerhouse-inc/renown-package/compare/v1.12.0-staging.2...v1.12.0-staging.3) (2026-10-13)
 
 
