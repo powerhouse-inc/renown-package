@@ -113,6 +113,12 @@ export const schema: DocumentNode = gql`
     ethAddress: String
     did: String
     issuer: String
+    """
+    Default true. False returns only live credentials: not revoked, and, for a
+    delegation to an organisation's app, still counting under its rules (the
+    issuer is an active publisher covering the app, the credential is not
+    suspended, the app is not frozen). Expiry is not filtered here.
+    """
     includeRevoked: Boolean
   }
 
