@@ -206,13 +206,14 @@ interface Mutations {
 }
 
 function setup(
-  options: { issuanceLimit?: number; profileLimit?: number; orgPolicy?: ResolverDeps["orgPolicy"] } = {},
+  options: { credentialInvalidator?: ResolverDeps["credentialInvalidator"]; issuanceLimit?: number; profileLimit?: number; orgPolicy?: ResolverDeps["orgPolicy"] } = {},
 ) {
   const reactor = fakeReactor();
   const resolvers = createResolvers({
     reactorClient: reactor as unknown as ResolverDeps["reactorClient"],
     relationalDb,
     ...(options.orgPolicy ? { orgPolicy: options.orgPolicy } : {}),
+    ...(options.credentialInvalidator ? { credentialInvalidator: options.credentialInvalidator } : {}),
     ...(options.issuanceLimit !== undefined
       ? { issuanceRateLimiter: createRateLimiter(options.issuanceLimit, MINUTE) }
       : {}),
@@ -802,6 +803,56 @@ describe("renown_revokeCredential", () => {
       expect(await live(second)).toBe(false);
       expect(await live(otherKey)).toBe(true);
       expect(await live(mallorys)).toBe(true);
+    });
+
+    describe("host credential cache", () => {
+      it("is invalidated once per revoked (issuer, app key)", async () => {
+        const invalidateCredential = vi.fn();
+        const ctx = setup({ credentialInvalidator: { invalidateCredential } });
+        const first = await store(ALICE, APP_DID, ctx);
+        await store(ALICE, APP_DID, ctx);
+        const otherKey = await store(ALICE, OTHER_APP_DID, ctx);
+
+        await ctx.renown_revokeCredential(null, { credentialId: first, ...(await signRevoke(ALICE, first, new Date())) }, ANON);
+        expect(invalidateCredential.mock.calls).toEqual([[ALICE.address.toLowerCase(), undefined, APP_DID]]);
+        expect(await live(otherKey)).toBe(true);
+      });
+
+      it("is a no-op without an invalidator", async () => {
+        const ctx = setup();
+        const first = await store(ALICE, APP_DID, ctx);
+        await expect(
+          ctx.renown_revokeCredential(null, { credentialId: first, ...(await signRevoke(ALICE, first, new Date())) }, ANON),
+        ).resolves.toBe(true);
+      });
+
+      it("does not fail the revoke when invalidation throws or rejects", async () => {
+        const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+        for (const invalidateCredential of [
+          vi.fn(() => {
+            throw new Error("boom");
+          }),
+          vi.fn(() => Promise.reject(new Error("boom"))),
+        ]) {
+          const ctx = setup({ credentialInvalidator: { invalidateCredential } });
+          const id = await store(ALICE, APP_DID, ctx);
+          await expect(
+            ctx.renown_revokeCredential(null, { credentialId: id, ...(await signRevoke(ALICE, id, new Date())) }, ANON),
+          ).resolves.toBe(true);
+          expect(await live(id)).toBe(false);
+          expect(invalidateCredential).toHaveBeenCalled();
+        }
+        expect(errors).toHaveBeenCalled();
+        errors.mockRestore();
+      });
+
+      it("is not called when the revoke is refused", async () => {
+        const invalidateCredential = vi.fn();
+        const ctx = setup({ credentialInvalidator: { invalidateCredential } });
+        const id = await store(ALICE, APP_DID, ctx);
+        await expect(ctx.renown_revokeCredential(null, { credentialId: id }, ANON)).rejects.toMatchObject(FORBIDDEN);
+        expect(invalidateCredential).not.toHaveBeenCalled();
+      });
     });
 
     it("revoking an already revoked credential still revokes the key's other live credentials", async () => {
