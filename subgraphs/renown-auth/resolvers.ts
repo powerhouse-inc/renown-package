@@ -26,6 +26,7 @@ import {
   type IdentityPatch,
 } from "./core/profile-patch.js";
 import { issuerAddressOf, validateCredentialInput } from "./core/credential-input.js";
+import { credentialInvalidatorOf, type CredentialInvalidator } from "./core/credential-invalidator.js";
 import { createRateLimiter } from "./core/rate-limit.js";
 import {
   isFreshTimestamp,
@@ -86,6 +87,8 @@ export interface ResolverDeps {
   handleClaims?: HandleClaims;
   /** Organisation rules for the revoke bearer check; defaults to the host's. */
   orgPolicy?: () => Pick<OrgPolicy, "credentialStatus">;
+  /** The host's credential cache; absent on hosts that do not provide one. */
+  credentialInvalidator?: CredentialInvalidator;
 }
 
 type RateLimiter = { take(key: string, now?: number): boolean };
@@ -433,6 +436,20 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
         for (const documentId of targets) {
           await execute(documentId, [credentialActions.revoke({ revokedAt, reason: REVOCATION_REASON })]);
         }
+        // The revocation is stored: evict the host's cached checks for each
+        // revoked (issuer, app key). The read model has no chain id, so none
+        // is passed. A failure here never fails the revoke.
+        if (deps.credentialInvalidator) {
+          const missingAppDid = own.some((doc) => !doc.appDid);
+          const scopes: (string | undefined)[] = [...appDids, ...(missingAppDid ? [undefined] : [])];
+          for (const appDid of scopes) {
+            try {
+              await deps.credentialInvalidator.invalidateCredential(caller, undefined, appDid);
+            } catch (error) {
+              console.error("renown-auth: credential cache invalidation failed", error);
+            }
+          }
+        }
         return true;
       },
 
@@ -514,4 +531,5 @@ export const getResolvers = (subgraph: BaseSubgraph): Record<string, unknown> =>
   createResolvers({
     reactorClient: subgraph.reactorClient,
     relationalDb: subgraph.relationalDb as unknown as ReadModelDb,
+    credentialInvalidator: credentialInvalidatorOf(subgraph),
   });
