@@ -1,3 +1,10 @@
+# [1.13.0-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.12.1...v1.13.0-staging.1) (2026-10-14)
+
+
+### Features
+
+* **renown-auth:** revoke evicts the host's credential cache ([e8ac4b9](https://github.com/powerhouse-inc/renown-package/commit/e8ac4b93199241a050081f906c11f805c95a9241))
+
 ## [1.12.1-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.12.0...v1.12.1-staging.1) (2026-10-14)
 
 
