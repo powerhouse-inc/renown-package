@@ -1,3 +1,10 @@
+# [1.13.0-staging.3](https://github.com/powerhouse-inc/renown-package/compare/v1.13.0-staging.2...v1.13.0-staging.3) (2026-10-15)
+
+
+### Performance Improvements
+
+* **docker:** reuse the dependency layer across releases ([b7c2932](https://github.com/powerhouse-inc/renown-package/commit/b7c2932eae0c22c778c8dadb5525d5a71061536c))
+
 # [1.13.0-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.13.0-staging.1...v1.13.0-staging.2) (2026-10-15)
 
 
