@@ -5,14 +5,18 @@
 # Build commands:
 #   docker build --target connect -t <registry>/<project>/connect:<tag> .
 #   docker build --target switchboard -t <registry>/<project>/switchboard:<tag> .
+#
+# Layer layout (for cache reuse across releases):
+#   toolchain -> deps (manifests + pnpm install) -> base (source + pnpm build)
+# The dependency layer only depends on the lockfile/manifest content, not on
+# the source or the release version, so a source-only release skips the
+# install and reuses the node_modules layers of the runtime image.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Base stage: Common setup for building
+# Toolchain: node + build tools + pnpm
 # -----------------------------------------------------------------------------
-FROM node:24-alpine AS base
-
-WORKDIR /app/project
+FROM node:24-alpine AS toolchain
 
 # Install build dependencies
 RUN apk add --no-cache python3 make g++ git bash \
@@ -28,20 +32,45 @@ RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 # Configure JSR registry
 RUN pnpm config set @jsr:registry https://npm.jsr.io
 
-# Build arguments
+# Install ph-cmd globally (used by `ph connect build`). TAG is the lockfile's
+# ph-cli version, so it only changes together with the lockfile, which
+# re-runs the install below anyway.
 ARG TAG=dev
-ARG PH_CONNECT_BASE_PATH="/"
-
-# Install ph-cmd globally
 RUN pnpm add -g ph-cmd@$TAG
 
-# Copy project source
-COPY . ./
+# -----------------------------------------------------------------------------
+# Manifests: dependency inputs with the release version normalised away.
+# semantic-release bumps package.json "version" on every release; without
+# this, every release would re-run `pnpm install`. COPY --from is keyed on
+# file content, so the deps stage below stays cached while only the version
+# changes.
+# -----------------------------------------------------------------------------
+FROM node:24-alpine AS manifests
 
-# Install dependencies
+WORKDIR /manifests
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("package.json","utf8"));p.version="0.0.0";fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")'
+
+# -----------------------------------------------------------------------------
+# Deps: install all dependencies (dev deps included: ph-cli, switchboard and
+# connect are devDependencies and are what `ph switchboard` runs at runtime).
+# -----------------------------------------------------------------------------
+FROM toolchain AS deps
+
+WORKDIR /app/project
+
+COPY --from=manifests /manifests/ ./
+
 ENV CI=true
-RUN pnpm install
-RUN pnpm add -D package-manager-detector
+RUN pnpm install --frozen-lockfile
+
+# -----------------------------------------------------------------------------
+# Base stage: source + build
+# -----------------------------------------------------------------------------
+FROM deps AS base
+
+# Copy project source (see .dockerignore)
+COPY . ./
 
 # Build the project
 RUN pnpm build
@@ -110,10 +139,16 @@ RUN pnpm config set @jsr:registry https://npm.jsr.io
 ARG TAG=dev
 RUN pnpm add -g ph-cmd@$TAG
 
-# Copy built project from build stage
-COPY --from=base /app/project /app/project
-
 WORKDIR /app/project
+
+# Runtime needs only what `ph switchboard` loads: the project's node_modules
+# (ph-cli/switchboard), the package manifest + config, and the built dist
+# (loaded through package.json "exports"). The TypeScript source is not used
+# outside `--dev`. node_modules comes from the deps stage in its own layer so
+# it is reused unchanged by source-only releases.
+COPY --from=deps /app/project/node_modules ./node_modules
+COPY --from=base /app/project/package.json /app/project/pnpm-lock.yaml /app/project/pnpm-workspace.yaml /app/project/powerhouse.config.json /app/project/powerhouse.manifest.json ./
+COPY --from=base /app/project/dist ./dist
 
 # Copy entrypoint
 COPY docker/switchboard-entrypoint.sh /app/entrypoint.sh

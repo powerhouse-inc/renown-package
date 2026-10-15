@@ -1,0 +1,19 @@
+# Keep the build context to what the image build needs. Anything listed here
+# would otherwise be copied by `COPY . ./` and bust the source layer cache (or,
+# for node_modules/dist, clobber what the build stage installs/produces).
+.git
+.github
+.claude
+.cursor
+.gemini
+node_modules
+dist
+coverage
+.ph
+*.tsbuildinfo
+.env
+.env.*
+.auth.json
+.keypair.json
+Dockerfile
+.dockerignore
