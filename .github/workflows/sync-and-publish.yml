@@ -408,8 +408,16 @@ jobs:
           build-args: |
             TAG=${{ steps.ph-tag.outputs.tag }}
             PH_CONNECT_BASE_PATH=/
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Registry cache in the image's own Harbor repo, one ref per
+          # target+channel. Runtime layers are then the same blobs the image
+          # push just uploaded (no second upload, unlike the GHA cache), the
+          # cache is not subject to the 10 GB GHA eviction, and connect /
+          # switchboard / dev / staging / main no longer overwrite one shared
+          # GHA scope. image-manifest=true keeps the cache an OCI image
+          # manifest, which Harbor accepts. ignore-error: a cache export
+          # failure must never fail a release.
+          cache-from: type=registry,ref=${{ env.HARBOR_REGISTRY }}/${{ needs.prepare.outputs.project_name }}/${{ matrix.target }}:buildcache-${{ needs.prepare.outputs.channel }}
+          cache-to: type=registry,ref=${{ env.HARBOR_REGISTRY }}/${{ needs.prepare.outputs.project_name }}/${{ matrix.target }}:buildcache-${{ needs.prepare.outputs.channel }},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
 
   # ==========================================================================
   # Deploy to Kubernetes (update Helm values)
