@@ -1,3 +1,10 @@
+# [1.13.0-staging.2](https://github.com/powerhouse-inc/renown-package/compare/v1.13.0-staging.1...v1.13.0-staging.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* **deps:** build and run on powerhouse 6.2.3-dev.59 ([4be8173](https://github.com/powerhouse-inc/renown-package/commit/4be8173a3fab9de5699869462527bc1dd9eb12c8))
+
 # [1.13.0-staging.1](https://github.com/powerhouse-inc/renown-package/compare/v1.12.1...v1.13.0-staging.1) (2026-10-14)
 
 
