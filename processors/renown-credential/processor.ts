@@ -22,9 +22,11 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
     namespace: string,
     filter: ProcessorFilter,
     relationalDb: IRelationalDb<DB>,
+    driveId?: string,
     reactor?: IReactor,
   ) {
-    super(namespace, filter, relationalDb);
+    // Keep the base class's 4th `driveId` slot so `query()` still type-checks.
+    super(namespace, filter, relationalDb, driveId);
     this.reactor = reactor;
   }
 

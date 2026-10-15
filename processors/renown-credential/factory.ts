@@ -26,6 +26,9 @@ export const renownCredentialFactoryBuilder: ProcessorFactoryBuilder =
       namespace,
       filter,
       store,
+      // No drive id: the namespace is shared by every drive, so no single
+      // drive's deletion may drop it.
+      undefined,
       module.client,
     );
     await processor.initAndUpgrade();
