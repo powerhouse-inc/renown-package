@@ -1,3 +1,10 @@
+# [1.13.0-staging.4](https://github.com/powerhouse-inc/renown-package/compare/v1.13.0-staging.3...v1.13.0-staging.4) (2026-10-16)
+
+
+### Performance Improvements
+
+* **ci:** registry build cache for release images ([a3e443e](https://github.com/powerhouse-inc/renown-package/commit/a3e443ef4744b2fcfb994823a768b0658cff4eb4))
+
 # [1.13.0-staging.3](https://github.com/powerhouse-inc/renown-package/compare/v1.13.0-staging.2...v1.13.0-staging.3) (2026-10-15)
 
 
