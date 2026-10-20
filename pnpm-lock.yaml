@@ -6460,8 +6460,8 @@ packages:
   electron-to-chromium@1.5.426:
     resolution: {integrity: sha512-2Gcq6inCQs/AqfHP3f5ftCzk+pqeW2VlA1LgmPqEj2hfBO8HiZRspNYkD4HzFBe4u6lGqca4BspFr6Ix4Q400g==}
 
-  electron-to-chromium@1.5.460:
-    resolution: {integrity: sha512-rRaVC7bNUyGsL+GMtmZfv3AfgG6za7gE9v5bT0PIbjEerddA0IQ+tCK05NFAXqCpNlrxBZqbFqquyxHRQONHTA==}
+  electron-to-chromium@1.5.461:
+    resolution: {integrity: sha512-3WZFARz1By+/rYcqQ0OLj4UcEdhd6tz2LEcDtKBUq7ey77EeJ1OtetY/5hjSUxw7dC5r5mA7FfkhRbqO9vnTCg==}
 
   emoji-regex@10.6.0:
     resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
@@ -14020,7 +14020,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
       '@types/debug': 4.1.13
-      debug: 4.3.4
+      debug: 4.4.3
       pony-cause: 2.1.11
       semver: 7.8.5
       uuid: 9.0.1
@@ -21285,7 +21285,7 @@ snapshots:
     dependencies:
       baseline-browser-mapping: 2.11.30
       caniuse-lite: 1.0.30001817
-      electron-to-chromium: 1.5.460
+      electron-to-chromium: 1.5.461
       node-releases: 2.0.59
       update-browserslist-db: 1.3.4(browserslist@4.29.4)
 
@@ -22084,7 +22084,7 @@ snapshots:
 
   electron-to-chromium@1.5.426: {}
 
-  electron-to-chromium@1.5.460: {}
+  electron-to-chromium@1.5.461: {}
 
   emoji-regex@10.6.0: {}
 
