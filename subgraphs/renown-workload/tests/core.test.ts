@@ -123,6 +123,22 @@ describe("matchesBranchPattern", () => {
   });
 });
 
+describe("matchesBranchPattern performance", () => {
+  it("stays linear-ish on patterns that make a regex backtrack", () => {
+    const pattern = "*-*-*-*-*-*-*-*-z";
+    const branch = `${"a-".repeat(60)}y`;
+    const started = performance.now();
+    expect(matchesBranchPattern(branch, pattern)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
+  it("still matches multi-star segments", () => {
+    expect(matchesBranchPattern("a-b-c-z", "*-*-z")).toBe(true);
+    expect(matchesBranchPattern("a--z", "*-*-z")).toBe(false);
+    expect(matchesBranchPattern("rel-1-x/rc", "rel-*/*")).toBe(true);
+  });
+});
+
 describe("isReleaseBranch", () => {
   it("is true for the production branch, with or without a list", () => {
     expect(isReleaseBranch("main", "main", [])).toBe(true);

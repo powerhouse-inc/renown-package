@@ -27,6 +27,36 @@ export function isValidBranchName(branch: string): boolean {
 }
 
 /**
+ * Whether one `/`-free segment matches a pattern segment in which `*` matches
+ * one or more characters. Iterative two-pointer wildcard match: O(n·m) worst
+ * case, no regex (a regex backtracks exponentially on `*-*-*-…`).
+ */
+function matchesSegment(segment: string, pattern: string): boolean {
+  let s = 0;
+  let p = 0;
+  let star = -1; // index of the last `*` seen in `pattern`
+  let mark = 0; // `segment` index right after what that `*` has consumed
+  while (s < segment.length) {
+    if (p < pattern.length && pattern[p] === "*") {
+      // `*` takes at least one character.
+      star = p++;
+      mark = ++s;
+    } else if (p < pattern.length && pattern[p] === segment[s]) {
+      p++;
+      s++;
+    } else if (star !== -1) {
+      // Let the last `*` take one more character and retry after it.
+      p = star + 1;
+      s = ++mark;
+    } else {
+      return false;
+    }
+  }
+  // Anything left in the pattern (even a `*`, which needs a character) fails.
+  return p === pattern.length;
+}
+
+/**
  * Whether `branch` matches a release branch `pattern`: an exact name, or a
  * name in which each `*` matches one or more characters other than `/`
  * (`*.x` matches `1.x`; `release/*` matches `release/2.0`, not
@@ -34,11 +64,14 @@ export function isValidBranchName(branch: string): boolean {
  */
 export function matchesBranchPattern(branch: string, pattern: string): boolean {
   if (!pattern.includes("*")) return branch === pattern;
-  const source = pattern
-    .split("*")
-    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("[^/]+");
-  return new RegExp(`^${source}$`).test(branch);
+  const branchSegments = branch.split("/");
+  const patternSegments = pattern.split("/");
+  return (
+    branchSegments.length === patternSegments.length &&
+    patternSegments.every((segment, i) =>
+      matchesSegment(branchSegments[i], segment),
+    )
+  );
 }
 
 /** Whether `branch` may publish releases: the production branch, or one matching `releaseBranches`. */
