@@ -2,7 +2,7 @@ import { normalizeAudience } from "../core/config.js";
 import { open } from "../core/crypto.js";
 import { GithubTokenError, type GithubVerifier } from "../core/github.js";
 import { issueWorkloadToken } from "../core/keys.js";
-import { classifyRun, isAudienceAllowed } from "../core/refs.js";
+import { classifyRun, isAudienceAllowed, isReleaseRun } from "../core/refs.js";
 import type { JwkKeyPair, VetraWorkloadClaim } from "../core/types.js";
 import type { OrgPolicy } from "../../renown-orgs/core/org-policy.js";
 import type { WorkloadStore } from "../store/types.js";
@@ -120,10 +120,20 @@ export function createTokenHandler(
     const ref = classifyRun(eventName, claims.ref, identity.productionBranch);
     if (ref === null) {
       return denied(
-        "Only push/workflow_dispatch on the production branch, push of v* tags and pull_request runs may deploy",
+        "Only push/workflow_dispatch on a branch, push of v* tags and pull_request runs get a token",
       );
     }
-    if (!isAudienceAllowed(ref.refClass, request.audience, d.audiences)) {
+    const releaseBranch = isReleaseRun(
+      ref.refClass,
+      claims.ref,
+      identity.productionBranch,
+      identity.releaseBranches,
+    );
+    if (
+      !isAudienceAllowed(ref.refClass, request.audience, d.audiences, {
+        releaseBranch,
+      })
+    ) {
       return denied(
         `Audience not allowed for ${ref.refClass.toLowerCase()} runs`,
       );
@@ -153,6 +163,7 @@ export function createTokenHandler(
       prNumber: ref.prNumber,
       eventName,
       workflowRef: claims.job_workflow_ref ?? claims.workflow_ref ?? null,
+      releaseBranch,
     };
     const accessToken = await issueWorkloadToken({
       keyPair,

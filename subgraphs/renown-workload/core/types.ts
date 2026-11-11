@@ -1,5 +1,5 @@
 /** How a CI run's git ref is trusted. */
-export type RefClass = "PRODUCTION" | "RELEASE" | "PREVIEW";
+export type RefClass = "PRODUCTION" | "RELEASE" | "BRANCH" | "PREVIEW";
 
 /** A server-held App identity: a did:key acting for `ownerAddress` on behalf of one GitHub repository. */
 export interface WorkloadIdentity {
@@ -11,6 +11,11 @@ export interface WorkloadIdentity {
   repository: string;
   /** Branch name (without `refs/heads/`) whose runs are PRODUCTION. */
   productionBranch: string;
+  /**
+   * Branches that may publish releases, besides the production branch: exact
+   * names or patterns where `*` matches one or more non-`/` characters.
+   */
+  releaseBranches: string[];
   /** EIP-55 checksummed owner address. */
   ownerAddress: string;
   chainId: number;
@@ -58,4 +63,10 @@ export interface VetraWorkloadClaim {
   eventName: string;
   /** The workflow file that ran: `job_workflow_ref`, else `workflow_ref`. */
   workflowRef: string | null;
+  /**
+   * The run may publish releases: PRODUCTION, or BRANCH on a release branch
+   * (the production branch or one matching `releaseBranches`). False for
+   * RELEASE tags and PREVIEW.
+   */
+  releaseBranch: boolean;
 }

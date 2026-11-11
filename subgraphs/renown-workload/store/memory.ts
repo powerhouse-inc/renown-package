@@ -1,6 +1,11 @@
 import type { StoredWorkloadIdentity } from "../core/types.js";
 import type { WorkloadIdentityPatch, WorkloadStore } from "./types.js";
 
+/** A copy that shares no mutable state with the stored identity. */
+function copy(identity: StoredWorkloadIdentity): StoredWorkloadIdentity {
+  return { ...identity, releaseBranches: [...identity.releaseBranches] };
+}
+
 /** In-memory `WorkloadStore`. For tests and local dev only. */
 export class MemoryWorkloadStore implements WorkloadStore {
   private readonly identities = new Map<string, StoredWorkloadIdentity>();
@@ -12,13 +17,13 @@ export class MemoryWorkloadStore implements WorkloadStore {
       }
     }
     if (this.identities.has(identity.did)) return Promise.resolve(false);
-    this.identities.set(identity.did, { ...identity });
+    this.identities.set(identity.did, copy(identity));
     return Promise.resolve(true);
   }
 
   getByDid(did: string): Promise<StoredWorkloadIdentity | undefined> {
     const identity = this.identities.get(did);
-    return Promise.resolve(identity ? { ...identity } : undefined);
+    return Promise.resolve(identity ? copy(identity) : undefined);
   }
 
   getByRepositoryId(
@@ -26,7 +31,7 @@ export class MemoryWorkloadStore implements WorkloadStore {
   ): Promise<StoredWorkloadIdentity | undefined> {
     for (const identity of this.identities.values()) {
       if (identity.repositoryId === repositoryId) {
-        return Promise.resolve({ ...identity });
+        return Promise.resolve(copy(identity));
       }
     }
     return Promise.resolve(undefined);
@@ -45,10 +50,13 @@ export class MemoryWorkloadStore implements WorkloadStore {
       ...(patch.productionBranch !== undefined && {
         productionBranch: patch.productionBranch,
       }),
+      ...(patch.releaseBranches !== undefined && {
+        releaseBranches: [...patch.releaseBranches],
+      }),
       updatedAt: now,
     };
     this.identities.set(did, updated);
-    return Promise.resolve({ ...updated });
+    return Promise.resolve(copy(updated));
   }
 
   delete(did: string): Promise<boolean> {

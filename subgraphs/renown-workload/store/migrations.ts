@@ -46,4 +46,23 @@ export async function migrate(db: Kysely<any>): Promise<void> {
       .column("owner_org_id")
       .execute();
   }
+
+  // Release branches: a JSON array; identities stored before it get none.
+  const hasReleaseBranches = await db
+    .selectFrom("workload_identities")
+    .select("release_branches")
+    .limit(0)
+    .execute()
+    .then(
+      () => true,
+      () => false,
+    );
+  if (!hasReleaseBranches) {
+    await db.schema
+      .alterTable("workload_identities")
+      .addColumn("release_branches", "text", (col) =>
+        col.ifNotExists().notNull().defaultTo("[]"),
+      )
+      .execute();
+  }
 }

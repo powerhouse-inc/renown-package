@@ -13,6 +13,8 @@ export const schema: DocumentNode = gql`
     repositoryId: String!
     repository: String!
     productionBranch: String!
+    "Branches (exact names or * patterns) that may publish releases, besides productionBranch"
+    releaseBranches: [String!]!
     ownerAddress: String!
     chainId: Int!
     "The owning organisation, when registered for one"
@@ -32,6 +34,8 @@ export const schema: DocumentNode = gql`
     repositoryId: String!
     repository: String!
     productionBranch: String!
+    "Branches (exact names, or patterns where * matches one or more non-/ characters) that may publish releases; none when omitted. At most 20. Registering an already registered repository leaves them unchanged: use updateWorkloadIdentity."
+    releaseBranches: [String!]
     ownerAddress: String!
     chainId: Int!
     "Register for this organisation (ownerAddress must be a publisher there)"
@@ -50,6 +54,8 @@ export const schema: DocumentNode = gql`
       did: String!
       repository: String
       productionBranch: String
+      "Replaces the release branches when given ([] clears them)"
+      releaseBranches: [String!]
     ): WorkloadIdentity!
     deleteWorkloadIdentity(did: String!): Boolean!
     "A 10-minute Renown bearer signed by the identity's did:key, valid only for the renown-stats audience (send it as X-Renown-App-Token). For the Vetra stats relay."

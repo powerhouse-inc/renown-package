@@ -1,8 +1,14 @@
-import { GraphQLError } from "graphql";
+import {
+  buildASTSchema,
+  GraphQLError,
+  type GraphQLInputObjectType,
+  type GraphQLObjectType,
+} from "graphql";
 import { getAddress } from "viem";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { WorkloadConfig } from "../core/types.js";
 import { createResolvers, REGISTRATION_TOKEN_HEADER } from "../resolvers.js";
+import { schema } from "../schema.js";
 import { MemoryWorkloadStore } from "../store/memory.js";
 
 type Resolver = (
@@ -153,6 +159,108 @@ describe("workload identity resolvers", () => {
     );
   });
 
+  it("registers without release branches by default", async () => {
+    expect(await register({ input })).toMatchObject({ releaseBranches: [] });
+  });
+
+  it("registers release branches in the order given, without duplicates", async () => {
+    expect(
+      await register({
+        input: {
+          ...input,
+          releaseBranches: ["next", "*.x", "release/*", "next"],
+        },
+      }),
+    ).toMatchObject({ releaseBranches: ["next", "*.x", "release/*"] });
+  });
+
+  it.each([
+    [""],
+    ["a**"],
+    ["**"],
+    ["v?"],
+    ["[12].x"],
+    ["{a,b}"],
+    ["a..*"],
+    ["-*"],
+    ["*/"],
+    ["*.lock"],
+    ["refs/heads/*"],
+    ["a b"],
+    ["x".repeat(256)],
+  ])(
+    "refuses the release branch %j as BAD_USER_INPUT, naming it",
+    async (entry) => {
+      const error = await register({
+        input: { ...input, releaseBranches: ["next", entry] },
+      }).then(
+        () => undefined,
+        (e: unknown) => e as GraphQLError,
+      );
+      expect(error?.extensions.code).toBe("BAD_USER_INPUT");
+      expect(error?.message).toContain(JSON.stringify(entry).slice(0, 40));
+    },
+  );
+
+  it("refuses a bare * (every top-level branch) but keeps narrower patterns", async () => {
+    const error = await register({
+      input: { ...input, releaseBranches: ["*"] },
+    }).then(
+      () => undefined,
+      (e: unknown) => e as GraphQLError,
+    );
+    expect(error?.extensions.code).toBe("BAD_USER_INPUT");
+    expect(error?.message).toContain("every top-level branch");
+    expect(
+      await register({
+        input: { ...input, releaseBranches: ["*.x", "release/*"] },
+      }),
+    ).toMatchObject({ releaseBranches: ["*.x", "release/*"] });
+  });
+
+  it("caps release branches at 20 (after removing duplicates)", async () => {
+    const twenty = Array.from({ length: 20 }, (_, i) => `b${i}`);
+    expect(
+      await code(
+        register({ input: { ...input, releaseBranches: [...twenty, "b20"] } }),
+      ),
+    ).toBe("BAD_USER_INPUT");
+    expect(
+      await register({
+        input: { ...input, releaseBranches: [...twenty, "b0"] },
+      }),
+    ).toMatchObject({ releaseBranches: twenty });
+  });
+
+  it("replaces release branches on update, clears them with [], keeps them when omitted", async () => {
+    const { did } = (await register({ input })) as { did: string };
+    const update = (args: Record<string, unknown>) =>
+      resolver("Mutation", "updateWorkloadIdentity")(
+        null,
+        { did, ...args },
+        authorized,
+      );
+    expect(await update({ releaseBranches: ["next", "*.x"] })).toMatchObject({
+      releaseBranches: ["next", "*.x"],
+    });
+    expect(await update({ productionBranch: "trunk" })).toMatchObject({
+      productionBranch: "trunk",
+      releaseBranches: ["next", "*.x"],
+    });
+    expect(await update({ releaseBranches: null })).toMatchObject({
+      releaseBranches: ["next", "*.x"],
+    });
+    expect(await update({ releaseBranches: ["1.x", "1.x"] })).toMatchObject({
+      releaseBranches: ["1.x"],
+    });
+    expect(await code(update({ releaseBranches: ["a**"] }))).toBe(
+      "BAD_USER_INPUT",
+    );
+    expect(await update({ releaseBranches: [] })).toMatchObject({
+      releaseBranches: [],
+    });
+  });
+
   it("stores the private key encrypted: the row never contains the JWK's d in clear", async () => {
     const { did } = (await register({ input })) as { did: string };
     const row = await store!.getByDid(did);
@@ -203,5 +311,23 @@ describe("workload identity resolvers", () => {
     expect(await del(null, { did }, authorized)).toBe(true);
     expect(await del(null, { did }, authorized)).toBe(false);
     expect(await read(null, { did }, authorized)).toBeNull();
+  });
+});
+
+describe("workload identity schema", () => {
+  it("exposes release branches on the identity, registration and update", () => {
+    const built = buildASTSchema(schema);
+    const identity = built.getType("WorkloadIdentity") as GraphQLObjectType;
+    expect(String(identity.getFields().releaseBranches.type)).toBe(
+      "[String!]!",
+    );
+    const input = built.getType(
+      "RegisterWorkloadIdentityInput",
+    ) as GraphQLInputObjectType;
+    expect(String(input.getFields().releaseBranches.type)).toBe("[String!]");
+    const update = built.getMutationType()!.getFields().updateWorkloadIdentity;
+    expect(
+      String(update.args.find((a) => a.name === "releaseBranches")?.type),
+    ).toBe("[String!]");
   });
 });

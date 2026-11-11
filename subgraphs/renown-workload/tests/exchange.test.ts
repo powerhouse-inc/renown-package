@@ -1,7 +1,7 @@
 import { verifyAuthBearerToken } from "@renown/sdk";
 import { getAddress } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_AUDIENCES } from "../core/config.js";
+import { DEFAULT_AUDIENCES, VETRA_APPS_AUDIENCE } from "../core/config.js";
 import { createGithubVerifier } from "../core/github.js";
 import { createTokenHandler, type ExchangeDeps } from "../http/handlers.js";
 import { registerWorkloadIdentity } from "../registry.js";
@@ -105,6 +105,7 @@ describe("POST workload/token", () => {
       prNumber: 42,
       eventName: "pull_request",
       workflowRef: `${REPOSITORY}/.github/workflows/deploy.yml@refs/pull/42/merge`,
+      releaseBranch: false,
     });
     // Bound to the requested audience only.
     expect(
@@ -116,7 +117,7 @@ describe("POST workload/token", () => {
     expect(logs.join()).not.toContain(body.access_token as string);
   });
 
-  it("gives production-branch runs the production registry", async () => {
+  it("gives production-branch runs the production registry, as a release branch", async () => {
     const { status, body } = await exchange(
       await githubToken(pushClaims("refs/heads/main")),
       PROD_REGISTRY,
@@ -125,9 +126,93 @@ describe("POST workload/token", () => {
     const verified = await verifyAuthBearerToken(body.access_token as string, {
       audience: PROD_REGISTRY,
     });
+    expect(verified && verified.payload.vetra).toMatchObject({
+      refClass: "PRODUCTION",
+      releaseBranch: true,
+    });
+  });
+
+  it("gives a push to another branch a BRANCH token for Vetra, but not the production registry", async () => {
+    const { status, body } = await exchange(
+      await githubToken(pushClaims("refs/heads/next")),
+      VETRA_APPS_AUDIENCE,
+    );
+    expect(status).toBe(200);
+    const verified = await verifyAuthBearerToken(body.access_token as string, {
+      audience: VETRA_APPS_AUDIENCE,
+    });
+    expect(verified && verified.payload.vetra).toMatchObject({
+      ref: "refs/heads/next",
+      refClass: "BRANCH",
+      prNumber: null,
+      eventName: "push",
+      releaseBranch: false,
+    });
+
+    const registry = await exchange(
+      await githubToken(pushClaims("refs/heads/next")),
+      PROD_REGISTRY,
+    );
+    expect(registry.status).toBe(403);
+    expect(registry.body).toEqual({
+      error: "access_denied",
+      error_description: "Audience not allowed for branch runs",
+    });
+  });
+
+  it("gives a listed release branch the production registry, marked releaseBranch", async () => {
+    await deps.store.update(
+      did,
+      { releaseBranches: ["next", "*.x"] },
+      new Date(),
+    );
+    for (const ref of ["refs/heads/next", "refs/heads/1.x"]) {
+      const { status, body } = await exchange(
+        await githubToken(pushClaims(ref)),
+        PROD_REGISTRY,
+      );
+      expect(status).toBe(200);
+      const verified = await verifyAuthBearerToken(
+        body.access_token as string,
+        { audience: PROD_REGISTRY },
+      );
+      expect(verified && verified.payload.vetra).toMatchObject({
+        ref,
+        refClass: "BRANCH",
+        releaseBranch: true,
+      });
+    }
+    // An unlisted branch still gets only the non-registry audiences.
     expect(
-      verified && (verified.payload.vetra as { refClass: string }).refClass,
-    ).toBe("PRODUCTION");
+      (
+        await exchange(
+          await githubToken(pushClaims("refs/heads/1.x/rc")),
+          PROD_REGISTRY,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await exchange(
+          await githubToken(pushClaims("refs/heads/1.x/rc")),
+          VETRA_APPS_AUDIENCE,
+        )
+      ).status,
+    ).toBe(200);
+  });
+
+  it("refuses fork-capable events on a listed release branch (403)", async () => {
+    await deps.store.update(did, { releaseBranches: ["next"] }, new Date());
+    const { status, body } = await exchange(
+      await githubToken(
+        pushClaims("refs/heads/next", { event_name: "pull_request_target" }),
+      ),
+      VETRA_APPS_AUDIENCE,
+    );
+    expect(status).toBe(403);
+    expect(body.error_description).toBe(
+      "Only push/workflow_dispatch on a branch, push of v* tags and pull_request runs get a token",
+    );
   });
 
   it("gives v* tag runs a RELEASE token", async () => {
@@ -139,9 +224,10 @@ describe("POST workload/token", () => {
     const verified = await verifyAuthBearerToken(body.access_token as string, {
       audience: PROD_REGISTRY,
     });
-    expect(
-      verified && (verified.payload.vetra as { refClass: string }).refClass,
-    ).toBe("RELEASE");
+    expect(verified && verified.payload.vetra).toMatchObject({
+      refClass: "RELEASE",
+      releaseBranch: false,
+    });
   });
 
   it("refuses a PREVIEW run the production registry (403)", async () => {
@@ -286,11 +372,20 @@ describe("POST workload/token", () => {
   it("follows the production branch as updated", async () => {
     await deps.store.update(did, { productionBranch: "release" }, new Date());
     expect(
-      (await exchange(await githubToken(pushClaims("refs/heads/main")))).status,
+      (
+        await exchange(
+          await githubToken(pushClaims("refs/heads/main")),
+          PROD_REGISTRY,
+        )
+      ).status,
     ).toBe(403);
     expect(
-      (await exchange(await githubToken(pushClaims("refs/heads/release"))))
-        .status,
+      (
+        await exchange(
+          await githubToken(pushClaims("refs/heads/release")),
+          PROD_REGISTRY,
+        )
+      ).status,
     ).toBe(200);
   });
 

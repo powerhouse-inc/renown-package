@@ -3,6 +3,7 @@ import { roleAtLeast } from "../../sdk/orgs.js";
 import type { OrgPolicy } from "../renown-orgs/core/org-policy.js";
 import { seal } from "./core/crypto.js";
 import { generateWorkloadKey } from "./core/keys.js";
+import { isValidBranchName } from "./core/refs.js";
 import type { StoredWorkloadIdentity, WorkloadIdentity } from "./core/types.js";
 import type { WorkloadStore } from "./store/types.js";
 
@@ -35,6 +36,8 @@ export interface RegisterWorkloadIdentityInput {
   repositoryId: string;
   repository: string;
   productionBranch: string;
+  /** Branches (names or `*` patterns) that may publish releases; none when omitted. */
+  releaseBranches?: string[] | null;
   ownerAddress: string;
   chainId: number;
   /** Register for this organisation: `ownerAddress` must be an active publisher there. */
@@ -43,10 +46,6 @@ export interface RegisterWorkloadIdentityInput {
 
 const REPOSITORY_ID = /^[1-9][0-9]{0,19}$/;
 const REPOSITORY = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
-// A git branch name, conservatively (a subset of git-check-ref-format):
-// ASCII letters, digits, `.`, `_`, `-`, `/`; no `..` or `//`.
-const BRANCH_ALLOWED = /^[A-Za-z0-9._/-]+$/;
-const BRANCH_FORBIDDEN = /\.\.|\/\//;
 
 function badInput(message: string): WorkloadRegistryError {
   return new WorkloadRegistryError(message, "BAD_USER_INPUT");
@@ -60,23 +59,47 @@ export function validateRepository(repository: string): string {
 }
 
 export function validateProductionBranch(branch: string): string {
-  if (
-    branch.length === 0 ||
-    branch.length > 255 ||
-    !BRANCH_ALLOWED.test(branch) ||
-    BRANCH_FORBIDDEN.test(branch) ||
-    branch.startsWith("-") ||
-    branch.startsWith("/") ||
-    branch.endsWith("/") ||
-    branch.endsWith(".") ||
-    branch.endsWith(".lock") ||
-    branch.startsWith("refs/")
-  ) {
+  if (!isValidBranchName(branch)) {
     throw badInput(
       "productionBranch must be a plain branch name (without refs/heads/)",
     );
   }
   return branch;
+}
+
+/** At most this many release branch entries per identity. */
+export const MAX_RELEASE_BRANCHES = 20;
+
+/**
+ * Validates release branch entries (exact names, or patterns where `*` stands
+ * for one or more non-`/` characters; no other glob syntax), removing
+ * duplicates and keeping the order given.
+ */
+export function validateReleaseBranches(entries: readonly string[]): string[] {
+  for (const entry of entries) {
+    if (entry === "*") {
+      throw badInput(
+        'releaseBranches entry "*" would make every top-level branch a release branch',
+      );
+    }
+    if (
+      entry.includes("**") ||
+      entry.length > 255 ||
+      // A `*` stands for part of a name: with it filled in, a valid name.
+      !isValidBranchName(entry.replaceAll("*", "x"))
+    ) {
+      throw badInput(
+        `releaseBranches entry ${JSON.stringify(entry)} must be a branch name, or a pattern where * stands for part of a name`,
+      );
+    }
+  }
+  const unique = [...new Set(entries)];
+  if (unique.length > MAX_RELEASE_BRANCHES) {
+    throw badInput(
+      `releaseBranches may list at most ${MAX_RELEASE_BRANCHES} branches`,
+    );
+  }
+  return unique;
 }
 
 function validateInput(
@@ -95,6 +118,7 @@ function validateInput(
     repositoryId: input.repositoryId,
     repository: validateRepository(input.repository),
     productionBranch: validateProductionBranch(input.productionBranch),
+    releaseBranches: validateReleaseBranches(input.releaseBranches ?? []),
     ownerAddress: getAddress(input.ownerAddress),
     chainId: input.chainId,
     ...(input.ownerOrgId?.trim() ? { ownerOrgId: input.ownerOrgId.trim() } : {}),
@@ -162,6 +186,7 @@ export async function registerWorkloadIdentity(
     did,
     provider: "github",
     ...input,
+    releaseBranches: input.releaseBranches ?? [],
     encryptedKeyPair: await seal(
       deps.encryptionKey,
       JSON.stringify(keyPair),
@@ -182,7 +207,12 @@ export async function registerWorkloadIdentity(
 export async function updateWorkloadIdentity(
   deps: RegistryDeps,
   did: string,
-  patch: { repository?: string | null; productionBranch?: string | null },
+  patch: {
+    repository?: string | null;
+    productionBranch?: string | null;
+    /** Replaces the list when given (`[]` clears it). */
+    releaseBranches?: string[] | null;
+  },
 ): Promise<WorkloadIdentity> {
   const updated = await deps.store.update(
     did,
@@ -192,6 +222,9 @@ export async function updateWorkloadIdentity(
       }),
       ...(patch.productionBranch != null && {
         productionBranch: validateProductionBranch(patch.productionBranch),
+      }),
+      ...(patch.releaseBranches != null && {
+        releaseBranches: validateReleaseBranches(patch.releaseBranches),
       }),
     },
     deps.now(),
