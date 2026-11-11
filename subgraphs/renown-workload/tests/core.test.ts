@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_AUDIENCES,
   loadConfig,
+  PRODUCTION_REGISTRY_AUDIENCE,
   VETRA_APPS_AUDIENCE,
 } from "../core/config.js";
 import { open, seal } from "../core/crypto.js";
@@ -12,6 +13,7 @@ import {
   classifyRun,
   isAudienceAllowed,
   isReleaseBranch,
+  isReleaseRun,
   isValidBranchName,
   matchesBranchPattern,
 } from "../core/refs.js";
@@ -138,6 +140,20 @@ describe("isReleaseBranch", () => {
   });
 });
 
+describe("isReleaseRun", () => {
+  it.each([
+    ["PRODUCTION", "refs/heads/main", [], true],
+    ["BRANCH", "refs/heads/next", ["next"], true],
+    ["BRANCH", "refs/heads/1.x", ["*.x"], true],
+    ["BRANCH", "refs/heads/next", [], false],
+    ["BRANCH", "refs/heads/release/2.0/rc", ["release/*"], false],
+    ["RELEASE", "refs/tags/v1.0.0", ["*"], false],
+    ["PREVIEW", "refs/pull/1/merge", ["*"], false],
+  ] as const)("%s on %s with %j → %s", (refClass, ref, list, expected) => {
+    expect(isReleaseRun(refClass, ref, "main", list)).toBe(expected);
+  });
+});
+
 describe("classifyRun", () => {
   it.each([
     ["push", "refs/heads/main", { refClass: "PRODUCTION", prNumber: null }],
@@ -153,6 +169,18 @@ describe("classifyRun", () => {
       "refs/pull/42/merge",
       { refClass: "PREVIEW", prNumber: 42 },
     ],
+    // Any other branch, pushed or dispatched.
+    ["push", "refs/heads/next", { refClass: "BRANCH", prNumber: null }],
+    ["push", "refs/heads/feature", { refClass: "BRANCH", prNumber: null }],
+    ["push", "refs/heads/main-2", { refClass: "BRANCH", prNumber: null }],
+    ["push", "refs/heads/mainx", { refClass: "BRANCH", prNumber: null }],
+    ["push", "refs/heads/1.x", { refClass: "BRANCH", prNumber: null }],
+    ["push", "refs/heads/release/2.0", { refClass: "BRANCH", prNumber: null }],
+    [
+      "workflow_dispatch",
+      "refs/heads/feature",
+      { refClass: "BRANCH", prNumber: null },
+    ],
   ])("%s on %s", (eventName, ref, expected) => {
     expect(classifyRun(eventName, ref, "main")).toEqual(expected);
   });
@@ -167,16 +195,33 @@ describe("classifyRun", () => {
     ["schedule", "refs/heads/main"],
     ["repository_dispatch", "refs/heads/main"],
     ["workflow_call", "refs/heads/main"],
+    // The same fork-capable events on any other branch.
+    ["pull_request_target", "refs/heads/next"],
+    ["workflow_run", "refs/heads/feature"],
+    ["issue_comment", "refs/heads/next"],
+    ["pull_request_review_comment", "refs/heads/1.x"],
+    ["schedule", "refs/heads/next"],
+    ["repository_dispatch", "refs/heads/next"],
+    ["workflow_call", "refs/heads/next"],
+    ["pull_request", "refs/heads/next"],
+    // Branch refs whose name isn't one we accept.
+    ["push", "refs/heads/"],
+    ["push", "refs/heads/a..b"],
+    ["push", "refs/heads/-x"],
+    ["push", "refs/heads/x/"],
+    ["push", "refs/heads/x."],
+    ["push", "refs/heads/x.lock"],
+    ["push", "refs/heads/refs/heads/x"],
+    ["push", "refs/heads/a b"],
+    ["workflow_dispatch", "refs/heads/a..b"],
+    ["push", `refs/heads/${"x".repeat(256)}`],
     // Right event, wrong ref.
-    ["push", "refs/heads/feature"],
-    ["push", "refs/heads/main-2"],
-    ["push", "refs/heads/mainx"],
     ["push", "refs/tags/release-1"],
     ["push", "refs/tags/v"],
     ["push", "refs/tags/vX"],
     ["push", "refs/pull/42/merge"],
     ["workflow_dispatch", "refs/tags/v1.2.3"],
-    ["workflow_dispatch", "refs/heads/feature"],
+    ["push", "refs/remotes/origin/next"],
     ["pull_request", "refs/heads/main"],
     ["pull_request", "refs/pull/42/head"],
     ["pull_request", "refs/pull/0/merge"],
@@ -220,6 +265,62 @@ describe("isAudienceAllowed", () => {
     ).toBe(true);
   });
 
+  it.each([
+    // [class, release branch, production registry, other allowlisted audiences]
+    ["PRODUCTION", true, true, true],
+    ["RELEASE", false, true, true],
+    ["BRANCH", true, true, true],
+    ["BRANCH", false, false, true],
+    ["PREVIEW", false, false, true],
+  ] as const)(
+    "%s run (release branch: %s): production registry %s, others %s",
+    (refClass, releaseBranch, registry, others) => {
+      expect(
+        isAudienceAllowed(
+          refClass,
+          PRODUCTION_REGISTRY_AUDIENCE,
+          DEFAULT_AUDIENCES,
+          {
+            releaseBranch,
+          },
+        ),
+      ).toBe(registry);
+      for (const audience of [
+        "https://registry.dev.vetra.io",
+        VETRA_APPS_AUDIENCE,
+      ]) {
+        expect(
+          isAudienceAllowed(refClass, audience, DEFAULT_AUDIENCES, {
+            releaseBranch,
+          }),
+        ).toBe(others);
+      }
+    },
+  );
+
+  it("never gives a preview run the production registry, even if marked a release branch", () => {
+    expect(
+      isAudienceAllowed(
+        "PREVIEW",
+        PRODUCTION_REGISTRY_AUDIENCE,
+        DEFAULT_AUDIENCES,
+        {
+          releaseBranch: true,
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it("treats a branch run as no release branch unless told otherwise", () => {
+    expect(
+      isAudienceAllowed(
+        "BRANCH",
+        PRODUCTION_REGISTRY_AUDIENCE,
+        DEFAULT_AUDIENCES,
+      ),
+    ).toBe(false);
+  });
+
   it("defaults to the registries and the vetra-apps CI endpoints only", () => {
     expect(DEFAULT_AUDIENCES).toEqual([
       "https://registry.vetra.io",
@@ -232,12 +333,18 @@ describe("isAudienceAllowed", () => {
   });
 
   it("never gives any run the bare vetra switchboard by default (it would act as the owner on its GraphQL)", () => {
-    for (const refClass of ["PRODUCTION", "RELEASE", "PREVIEW"] as const) {
+    for (const refClass of [
+      "PRODUCTION",
+      "RELEASE",
+      "BRANCH",
+      "PREVIEW",
+    ] as const) {
       expect(
         isAudienceAllowed(
           refClass,
           "https://switchboard.vetra.io",
           DEFAULT_AUDIENCES,
+          { releaseBranch: true },
         ),
       ).toBe(false);
     }
@@ -271,6 +378,7 @@ describe("workload keys", () => {
       prNumber: null,
       eventName: "push",
       workflowRef: "acme/shop/.github/workflows/deploy.yml@refs/heads/main",
+      releaseBranch: true,
     };
     const token = await issueWorkloadToken({
       keyPair,

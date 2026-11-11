@@ -3,6 +3,7 @@ import type { RefClass } from "./types.js";
 
 const PULL_MERGE_REF = /^refs\/pull\/([1-9][0-9]{0,9})\/merge$/;
 const RELEASE_TAG_REF = /^refs\/tags\/v[0-9]/;
+const BRANCH_REF_PREFIX = "refs/heads/";
 
 // A git branch name, conservatively (a subset of git-check-ref-format):
 // ASCII letters, digits, `.`, `_`, `-`, `/`; no `..` or `//`.
@@ -64,6 +65,7 @@ const PRODUCTION_EVENTS = new Set(["push", "workflow_dispatch"]);
  * - `push` / `workflow_dispatch` on the production branch → PRODUCTION
  * - `push` of a tag `v<digit>…` → RELEASE
  * - `pull_request` on `refs/pull/<n>/merge` → PREVIEW
+ * - `push` / `workflow_dispatch` on any other (valid) branch → BRANCH
  *
  * Anything else is not trusted (null).
  */
@@ -85,21 +87,50 @@ export function classifyRun(
     const pull = PULL_MERGE_REF.exec(ref);
     if (pull) return { refClass: "PREVIEW", prNumber: Number(pull[1]) };
   }
+  if (
+    PRODUCTION_EVENTS.has(eventName) &&
+    ref.startsWith(BRANCH_REF_PREFIX) &&
+    isValidBranchName(ref.slice(BRANCH_REF_PREFIX.length))
+  ) {
+    return { refClass: "BRANCH", prNumber: null };
+  }
   return null;
 }
 
 /**
+ * Whether the run (classified by `classifyRun`) may publish releases: always
+ * on the production branch, on another branch only when it is a release
+ * branch; never for tags or pull requests.
+ */
+export function isReleaseRun(
+  refClass: RefClass,
+  ref: string,
+  productionBranch: string,
+  releaseBranches: readonly string[],
+): boolean {
+  if (refClass === "PRODUCTION") return true;
+  if (refClass !== "BRANCH" || !ref.startsWith(BRANCH_REF_PREFIX)) return false;
+  return isReleaseBranch(
+    ref.slice(BRANCH_REF_PREFIX.length),
+    productionBranch,
+    releaseBranches,
+  );
+}
+
+/**
  * Whether a run of `refClass` may get a token for `audience`: it must be in
- * the allowlist, and PREVIEW runs never get the production registry.
+ * the allowlist, and only PRODUCTION, RELEASE and BRANCH runs on a release
+ * branch get the production registry (never PREVIEW, nor other branches).
  */
 export function isAudienceAllowed(
   refClass: RefClass,
   audience: string,
   allowlist: readonly string[],
+  { releaseBranch }: { releaseBranch: boolean } = { releaseBranch: false },
 ): boolean {
   if (!allowlist.includes(audience)) return false;
-  if (refClass === "PREVIEW" && audience === PRODUCTION_REGISTRY_AUDIENCE) {
-    return false;
-  }
+  if (audience !== PRODUCTION_REGISTRY_AUDIENCE) return true;
+  if (refClass === "PREVIEW") return false;
+  if (refClass === "BRANCH") return releaseBranch;
   return true;
 }
