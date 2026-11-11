@@ -36,6 +36,8 @@ export interface RegisterWorkloadIdentityInput {
   repositoryId: string;
   repository: string;
   productionBranch: string;
+  /** Branches (names or `*` patterns) that may publish releases; none when omitted. */
+  releaseBranches?: string[] | null;
   ownerAddress: string;
   chainId: number;
   /** Register for this organisation: `ownerAddress` must be an active publisher there. */
@@ -65,6 +67,36 @@ export function validateProductionBranch(branch: string): string {
   return branch;
 }
 
+/** At most this many release branch entries per identity. */
+export const MAX_RELEASE_BRANCHES = 20;
+
+/**
+ * Validates release branch entries (exact names, or patterns where `*` stands
+ * for one or more non-`/` characters; no other glob syntax), removing
+ * duplicates and keeping the order given.
+ */
+export function validateReleaseBranches(entries: readonly string[]): string[] {
+  for (const entry of entries) {
+    if (
+      entry.includes("**") ||
+      entry.length > 255 ||
+      // A `*` stands for part of a name: with it filled in, a valid name.
+      !isValidBranchName(entry.replaceAll("*", "x"))
+    ) {
+      throw badInput(
+        `releaseBranches entry ${JSON.stringify(entry)} must be a branch name, or a pattern where * stands for part of a name`,
+      );
+    }
+  }
+  const unique = [...new Set(entries)];
+  if (unique.length > MAX_RELEASE_BRANCHES) {
+    throw badInput(
+      `releaseBranches may list at most ${MAX_RELEASE_BRANCHES} branches`,
+    );
+  }
+  return unique;
+}
+
 function validateInput(
   input: RegisterWorkloadIdentityInput,
 ): RegisterWorkloadIdentityInput {
@@ -81,6 +113,7 @@ function validateInput(
     repositoryId: input.repositoryId,
     repository: validateRepository(input.repository),
     productionBranch: validateProductionBranch(input.productionBranch),
+    releaseBranches: validateReleaseBranches(input.releaseBranches ?? []),
     ownerAddress: getAddress(input.ownerAddress),
     chainId: input.chainId,
     ...(input.ownerOrgId?.trim() ? { ownerOrgId: input.ownerOrgId.trim() } : {}),
@@ -147,8 +180,8 @@ export async function registerWorkloadIdentity(
   const identity: StoredWorkloadIdentity = {
     did,
     provider: "github",
-    releaseBranches: [],
     ...input,
+    releaseBranches: input.releaseBranches ?? [],
     encryptedKeyPair: await seal(
       deps.encryptionKey,
       JSON.stringify(keyPair),
@@ -169,7 +202,12 @@ export async function registerWorkloadIdentity(
 export async function updateWorkloadIdentity(
   deps: RegistryDeps,
   did: string,
-  patch: { repository?: string | null; productionBranch?: string | null },
+  patch: {
+    repository?: string | null;
+    productionBranch?: string | null;
+    /** Replaces the list when given (`[]` clears it). */
+    releaseBranches?: string[] | null;
+  },
 ): Promise<WorkloadIdentity> {
   const updated = await deps.store.update(
     did,
@@ -179,6 +217,9 @@ export async function updateWorkloadIdentity(
       }),
       ...(patch.productionBranch != null && {
         productionBranch: validateProductionBranch(patch.productionBranch),
+      }),
+      ...(patch.releaseBranches != null && {
+        releaseBranches: validateReleaseBranches(patch.releaseBranches),
       }),
     },
     deps.now(),

@@ -153,6 +153,7 @@ export function createResolvers(deps: ResolverDeps): Record<string, unknown> {
           did: string;
           repository?: string | null;
           productionBranch?: string | null;
+          releaseBranches?: string[] | null;
         },
         ctx: ResolverContext,
       ): Promise<WorkloadIdentityOutput> => {
