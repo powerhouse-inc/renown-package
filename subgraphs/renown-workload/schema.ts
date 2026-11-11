@@ -34,7 +34,7 @@ export const schema: DocumentNode = gql`
     repositoryId: String!
     repository: String!
     productionBranch: String!
-    "Branches (exact names, or patterns where * matches one or more non-/ characters) that may publish releases; none when omitted. At most 20."
+    "Branches (exact names, or patterns where * matches one or more non-/ characters) that may publish releases; none when omitted. At most 20. Registering an already registered repository leaves them unchanged: use updateWorkloadIdentity."
     releaseBranches: [String!]
     ownerAddress: String!
     chainId: Int!
