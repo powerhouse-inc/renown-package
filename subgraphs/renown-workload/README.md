@@ -8,13 +8,20 @@ Exchanges a GitHub Actions OIDC token for a Renown auth bearer token. The token 
 
 ## Which runs get a token
 
-| GitHub run                                                       | Class      | Audiences it may request                                      |
-| ---------------------------------------------------------------- | ---------- | ------------------------------------------------------------- |
-| `push` or `workflow_dispatch` on `refs/heads/<productionBranch>` | PRODUCTION | every allowlisted audience                                    |
-| `push` of a tag matching `^refs/tags/v\d`                        | RELEASE    | every allowlisted audience                                    |
-| `pull_request` on `refs/pull/<n>/merge`                          | PREVIEW    | every allowlisted audience except `https://registry.vetra.io` |
+| GitHub run                                                       | Class      | Audiences it may request                                                                 |
+| ---------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------- |
+| `push` or `workflow_dispatch` on `refs/heads/<productionBranch>` | PRODUCTION | every allowlisted audience                                                               |
+| `push` of a tag matching `^refs/tags/v\d`                        | RELEASE    | every allowlisted audience                                                               |
+| `pull_request` on `refs/pull/<n>/merge`                          | PREVIEW    | every allowlisted audience except `https://registry.vetra.io`                            |
+| `push` or `workflow_dispatch` on any other `refs/heads/<branch>` | BRANCH     | every allowlisted audience; `https://registry.vetra.io` only on a release branch (below) |
 
-Any other event or ref gets 403. That includes `pull_request_target`, `workflow_run` and `issue_comment`, even on the production branch.
+Any other event or ref gets 403. That includes `pull_request_target`, `workflow_run` and `issue_comment`, on every branch.
+
+### Release branches
+
+An identity's `releaseBranches` lists the branches, besides `productionBranch`, that may publish releases. An entry is an exact branch name or a pattern in which `*` matches one or more characters other than `/` (`*.x` matches `1.x`; `release/*` matches `release/2.0`, not `release/2.0/rc`). No other glob syntax. At most 20 entries; duplicates are removed. `updateWorkloadIdentity(releaseBranches: [...])` replaces the list, and `[]` clears it.
+
+The token's `vetra` claim carries `releaseBranch`: true for PRODUCTION runs and for BRANCH runs on a release branch, false otherwise.
 
 ## Environment
 
