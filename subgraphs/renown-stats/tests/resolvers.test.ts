@@ -824,6 +824,7 @@ describe("authorisation hardening", () => {
         prNumber: null,
         eventName: "push",
         workflowRef: null,
+        releaseBranch: true,
       },
     });
     expect(
