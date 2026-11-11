@@ -1,0 +1,27 @@
+{
+  "name": "deepsec-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "deepsec scanning workspace",
+  "type": "module",
+  "workspaces": [],
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "scope": "node full-pass.mjs --prepare-only",
+    "setup:coverage": "node run-secure.mjs setup --headless --yes --skip-install --agent codex --model gpt-6.1-sol --thinking-level xhigh --model-auth local --concurrency 2 --through coverage --output jsonl",
+    "scan:full": "node full-pass.mjs",
+    "resume:full": "node run-secure.mjs process --manifest artifacts/full-repo-files.json --agent codex --model gpt-6.1-sol --thinking-level xhigh --concurrency 2 --batch-size 5",
+    "revalidate": "node run-secure.mjs revalidate --agent codex --model gpt-6.1-sol --thinking-level xhigh --concurrency 2",
+    "report": "deepsec report",
+    "export": "deepsec export --format md-dir --out findings"
+  },
+  "dependencies": {
+    "deepsec": "2.3.10"
+  },
+  "pnpm": {
+    "overrides": {
+      "@openai/codex-sdk": "0.163.0",
+      "@openai/codex": "0.163.0"
+    }
+  }
+}

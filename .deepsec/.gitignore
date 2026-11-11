@@ -1,0 +1,24 @@
+# Ignore local scan output, credentials, dependencies, archives and runtime
+# state by default. Only the reusable audit template below may be committed.
+/*
+!/.gitignore
+!/AGENTS.md
+!/README.md
+!/deepsec.config.ts
+!/generated-matchers.ts
+!/package.json
+!/pnpm-lock.yaml
+!/pnpm-workspace.yaml
+!/full-pass.mjs
+!/prepare-isolated.mjs
+!/run-secure.mjs
+!/verify-full.mjs
+
+# Keep only reviewed project context; project.json, setup checkpoints,
+# per-file analyses, run records and reports remain local.
+!/data/
+/data/*
+!/data/renown-package/
+/data/renown-package/*
+!/data/renown-package/INFO.md
+!/data/renown-package/SETUP.md
