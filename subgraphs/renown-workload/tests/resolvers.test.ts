@@ -202,6 +202,22 @@ describe("workload identity resolvers", () => {
     },
   );
 
+  it("refuses a bare * (every top-level branch) but keeps narrower patterns", async () => {
+    const error = await register({
+      input: { ...input, releaseBranches: ["*"] },
+    }).then(
+      () => undefined,
+      (e: unknown) => e as GraphQLError,
+    );
+    expect(error?.extensions.code).toBe("BAD_USER_INPUT");
+    expect(error?.message).toContain("every top-level branch");
+    expect(
+      await register({
+        input: { ...input, releaseBranches: ["*.x", "release/*"] },
+      }),
+    ).toMatchObject({ releaseBranches: ["*.x", "release/*"] });
+  });
+
   it("caps release branches at 20 (after removing duplicates)", async () => {
     const twenty = Array.from({ length: 20 }, (_, i) => `b${i}`);
     expect(

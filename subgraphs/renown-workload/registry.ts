@@ -77,6 +77,11 @@ export const MAX_RELEASE_BRANCHES = 20;
  */
 export function validateReleaseBranches(entries: readonly string[]): string[] {
   for (const entry of entries) {
+    if (entry === "*") {
+      throw badInput(
+        'releaseBranches entry "*" would make every top-level branch a release branch',
+      );
+    }
     if (
       entry.includes("**") ||
       entry.length > 255 ||
