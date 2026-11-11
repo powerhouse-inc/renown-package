@@ -13,6 +13,7 @@ const identity = (
   repositoryId,
   repository: "acme/shop",
   productionBranch: "main",
+  releaseBranches: [],
   ownerAddress: "0x1111111111111111111111111111111111111111",
   // > int4: chain_id is a bigint column.
   chainId: 3_000_000_000,
@@ -65,6 +66,28 @@ export function describeWorkloadStoreContract(
       expect(
         await store.update("did:key:none", { repository: "x/y" }, later),
       ).toBeUndefined();
+    });
+
+    it("keeps the release branches in order, and replaces them on update", async () => {
+      const store = await makeStore();
+      const listed = {
+        ...identity("did:key:a", "1"),
+        releaseBranches: ["next", "*.x", "release/*"],
+      };
+      await store.insert(listed);
+      expect(await store.getByDid("did:key:a")).toEqual(listed);
+      const later = new Date(now.getTime() + 1000);
+      expect(
+        await store.update("did:key:a", { releaseBranches: ["1.x"] }, later),
+      ).toEqual({ ...listed, releaseBranches: ["1.x"], updatedAt: later });
+      expect(
+        await store.update("did:key:a", { releaseBranches: [] }, later),
+      ).toEqual({ ...listed, releaseBranches: [], updatedAt: later });
+      // Patching another field leaves the list alone.
+      await store.update("did:key:a", { releaseBranches: ["next"] }, later);
+      expect(
+        await store.update("did:key:a", { productionBranch: "trunk" }, later),
+      ).toMatchObject({ productionBranch: "trunk", releaseBranches: ["next"] });
     });
 
     it("deletes", async () => {

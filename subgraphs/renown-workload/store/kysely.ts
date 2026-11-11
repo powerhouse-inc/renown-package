@@ -11,6 +11,19 @@ function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
 }
 
+/** The stored JSON list; anything unreadable counts as no release branches (fail closed). */
+function parseReleaseBranches(value: string): string[] {
+  try {
+    const list: unknown = JSON.parse(value);
+    return Array.isArray(list) &&
+      list.every((entry) => typeof entry === "string")
+      ? list
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function toIdentity(
   row: Selectable<WorkloadIdentityRow>,
 ): StoredWorkloadIdentity {
@@ -20,6 +33,7 @@ function toIdentity(
     repositoryId: row.repository_id,
     repository: row.repository,
     productionBranch: row.production_branch,
+    releaseBranches: parseReleaseBranches(row.release_branches),
     ownerAddress: row.owner_address,
     chainId: Number(row.chain_id),
     encryptedKeyPair: row.encrypted_key_pair,
@@ -43,6 +57,7 @@ export class KyselyWorkloadStore implements WorkloadStore {
         repository_id: identity.repositoryId,
         repository: identity.repository,
         production_branch: identity.productionBranch,
+        release_branches: JSON.stringify(identity.releaseBranches),
         owner_address: identity.ownerAddress,
         chain_id: identity.chainId,
         encrypted_key_pair: identity.encryptedKeyPair,
@@ -88,6 +103,9 @@ export class KyselyWorkloadStore implements WorkloadStore {
         ...(patch.repository !== undefined && { repository: patch.repository }),
         ...(patch.productionBranch !== undefined && {
           production_branch: patch.productionBranch,
+        }),
+        ...(patch.releaseBranches !== undefined && {
+          release_branches: JSON.stringify(patch.releaseBranches),
         }),
         updated_at: now,
       })
