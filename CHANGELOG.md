@@ -1,3 +1,19 @@
+# [1.14.0](https://github.com/powerhouse-inc/renown-package/compare/v1.13.0...v1.14.0) (2026-11-11)
+
+
+### Bug Fixes
+
+* **workload:** linear release branch matcher (no regex backtracking) ([a1a619e](https://github.com/powerhouse-inc/renown-package/commit/a1a619e3209b6d0e3d51c2a82a43a193d48a0d07))
+* **workload:** refuse a bare * release branch entry ([14b8bbc](https://github.com/powerhouse-inc/renown-package/commit/14b8bbce52c6c2556e7d7c92de859e50aaf4ea61))
+
+
+### Features
+
+* **workload:** branch name check, release branch pattern matcher ([91441d6](https://github.com/powerhouse-inc/renown-package/commit/91441d63c8647d4345e3551d7a1a026d1a27923c))
+* **workload:** BRANCH tokens for every branch, registry for release branches ([0194563](https://github.com/powerhouse-inc/renown-package/commit/01945636b4e11ebbf0f8837238fb979e65745509))
+* **workload:** register and update release branches over GraphQL ([493681f](https://github.com/powerhouse-inc/renown-package/commit/493681f404a94b800102e0e8967efed6f083128c))
+* **workload:** store release branches per identity ([4e0d06b](https://github.com/powerhouse-inc/renown-package/commit/4e0d06b78bd20b3523f8dabb9f0c919dc63b8e4b))
+
 # [1.13.0](https://github.com/powerhouse-inc/renown-package/compare/v1.12.1...v1.13.0) (2026-10-14)
 
 
