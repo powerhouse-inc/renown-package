@@ -4,6 +4,54 @@ import type { RefClass } from "./types.js";
 const PULL_MERGE_REF = /^refs\/pull\/([1-9][0-9]{0,9})\/merge$/;
 const RELEASE_TAG_REF = /^refs\/tags\/v[0-9]/;
 
+// A git branch name, conservatively (a subset of git-check-ref-format):
+// ASCII letters, digits, `.`, `_`, `-`, `/`; no `..` or `//`.
+const BRANCH_ALLOWED = /^[A-Za-z0-9._/-]+$/;
+const BRANCH_FORBIDDEN = /\.\.|\/\//;
+
+/** Whether `branch` is a plain branch name (without `refs/heads/`) we accept. */
+export function isValidBranchName(branch: string): boolean {
+  return !(
+    branch.length === 0 ||
+    branch.length > 255 ||
+    !BRANCH_ALLOWED.test(branch) ||
+    BRANCH_FORBIDDEN.test(branch) ||
+    branch.startsWith("-") ||
+    branch.startsWith("/") ||
+    branch.endsWith("/") ||
+    branch.endsWith(".") ||
+    branch.endsWith(".lock") ||
+    branch.startsWith("refs/")
+  );
+}
+
+/**
+ * Whether `branch` matches a release branch `pattern`: an exact name, or a
+ * name in which each `*` matches one or more characters other than `/`
+ * (`*.x` matches `1.x`; `release/*` matches `release/2.0`, not
+ * `release/2.0/rc`). No other glob syntax.
+ */
+export function matchesBranchPattern(branch: string, pattern: string): boolean {
+  if (!pattern.includes("*")) return branch === pattern;
+  const source = pattern
+    .split("*")
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("[^/]+");
+  return new RegExp(`^${source}$`).test(branch);
+}
+
+/** Whether `branch` may publish releases: the production branch, or one matching `releaseBranches`. */
+export function isReleaseBranch(
+  branch: string,
+  productionBranch: string,
+  releaseBranches: readonly string[],
+): boolean {
+  return (
+    branch === productionBranch ||
+    releaseBranches.some((pattern) => matchesBranchPattern(branch, pattern))
+  );
+}
+
 /** Events whose run is the repository's own code at `ref`, started by a push or a maintainer. */
 const PRODUCTION_EVENTS = new Set(["push", "workflow_dispatch"]);
 

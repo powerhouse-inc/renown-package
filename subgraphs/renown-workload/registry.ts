@@ -3,6 +3,7 @@ import { roleAtLeast } from "../../sdk/orgs.js";
 import type { OrgPolicy } from "../renown-orgs/core/org-policy.js";
 import { seal } from "./core/crypto.js";
 import { generateWorkloadKey } from "./core/keys.js";
+import { isValidBranchName } from "./core/refs.js";
 import type { StoredWorkloadIdentity, WorkloadIdentity } from "./core/types.js";
 import type { WorkloadStore } from "./store/types.js";
 
@@ -43,10 +44,6 @@ export interface RegisterWorkloadIdentityInput {
 
 const REPOSITORY_ID = /^[1-9][0-9]{0,19}$/;
 const REPOSITORY = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/;
-// A git branch name, conservatively (a subset of git-check-ref-format):
-// ASCII letters, digits, `.`, `_`, `-`, `/`; no `..` or `//`.
-const BRANCH_ALLOWED = /^[A-Za-z0-9._/-]+$/;
-const BRANCH_FORBIDDEN = /\.\.|\/\//;
 
 function badInput(message: string): WorkloadRegistryError {
   return new WorkloadRegistryError(message, "BAD_USER_INPUT");
@@ -60,18 +57,7 @@ export function validateRepository(repository: string): string {
 }
 
 export function validateProductionBranch(branch: string): string {
-  if (
-    branch.length === 0 ||
-    branch.length > 255 ||
-    !BRANCH_ALLOWED.test(branch) ||
-    BRANCH_FORBIDDEN.test(branch) ||
-    branch.startsWith("-") ||
-    branch.startsWith("/") ||
-    branch.endsWith("/") ||
-    branch.endsWith(".") ||
-    branch.endsWith(".lock") ||
-    branch.startsWith("refs/")
-  ) {
+  if (!isValidBranchName(branch)) {
     throw badInput(
       "productionBranch must be a plain branch name (without refs/heads/)",
     );

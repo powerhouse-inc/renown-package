@@ -8,7 +8,13 @@ import {
 import { open, seal } from "../core/crypto.js";
 import { createGithubVerifier, GithubTokenError } from "../core/github.js";
 import { generateWorkloadKey, issueWorkloadToken } from "../core/keys.js";
-import { classifyRun, isAudienceAllowed } from "../core/refs.js";
+import {
+  classifyRun,
+  isAudienceAllowed,
+  isReleaseBranch,
+  isValidBranchName,
+  matchesBranchPattern,
+} from "../core/refs.js";
 import { githubJwks, githubToken, prClaims } from "./github-fixture.js";
 
 const KEY = new Uint8Array(32).fill(7);
@@ -61,6 +67,74 @@ describe("seal/open", () => {
       open(new Uint8Array(32), sealed, "did:key:a"),
     ).rejects.toThrow();
     await expect(open(KEY, "garbage", "did:key:a")).rejects.toThrow();
+  });
+});
+
+describe("isValidBranchName", () => {
+  it.each(["main", "next", "1.x", "release/2.0", "feat/a_b-c", "v1.2"])(
+    "accepts %s",
+    (branch) => {
+      expect(isValidBranchName(branch)).toBe(true);
+    },
+  );
+
+  it.each([
+    "",
+    "a..b",
+    "a//b",
+    "-x",
+    "/x",
+    "x/",
+    "x.",
+    "x.lock",
+    "refs/heads/main",
+    "a b",
+    "a*b",
+    "a~1",
+    "x".repeat(256),
+  ])("refuses %j", (branch) => {
+    expect(isValidBranchName(branch)).toBe(false);
+  });
+});
+
+describe("matchesBranchPattern", () => {
+  it.each([
+    ["next", "next", true],
+    ["next", "nex", false],
+    ["nextx", "next", false],
+    ["1.x", "*.x", true],
+    ["12.x", "*.x", true],
+    [".x", "*.x", false],
+    ["1.y", "*.x", false],
+    ["release/2.0", "release/*", true],
+    ["release/2.0/rc", "release/*", false],
+    ["release/", "release/*", false],
+    ["release", "release/*", false],
+    ["hotfix-1", "hotfix-*", true],
+    ["a/b", "*", false],
+    ["main", "*", true],
+    ["release/1.x", "release/*.x", true],
+    // `.` in a pattern is literal, not a regex wildcard.
+    ["1ax", "*.x", false],
+  ])("%s against %s → %s", (branch, pattern, expected) => {
+    expect(matchesBranchPattern(branch, pattern)).toBe(expected);
+  });
+});
+
+describe("isReleaseBranch", () => {
+  it("is true for the production branch, with or without a list", () => {
+    expect(isReleaseBranch("main", "main", [])).toBe(true);
+    expect(isReleaseBranch("main", "main", ["next"])).toBe(true);
+  });
+
+  it("is true for listed exact names and matching patterns only", () => {
+    const list = ["next", "*.x", "release/*"];
+    expect(isReleaseBranch("next", "main", list)).toBe(true);
+    expect(isReleaseBranch("1.x", "main", list)).toBe(true);
+    expect(isReleaseBranch("release/2.0", "main", list)).toBe(true);
+    expect(isReleaseBranch("release/2.0/rc", "main", list)).toBe(false);
+    expect(isReleaseBranch("feature", "main", list)).toBe(false);
+    expect(isReleaseBranch("next", "main", [])).toBe(false);
   });
 });
 
