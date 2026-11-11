@@ -10,6 +10,8 @@ export interface WorkloadIdentityRow {
   repository_id: string;
   repository: string;
   production_branch: string;
+  /** JSON array of release branch names/patterns; `'[]'` by default. */
+  release_branches: ColumnType<string, string | undefined, string>;
   owner_address: string;
   /** `bigint`: EIP-155 chain ids can exceed int4. Drivers return int8 as a string, bigint or number. */
   chain_id: ColumnType<string | number | bigint, number, number>;
@@ -33,6 +35,8 @@ export type WorkloadKysely = Kysely<WorkloadDB>;
 export interface WorkloadIdentityPatch {
   repository?: string;
   productionBranch?: string;
+  /** Replaces the whole list. */
+  releaseBranches?: string[];
 }
 
 export interface WorkloadStore {

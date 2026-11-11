@@ -2,7 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { Kysely } from "kysely";
 import { PGliteDialect } from "kysely-pglite-dialect";
 import { bootNamespace } from "../../renown-stats/tests/host-namespace.js";
-import { afterAll } from "vitest";
+import { afterAll, expect, it } from "vitest";
 import { KyselyWorkloadStore } from "../store/kysely.js";
 import { migrate } from "../store/migrations.js";
 import type { WorkloadDB } from "../store/types.js";
@@ -29,3 +29,41 @@ async function makeKyselyStore(): Promise<KyselyWorkloadStore> {
 }
 
 describeWorkloadStoreContract("KyselyWorkloadStore on PGlite", makeKyselyStore);
+
+it("gives identities stored before release branches an empty list", async () => {
+  const root = new Kysely<WorkloadDB>({
+    dialect: new PGliteDialect(new PGlite()),
+  });
+  opened.push(root);
+  const db = await bootNamespace<WorkloadDB>(
+    root,
+    "renown-workload",
+    migrate,
+    1,
+  );
+  // The production table as it was: no release_branches column, one row.
+  await db.schema
+    .alterTable("workload_identities")
+    .dropColumn("release_branches")
+    .execute();
+  await db
+    .insertInto("workload_identities")
+    .values({
+      did: "did:key:old",
+      provider: "github",
+      repository_id: "1",
+      repository: "acme/shop",
+      production_branch: "main",
+      owner_address: "0x1111111111111111111111111111111111111111",
+      chain_id: 1,
+      encrypted_key_pair: "v1.iv.ct",
+      created_at: new Date(),
+      updated_at: new Date(),
+    })
+    .execute();
+
+  await migrate(db);
+
+  const store = new KyselyWorkloadStore(db);
+  expect((await store.getByDid("did:key:old"))?.releaseBranches).toEqual([]);
+});

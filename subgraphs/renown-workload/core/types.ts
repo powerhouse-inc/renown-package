@@ -11,6 +11,11 @@ export interface WorkloadIdentity {
   repository: string;
   /** Branch name (without `refs/heads/`) whose runs are PRODUCTION. */
   productionBranch: string;
+  /**
+   * Branches that may publish releases, besides the production branch: exact
+   * names or patterns where `*` matches one or more non-`/` characters.
+   */
+  releaseBranches: string[];
   /** EIP-55 checksummed owner address. */
   ownerAddress: string;
   chainId: number;

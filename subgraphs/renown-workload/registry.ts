@@ -147,6 +147,7 @@ export async function registerWorkloadIdentity(
   const identity: StoredWorkloadIdentity = {
     did,
     provider: "github",
+    releaseBranches: [],
     ...input,
     encryptedKeyPair: await seal(
       deps.encryptionKey,
