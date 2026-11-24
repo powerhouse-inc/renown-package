@@ -139,6 +139,7 @@ function fakeReactor() {
       CRED_NS,
       FILTER,
       root.withSchema(CRED_NS) as never,
+      undefined,
       { deleteDocument },
     ),
     "powerhouse/renown-user": new RenownUserProcessor(USER_NS, FILTER, root.withSchema(USER_NS) as never),
