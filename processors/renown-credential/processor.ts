@@ -22,9 +22,12 @@ export class RenownCredentialProcessor extends RelationalDbProcessor<DB> {
     namespace: string,
     filter: ProcessorFilter,
     relationalDb: IRelationalDb<DB>,
+    // The base class's place (Powerhouse 6.3): the drive the factory made
+    // this processor for. The read model is global, so it stays undefined.
+    driveId?: string,
     reactor?: IReactor,
   ) {
-    super(namespace, filter, relationalDb);
+    super(namespace, filter, relationalDb, driveId);
     this.reactor = reactor;
   }
 

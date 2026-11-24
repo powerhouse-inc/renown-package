@@ -26,6 +26,7 @@ export const renownCredentialFactoryBuilder: ProcessorFactoryBuilder =
       namespace,
       filter,
       store,
+      undefined, // one read model for all drives
       module.client,
     );
     await processor.initAndUpgrade();
